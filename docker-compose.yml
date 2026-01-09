@@ -1,0 +1,12 @@
+services:
+  stt:
+    build:
+      context: ./services/stt
+      args:
+        WHISPER_MODEL: base
+    ports:
+      - "9000:9000"
+    environment:
+      WHISPER_MODEL_PATH: /models/ggml-base.bin
+      WHISPER_THREADS: "4"
+    restart: unless-stopped

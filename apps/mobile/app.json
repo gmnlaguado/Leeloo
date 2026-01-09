@@ -1,0 +1,89 @@
+{
+  "expo": {
+    "name": "Leeloo",
+    "slug": "leeloo",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#8B5CF6"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.leeloo.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Leeloo needs access to your microphone to listen to voice commands.",
+        "NSCalendarsUsageDescription": "Leeloo needs access to your calendar to schedule events.",
+        "NSContactsUsageDescription": "Leeloo needs access to your contacts to send messages.",
+        "NSRemindersUsageDescription": "Leeloo needs access to reminders to create tasks.",
+        "NSSpeechRecognitionUsageDescription": "Leeloo uses speech recognition to understand your voice commands.",
+        "UIBackgroundModes": [
+          "audio",
+          "fetch",
+          "processing"
+        ]
+      },
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#8B5CF6"
+      },
+      "package": "com.leeloo.app",
+      "permissions": [
+        "RECORD_AUDIO",
+        "READ_CALENDAR",
+        "WRITE_CALENDAR",
+        "READ_CONTACTS",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "FOREGROUND_SERVICE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/icon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#8B5CF6"
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Allow Leeloo to access your calendar."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Leeloo to use your microphone for voice commands."
+        }
+      ]
+    ],
+    "scheme": "leeloo",
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "your-project-id-here"
+      }
+    },
+    "owner": "leeloo"
+  }
+}

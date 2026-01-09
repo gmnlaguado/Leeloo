@@ -1,0 +1,34 @@
+{
+  "name": "leeloo-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Leeloo - AI Assistant for Working Women",
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "type-check": "turbo run type-check",
+    "mobile": "cd apps/mobile && npm run start",
+    "api": "cd services/api && npm run start:dev",
+    "worker": "cd services/worker && npm run start:dev",
+    "ai": "cd services/ai-orchestrator && npm run start:dev"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "prettier": "^3.1.1",
+    "turbo": "^1.11.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "packageManager": "npm@9.8.1"
+}
