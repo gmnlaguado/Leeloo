@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { R2Module } from './r2/r2.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { R2Module } from './r2/r2.module';
     DatabaseModule,
     ProfilesModule,
     R2Module,
+    HealthModule,
     AuthModule,
     VoiceModule,
     TasksModule,
