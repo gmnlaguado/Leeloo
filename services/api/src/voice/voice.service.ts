@@ -150,9 +150,29 @@ export class VoiceService {
     // Execute actions based on intent
     let actionResult = null;
     if (intent.intent === 'create_task') {
+      const taskTitle = (intent.filled_slots?.title || intent.title || '').trim();
+      if (!taskTitle) {
+        const responseText = this.buildMissingTaskTitleMessage(language);
+        const audioUrl = await this.generateTTS(responseText, language);
+
+        return {
+          transcription: cleanedText,
+          intent: {
+            ...intent,
+            missing_slots: Array.isArray(intent.missing_slots)
+              ? Array.from(new Set([...intent.missing_slots, 'title']))
+              : ['title'],
+            next_question: intent.next_question || responseText,
+          },
+          action_result: null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
       actionResult = await this.tasksService.createTask({
         user_id: clerkUserId,
-        title: intent.filled_slots?.title || intent.title,
+        title: taskTitle,
         description: intent.filled_slots?.description || intent.description,
         due_at: intent.filled_slots?.due_at || intent.due_at,
         metadata: {
@@ -179,6 +199,20 @@ export class VoiceService {
       response_text: responseText,
       response_audio_url: audioUrl,
     };
+  }
+
+  private buildMissingTaskTitleMessage(language: SupportedLanguage): string {
+    switch (language) {
+      case 'es':
+        return '¿Cuál es el título de la tarea?';
+      case 'pt':
+        return 'Qual é o título da tarefa?';
+      case 'fr':
+        return "Quel est le titre de la tâche ?";
+      case 'en':
+      default:
+        return "What's the task title?";
+    }
   }
 
   private async extractIntent(text: string, context: string, language: SupportedLanguage) {
