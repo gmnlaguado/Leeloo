@@ -1,6 +1,6 @@
 import axios from 'axios';
 import Constants from 'expo-constants';
-import { supabase } from './supabase';
+import { getAuthToken } from './authToken';
 
 const getDefaultApiBaseUrl = () => {
   const hostUri =
@@ -21,32 +21,20 @@ const FALLBACK_BEARER_TOKEN =
     | undefined) ||
   ((Constants.expoConfig as any)?.extra?.bearerToken as string | undefined);
 
-const DEV_DEFAULT_TOKEN = __DEV__ ? 'leeloo-dev' : undefined;
-
 const API_V1_BASE_URL = `${API_BASE_URL}/v1`;
 
 const resolveBearerToken = async (): Promise<{ token?: string; source: string }> => {
-  let sessionToken: string | undefined;
-
+  let clerkToken: string | undefined;
   try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    sessionToken = session?.access_token;
+    clerkToken = await getAuthToken();
   } catch (e) {
     if (__DEV__) {
-      console.log('[api] supabase.getSession failed (expected if Supabase disabled):', String(e));
+      console.log('[api] getAuthToken failed:', String(e));
     }
   }
 
-  const token = sessionToken || FALLBACK_BEARER_TOKEN || DEV_DEFAULT_TOKEN;
-  const source = sessionToken
-    ? 'supabase'
-    : FALLBACK_BEARER_TOKEN
-      ? 'env'
-      : DEV_DEFAULT_TOKEN
-        ? 'dev_default'
-        : 'none';
+  const token = clerkToken || FALLBACK_BEARER_TOKEN;
+  const source = clerkToken ? 'clerk' : FALLBACK_BEARER_TOKEN ? 'env' : 'none';
 
   return { token, source };
 };
@@ -139,7 +127,7 @@ export const voiceAPI = {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90000);
+    const timeoutId = setTimeout(() => controller.abort(), 180000);
 
     try {
       if (__DEV__) {
@@ -166,6 +154,15 @@ export const voiceAPI = {
       }
 
       return { data, status: res.status } as any;
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        const e: any = new Error(
+          'Voice request timed out. Try a shorter recording, or wait a moment and try again.',
+        );
+        e.code = 'VOICE_TIMEOUT';
+        throw e;
+      }
+      throw err;
     } finally {
       clearTimeout(timeoutId);
     }
