@@ -110,7 +110,42 @@ export class VoiceService {
   ) {
     const cleanedText = (text || '').trim();
 
-    const language = ((userContext?.language || 'en').toLowerCase() || 'en') as SupportedLanguage;
+    let language = ((userContext?.language || 'en').toLowerCase() || 'en') as SupportedLanguage;
+
+    const lower = cleanedText.toLowerCase();
+    let requestedLanguage: SupportedLanguage | null = null;
+    if (lower.includes('english') || lower.includes('inglés') || lower.includes('ingles')) {
+      requestedLanguage = 'en';
+    } else if (lower.includes('español') || lower.includes('espanol') || lower.includes('spanish')) {
+      requestedLanguage = 'es';
+    } else if (lower.includes('portugu') || lower.includes('português') || lower.includes('português')) {
+      requestedLanguage = 'pt';
+    } else if (lower.includes('français') || lower.includes('francais') || lower.includes('french')) {
+      requestedLanguage = 'fr';
+    }
+
+    if (requestedLanguage) {
+      language = requestedLanguage;
+      await this.profilesService.ensureProfileByClerkUserId(clerkUserId, { language });
+      await this.profilesService.updateLanguage(clerkUserId, language);
+      const responseText =
+        language === 'en'
+          ? "Got it. I'll speak English from now on."
+          : language === 'es'
+            ? 'Listo. A partir de ahora te hablo en español.'
+            : language === 'pt'
+              ? 'Certo. A partir de agora vou falar em português.'
+              : 'D’accord. Je parlerai français à partir de maintenant.';
+      const audioUrl = await this.generateTTS(responseText, language);
+      return {
+        transcription: cleanedText,
+        intent: { intent: 'set_language', confidence: 1, language },
+        action_result: { preferred_language: language },
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
     await this.profilesService.ensureProfileByClerkUserId(clerkUserId, { language });
 
     if (!cleanedText) {
@@ -133,6 +168,13 @@ export class VoiceService {
       .join('\n');
 
     const intent = await this.extractIntent(cleanedText, memoryContext, language);
+
+    console.log('[LeelooApi] voice intent', {
+      userId: clerkUserId,
+      intent: intent?.intent,
+      confidence: intent?.confidence,
+      language,
+    });
 
     if (intent?.intent === 'system_unavailable') {
       const responseText = intent?.next_question || this.buildAiUnavailableMessage(language);
@@ -181,6 +223,12 @@ export class VoiceService {
         },
         priority: intent.priority || 'medium',
       });
+
+      console.log('[LeelooApi] action create_task', {
+        userId: clerkUserId,
+        taskId: (actionResult as any)?.id,
+        title: (actionResult as any)?.title,
+      });
     }
 
     // Generate TTS response
@@ -196,6 +244,7 @@ export class VoiceService {
       transcription: cleanedText,
       intent,
       action_result: actionResult,
+      task_id: (actionResult as any)?.id || null,
       response_text: responseText,
       response_audio_url: audioUrl,
     };
