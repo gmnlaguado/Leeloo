@@ -11,6 +11,7 @@ import { DatabaseModule } from './database/database.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { R2Module } from './r2/r2.module';
 import { HealthModule } from './health/health.module';
+import { EmailModule } from './email/email.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { HealthModule } from './health/health.module';
     CalendarModule,
     IntegrationsModule,
     MemoriesModule,
+    EmailModule,
   ],
 })
 export class AppModule {}

@@ -5,9 +5,10 @@ import { TasksModule } from '../tasks/tasks.module';
 import { MemoriesModule } from '../memories/memories.module';
 import { ProfilesModule } from '../profiles/profiles.module';
 import { R2Module } from '../r2/r2.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
-  imports: [TasksModule, MemoriesModule, ProfilesModule, R2Module],
+  imports: [TasksModule, MemoriesModule, ProfilesModule, R2Module, EmailModule],
   controllers: [VoiceController],
   providers: [VoiceService],
   exports: [VoiceService],

@@ -9,6 +9,7 @@ import { MemoriesService } from '../memories/memories.service';
 import { DatabaseService } from '../database/database.service';
 import { ProfilesService, SupportedLanguage } from '../profiles/profiles.service';
 import { R2Service } from '../r2/r2.service';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class VoiceService {
@@ -58,6 +59,7 @@ export class VoiceService {
     private db: DatabaseService,
     private profilesService: ProfilesService,
     private r2: R2Service,
+    private emailService: EmailService,
   ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     this.openai = apiKey ? new OpenAI({ apiKey }) : null;
@@ -452,7 +454,7 @@ export class VoiceService {
     const audioUrl = await this.generateTTS(responseText, language);
 
     try {
-      await this.memoriesService.createMemory(clerkUserId, 'conversation_turn', `turn_${Date.now()}`, {
+      await this.memoriesService.createMemory(clerkUserId, 'other', `turn_${Date.now()}`, {
         language,
         user: cleanedText,
         assistant: responseText,
@@ -538,6 +540,52 @@ export class VoiceService {
       });
     }
 
+    if (intent.intent === 'send_email') {
+      const filled = intent.filled_slots || {};
+      const to = (filled.to || filled.email || filled.contact_email || '').toString().trim();
+      const subject = (filled.subject || filled.title || intent.title || 'Message from Leeloo').toString().trim();
+      const text = (filled.body || filled.content || filled.email_content || '').toString().trim();
+
+      if (to && text) {
+        let sendOk = false;
+        let sendResult: any = null;
+        let sendError: string | null = null;
+
+        try {
+          sendResult = await this.emailService.sendEmail({ to, subject, text });
+          sendOk = true;
+        } catch (err) {
+          sendError = String(err);
+          console.warn('[LeelooApi] send_email failed', { userId: clerkUserId, to, subject, error: sendError });
+        }
+
+        actionResult = await this.tasksService.createTask({
+          user_id: clerkUserId,
+          title: `Email: ${subject}`,
+          description: `To: ${to}`,
+          due_at: null,
+          metadata: {
+            type: 'email',
+            status: sendOk ? 'sent' : 'failed',
+            provider: sendResult?.provider || 'resend',
+            email_id: sendResult?.id || null,
+            error: sendOk ? null : sendError,
+            filled_slots: filled,
+            language,
+          },
+          priority: intent.priority || 'medium',
+        });
+
+        console.log('[LeelooApi] action send_email->task', {
+          userId: clerkUserId,
+          taskId: (actionResult as any)?.id,
+          status: sendOk ? 'sent' : 'failed',
+          to,
+          subject,
+        });
+      }
+    }
+
     return actionResult;
   }
 
@@ -583,7 +631,7 @@ export class VoiceService {
       `Texto del usuario: "${text}"\n\n` +
       'Devuelve SOLO JSON (sin markdown) con este schema fijo:\n' +
       '{\n' +
-      '  "intent": "schedule_meeting" | "create_task" | "reminder" | "emotional_support" | "query",\n' +
+      '  "intent": "schedule_meeting" | "create_task" | "reminder" | "send_email" | "emotional_support" | "query",\n' +
       '  "confidence": 0.0,\n' +
       '  "required_slots": [],\n' +
       '  "filled_slots": {},\n' +
