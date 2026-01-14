@@ -20,9 +20,9 @@ WORKDIR /opt/whisper.cpp
 RUN cmake -B build -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
 RUN cmake --build build -j
 
-# Collect shared libs required by whisper-cli (Render runtime currently misses libwhisper.so.1)
+# Collect shared libs required by whisper-cli (Render runtime currently misses libwhisper/libggml)
 RUN mkdir -p /deps && \
-    find /opt/whisper.cpp/build -type f \( -name 'libwhisper.so*' -o -name 'libggml.so*' \) -exec cp -v '{}' /deps/ \; || true
+    find /opt/whisper.cpp/build -type f \( -name 'libwhisper.so*' -o -name 'libggml*.so*' \) -exec cp -v '{}' /deps/ \; || true
 
 RUN ./models/download-ggml-model.sh ${WHISPER_MODEL}
 
