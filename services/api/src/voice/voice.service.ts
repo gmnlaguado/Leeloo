@@ -451,6 +451,18 @@ export class VoiceService {
     );
     const audioUrl = await this.generateTTS(responseText, language);
 
+    try {
+      await this.memoriesService.createMemory(clerkUserId, 'conversation_turn', `turn_${Date.now()}`, {
+        language,
+        user: cleanedText,
+        assistant: responseText,
+        intent: intent?.intent,
+        task_id: (actionResult as any)?.id || null,
+      });
+    } catch (err) {
+      console.warn('[LeelooApi] conversation memory save failed', String(err));
+    }
+
     return {
       transcription: cleanedText,
       intent,
@@ -487,6 +499,39 @@ export class VoiceService {
       });
 
       console.log('[LeelooApi] action create_task', {
+        userId: clerkUserId,
+        taskId: (actionResult as any)?.id,
+        title: (actionResult as any)?.title,
+      });
+    }
+
+    if (intent.intent === 'reminder') {
+      const filled = intent.filled_slots || {};
+      const activity = (filled.activity || filled.title || intent.title || '').toString().trim();
+      const time = (filled.time || filled.time_frame || filled.due_at || '').toString().trim();
+      const email = (filled.contact_email || filled.email || '').toString().trim();
+
+      const title = activity ? `Reminder: ${activity}` : 'Reminder';
+      const descriptionParts = [
+        time ? `When: ${time}` : null,
+        email ? `Notify: ${email}` : null,
+      ].filter(Boolean);
+
+      actionResult = await this.tasksService.createTask({
+        user_id: clerkUserId,
+        title,
+        description: descriptionParts.length ? descriptionParts.join('\n') : null,
+        due_at: null,
+        metadata: {
+          ...(intent.metadata || {}),
+          filled_slots: filled,
+          language,
+          type: 'reminder',
+        },
+        priority: intent.priority || 'medium',
+      });
+
+      console.log('[LeelooApi] action reminder->task', {
         userId: clerkUserId,
         taskId: (actionResult as any)?.id,
         title: (actionResult as any)?.title,
