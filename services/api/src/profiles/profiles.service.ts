@@ -15,9 +15,19 @@ export class ProfilesService {
     return existing.rows[0] || null;
   }
 
+  getSystemOn(profile: any): boolean {
+    const state = this.getConversationState(profile);
+    if (typeof state?.system_on === 'boolean') return state.system_on;
+    return true;
+  }
+
   getConversationState(profile: any):
     | {
         preferred_language?: SupportedLanguage;
+        system_on?: boolean;
+        last_question?: string;
+        last_intent?: string;
+        last_action?: string;
         pending_intent?: any;
         pending_slots?: any;
         next_question?: string;
@@ -85,6 +95,10 @@ export class ProfilesService {
     clerkUserId: string,
     state: {
       preferred_language?: SupportedLanguage;
+      system_on?: boolean;
+      last_question?: string;
+      last_intent?: string;
+      last_action?: string;
       pending_intent?: any;
       pending_slots?: any;
       next_question?: string;
@@ -93,6 +107,10 @@ export class ProfilesService {
     return this.updatePreferences(clerkUserId, {
       conversation_state: {
         ...(state.preferred_language ? { preferred_language: state.preferred_language } : {}),
+        ...(state.system_on !== undefined ? { system_on: state.system_on } : {}),
+        ...(state.last_question !== undefined ? { last_question: state.last_question } : {}),
+        ...(state.last_intent !== undefined ? { last_intent: state.last_intent } : {}),
+        ...(state.last_action !== undefined ? { last_action: state.last_action } : {}),
         ...(state.pending_intent !== undefined ? { pending_intent: state.pending_intent } : {}),
         ...(state.pending_slots !== undefined ? { pending_slots: state.pending_slots } : {}),
         ...(state.next_question !== undefined ? { next_question: state.next_question } : {}),

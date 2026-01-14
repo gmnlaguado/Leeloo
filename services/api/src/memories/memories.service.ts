@@ -14,6 +14,20 @@ export class MemoriesService {
     return profile.id;
   }
 
+  async getRecentConversationTurns(userId: string, limit = 5) {
+    const profileId = await this.getProfileId(userId);
+    const res = await this.db.query(
+      `SELECT *
+       FROM memories
+       WHERE user_id = $1
+         AND key LIKE 'turn_%'
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [profileId, limit],
+    );
+    return res.rows || [];
+  }
+
   async getRelevantMemories(userId: string, query: string, limit = 10) {
     void query;
     const profileId = await this.getProfileId(userId);
