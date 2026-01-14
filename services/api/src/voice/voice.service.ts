@@ -402,6 +402,33 @@ export class VoiceService {
 
     const intent = await this.extractIntent(cleanedText, memoryContext, language);
 
+    // Normalize slot names from different models/providers so execution is deterministic.
+    if (intent && typeof intent === 'object') {
+      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+
+      if (intent.intent === 'send_email') {
+        const normalized: any = { ...filled };
+        if (!normalized.to && normalized.recipient) normalized.to = normalized.recipient;
+        if (!normalized.to && normalized.email) normalized.to = normalized.email;
+        if (!normalized.body && normalized.email_body) normalized.body = normalized.email_body;
+        if (!normalized.body && normalized.email_content) normalized.body = normalized.email_content;
+
+        intent.filled_slots = normalized;
+
+        const missing: string[] = [];
+        if (!String(normalized.to || '').trim()) missing.push('to');
+        if (!String(normalized.body || normalized.content || '').trim()) missing.push('body');
+
+        if (missing.length > 0) {
+          intent.missing_slots = missing;
+          intent.next_question =
+            missing[0] === 'to'
+              ? '¿A qué correo quieres que lo envíe?'
+              : '¿Qué quieres que diga el correo? Dímelo tal cual y lo mando.';
+        }
+      }
+    }
+
     console.log('[LeelooApi] voice intent', {
       userId: clerkUserId,
       intent: intent?.intent,
@@ -639,6 +666,9 @@ export class VoiceService {
       '  "next_question": "",\n' +
       '  "priority": "low" | "medium" | "high"\n' +
       '}\n\n' +
+      'NOTAS IMPORTANTES PARA filled_slots:\n' +
+      '- Para send_email usa SIEMPRE: {"to": "email", "subject": "...", "body": "..."}.\n' +
+      '- Si falta "to" o "body", ponlos en missing_slots y escribe next_question con una sola pregunta clara.\n\n' +
       `Idioma: ${language}.`;
 
     try {
