@@ -42,13 +42,50 @@ export class VoiceService {
 
     if (endpoint) {
       try {
-        const url = `${endpoint.replace(/\/+$/, '')}/v1/transcribe`;
+        const base = endpoint.replace(/\/+$/, '');
+
+        // Some hosted STT services expose endpoints under a different base path.
+        // We keep this simple: try the two most common routes.
+
+        // Try OpenAI-style Whisper endpoint first: POST /v1/transcribe (multipart, field "file")
+        try {
+          const url = `${base}/v1/transcribe`;
+          console.log('[LeelooApi] STT: trying', url);
+          const form = new FormData();
+          form.append('file', audioBuffer, {
+            filename: 'audio.m4a',
+            contentType: 'audio/m4a',
+          });
+          form.append('language', language);
+
+          const res = await axios.post(url, form, {
+            timeout: 120000,
+            headers: {
+              ...form.getHeaders(),
+            },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+          });
+
+          const text = res.data?.text;
+          const out = typeof text === 'string' ? text.trim() : '';
+          if (out) return out;
+        } catch {
+          // Fall through to /asr
+        }
+
+        // Try whisper-asr-webservice style: POST /asr (multipart, field "audio_file")
+        const url = `${base}/asr`;
+        console.log('[LeelooApi] STT: trying', url);
         const form = new FormData();
-        form.append('file', audioBuffer, {
+        form.append('audio_file', audioBuffer, {
           filename: 'audio.m4a',
           contentType: 'audio/m4a',
         });
+        form.append('task', 'transcribe');
         form.append('language', language);
+        // request JSON response when supported
+        form.append('output', 'json');
 
         const res = await axios.post(url, form, {
           timeout: 120000,
@@ -59,20 +96,47 @@ export class VoiceService {
           maxContentLength: Infinity,
         });
 
-        const text = res.data?.text;
-        const out = typeof text === 'string' ? text.trim() : '';
-        if (out) return out;
+        {
+          const text = res.data?.text;
+          const out = typeof text === 'string' ? text.trim() : '';
+          if (out) return out;
+        }
 
-        console.error('[LeelooApi] STT: respuesta vacía (no debería pasar)', {
-          status: res.status,
-          data: res.data,
-        });
+        // Try common FastAPI wrappers: POST /transcribe (multipart, field "file")
+        // (Many deployments keep / as 404 but expose /docs and /openapi.json)
+        {
+          const url2 = `${base}/transcribe`;
+          console.log('[LeelooApi] STT: trying', url2);
+          const form2 = new FormData();
+          form2.append('file', audioBuffer, {
+            filename: 'audio.m4a',
+            contentType: 'audio/m4a',
+          });
+          form2.append('language', language);
+
+          const res2 = await axios.post(url2, form2, {
+            timeout: 120000,
+            headers: {
+              ...form2.getHeaders(),
+            },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+          });
+
+          const text2 = res2.data?.text;
+          const out2 = typeof text2 === 'string' ? text2.trim() : '';
+          if (out2) return out2;
+        }
       } catch (err) {
+        const status = (err as any)?.response?.status;
+        const data = (err as any)?.response?.data;
         console.error(
           '[LeelooApi] STT error:',
-          (err as any)?.response?.status,
-          (err as any)?.response?.data || String(err),
+          status,
+          data || String(err),
         );
+
+        // If external STT fails, fall back to OpenAI Whisper if available
       }
     } else {
       console.error('[LeelooApi] STT: STT_ENDPOINT no configurado');
@@ -110,7 +174,16 @@ export class VoiceService {
   ) {
     const cleanedText = (text || '').trim();
 
-    let language = ((userContext?.language || 'en').toLowerCase() || 'en') as SupportedLanguage;
+    // Resolve persisted user state (language + pending intent/slots).
+    const profile =
+      (await this.profilesService.getProfileByClerkUserId(clerkUserId)) ||
+      (await this.profilesService.ensureProfileByClerkUserId(clerkUserId));
+    const state = this.profilesService.getConversationState(profile);
+
+    let language =
+      (this.profilesService.getPreferredLanguage(profile) ||
+        ((userContext?.language || 'en').toLowerCase() as any) ||
+        'en') as SupportedLanguage;
 
     const lower = cleanedText.toLowerCase();
     let requestedLanguage: SupportedLanguage | null = null;
@@ -128,6 +201,9 @@ export class VoiceService {
       language = requestedLanguage;
       await this.profilesService.ensureProfileByClerkUserId(clerkUserId, { language });
       await this.profilesService.updateLanguage(clerkUserId, language);
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+      });
       const responseText =
         language === 'en'
           ? "Got it. I'll speak English from now on."
@@ -144,6 +220,65 @@ export class VoiceService {
         response_text: responseText,
         response_audio_url: audioUrl,
       };
+    }
+
+    // If we have a pending multi-turn flow, treat this message as the answer for the next missing slot.
+    if (state?.pending_intent && cleanedText) {
+      const pendingIntent = state.pending_intent;
+      const pendingSlots = state.pending_slots || {};
+
+      const missingSlots: string[] = Array.isArray(pendingIntent?.missing_slots)
+        ? pendingIntent.missing_slots
+        : [];
+      const slotToFill = missingSlots[0] || null;
+
+      if (slotToFill) {
+        const filled = {
+          ...(pendingIntent?.filled_slots || {}),
+          ...(pendingSlots?.filled_slots || {}),
+          [slotToFill]: cleanedText,
+        };
+
+        const newMissing = missingSlots.slice(1);
+        const updatedIntent = {
+          ...pendingIntent,
+          filled_slots: filled,
+          missing_slots: newMissing,
+        };
+
+        if (newMissing.length > 0) {
+          const responseText = pendingIntent?.next_question || this.buildMissingTaskTitleMessage(language);
+          const audioUrl = await this.generateTTS(responseText, language);
+          await this.profilesService.setConversationState(clerkUserId, {
+            preferred_language: language,
+            pending_intent: updatedIntent,
+            pending_slots: { filled_slots: filled },
+            next_question: responseText,
+          });
+
+          return {
+            transcription: cleanedText,
+            intent: updatedIntent,
+            action_result: null,
+            response_text: responseText,
+            response_audio_url: audioUrl,
+          };
+        }
+
+        // No more missing slots: execute the pending intent now.
+        await this.profilesService.clearConversationState(clerkUserId);
+        const executed = await this.executeIntent(clerkUserId, updatedIntent, language);
+        const responseText = await this.generateResponse(updatedIntent, executed, language, userContext);
+        const audioUrl = await this.generateTTS(responseText, language);
+        return {
+          transcription: cleanedText,
+          intent: updatedIntent,
+          action_result: executed,
+          task_id: (executed as any)?.id || null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
     }
 
     await this.profilesService.ensureProfileByClerkUserId(clerkUserId, { language });
@@ -190,46 +325,26 @@ export class VoiceService {
     }
 
     // Execute actions based on intent
-    let actionResult = null;
-    if (intent.intent === 'create_task') {
-      const taskTitle = (intent.filled_slots?.title || intent.title || '').trim();
-      if (!taskTitle) {
-        const responseText = this.buildMissingTaskTitleMessage(language);
-        const audioUrl = await this.generateTTS(responseText, language);
-
-        return {
-          transcription: cleanedText,
-          intent: {
-            ...intent,
-            missing_slots: Array.isArray(intent.missing_slots)
-              ? Array.from(new Set([...intent.missing_slots, 'title']))
-              : ['title'],
-            next_question: intent.next_question || responseText,
-          },
-          action_result: null,
-          response_text: responseText,
-          response_audio_url: audioUrl,
-        };
-      }
-
-      actionResult = await this.tasksService.createTask({
-        user_id: clerkUserId,
-        title: taskTitle,
-        description: intent.filled_slots?.description || intent.description,
-        due_at: intent.filled_slots?.due_at || intent.due_at,
-        metadata: {
-          ...(intent.metadata || {}),
-          filled_slots: intent.filled_slots || {},
-        },
-        priority: intent.priority || 'medium',
+    const missingSlots: string[] = Array.isArray(intent?.missing_slots) ? intent.missing_slots : [];
+    if (missingSlots.length > 0) {
+      const responseText = intent?.next_question || this.buildMissingTaskTitleMessage(language);
+      const audioUrl = await this.generateTTS(responseText, language);
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+        pending_intent: intent,
+        pending_slots: { filled_slots: intent?.filled_slots || {} },
+        next_question: responseText,
       });
-
-      console.log('[LeelooApi] action create_task', {
-        userId: clerkUserId,
-        taskId: (actionResult as any)?.id,
-        title: (actionResult as any)?.title,
-      });
+      return {
+        transcription: cleanedText,
+        intent,
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
     }
+
+    const actionResult = await this.executeIntent(clerkUserId, intent, language);
 
     // Generate TTS response
     const responseText = await this.generateResponse(
@@ -248,6 +363,41 @@ export class VoiceService {
       response_text: responseText,
       response_audio_url: audioUrl,
     };
+  }
+
+  private async executeIntent(clerkUserId: string, intent: any, language: SupportedLanguage) {
+    let actionResult: any = null;
+
+    if (!intent || typeof intent !== 'object') return null;
+
+    if (intent.intent === 'create_task') {
+      const taskTitle = (intent.filled_slots?.title || intent.title || '').trim();
+      if (!taskTitle) {
+        // This should be handled by missing_slots, but keep it safe.
+        return null;
+      }
+
+      actionResult = await this.tasksService.createTask({
+        user_id: clerkUserId,
+        title: taskTitle,
+        description: intent.filled_slots?.description || intent.description,
+        due_at: intent.filled_slots?.due_at || intent.due_at,
+        metadata: {
+          ...(intent.metadata || {}),
+          filled_slots: intent.filled_slots || {},
+          language,
+        },
+        priority: intent.priority || 'medium',
+      });
+
+      console.log('[LeelooApi] action create_task', {
+        userId: clerkUserId,
+        taskId: (actionResult as any)?.id,
+        title: (actionResult as any)?.title,
+      });
+    }
+
+    return actionResult;
   }
 
   private buildMissingTaskTitleMessage(language: SupportedLanguage): string {
@@ -366,20 +516,28 @@ export class VoiceService {
       return this.buildAiUnavailableMessage(language);
     }
 
-    const coreRules =
-      'No menciones IA, modelo, sistema, JSON, ni "intención".\n' +
-      'Nunca confirmes acciones que no se hayan persistido.\n' +
-      'Si faltan datos (missing_slots), haz UNA sola pregunta clara.\n';
+    const leelooCore =
+      'You are Leeloo.\n' +
+      'Leeloo is a high-intelligence AI companion, life coach, and trusted ally.\n' +
+      'You are voice-first: calm, warm, reassuring, confident.\n' +
+      'PRIMARY OBJECTIVE: deeply understand the user’s intent, context, emotional state, and goal.\n' +
+      'If helpfulness conflicts with schema/slots, choose helpfulness.\n' +
+      'Do NOT sound robotic or form-like.\n' +
+      'When info is missing, ask ONE focused question conversationally.\n' +
+      'Never mention JSON, intent, model, system, tools, or being an AI.\n' +
+      'Language is absolute: respond only in the requested language and keep it consistent.\n';
 
-    const roleTone = userContext?.role ? `Rol del usuario: ${userContext.role}.\n` : '';
+    const roleTone = userContext?.role ? `User role/context: ${userContext.role}.\n` : '';
 
     const prompt =
-      `${coreRules}` +
       `${roleTone}` +
-      `Idioma: ${language}.\n\n` +
-      `Intent JSON: ${JSON.stringify(intent)}\n` +
-      `Action result JSON: ${JSON.stringify(actionResult)}\n\n` +
-      'Redacta una respuesta breve (2-4 frases) cálida, humana y práctica.';
+      `Language: ${language}.\n\n` +
+      `User said: ${JSON.stringify(intent?.original_text || '')}\n` +
+      `Intent (internal): ${JSON.stringify(intent)}\n` +
+      `Action result (internal): ${JSON.stringify(actionResult)}\n\n` +
+      'Write the user-facing response.\n' +
+      'Structure internally: Acknowledge -> Meaningful response -> Guided next step (if needed).\n' +
+      'Be concise but meaningful (2-6 short sentences).';
 
     try {
       const res = await axios.post(
@@ -389,9 +547,7 @@ export class VoiceService {
           messages: [
             {
               role: 'system',
-              content:
-                'Eres Leeloo Mom. Eres cálida, práctica y empática. Sigues reglas estrictas. ' +
-                (userContext?.faith_mode ? '' : 'No incluyas contenido religioso.'),
+              content: leelooCore + (userContext?.faith_mode ? '' : 'Avoid religious content.\n'),
             },
             { role: 'user', content: prompt },
           ],

@@ -14,13 +14,17 @@ import { Express } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { VoiceService } from './voice.service';
 import { ProcessVoiceDto } from './dto/process-voice.dto';
+import { ProfilesService } from '../profiles/profiles.service';
 
 @ApiTags('voice')
 @Controller('voice')
 @UseGuards(AuthGuard)
 @ApiBearerAuth()
 export class VoiceController {
-  constructor(private readonly voiceService: VoiceService) {}
+  constructor(
+    private readonly voiceService: VoiceService,
+    private readonly profilesService: ProfilesService,
+  ) {}
 
   @Post('process')
   @ApiOperation({ summary: 'Process voice input (audio or text)' })
@@ -39,12 +43,16 @@ export class VoiceController {
   ) {
     const userId = req.user.id;
 
-    const language =
-      (dto?.user_context?.language || dto?.language || 'en').toLowerCase();
+    // Prefer persisted language from profile/conversation state.
+    // dto.language is treated as a UI hint, not authoritative.
+    const profile = await this.profilesService.ensureProfileByClerkUserId(userId, {
+      language: ((dto?.user_context?.language || dto?.language || 'en').toLowerCase() as any) || 'en',
+    });
+    const preferredLanguage = this.profilesService.getPreferredLanguage(profile) || 'en';
 
     const userContext = {
       ...(dto.user_context || {}),
-      language,
+      language: preferredLanguage,
     };
 
     // If audio file is provided, transcribe it first
