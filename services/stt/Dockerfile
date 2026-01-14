@@ -1,7 +1,7 @@
 FROM ubuntu:22.04 AS builder
 
 ARG WHISPER_CPP_REF=master
-ARG WHISPER_MODEL=base
+ARG WHISPER_MODEL=tiny
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -29,7 +29,7 @@ RUN ./models/download-ggml-model.sh ${WHISPER_MODEL}
 
 FROM python:3.11-slim-bookworm
 
-ARG WHISPER_MODEL=base
+ARG WHISPER_MODEL=tiny
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -51,7 +51,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY app /app/app
 
 ENV WHISPER_MODEL_PATH=/models/ggml-${WHISPER_MODEL}.bin
-ENV WHISPER_THREADS=4
+ENV WHISPER_THREADS=1
 
 # Ensure whisper-cli can locate libwhisper/libggml at runtime
 ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH}
