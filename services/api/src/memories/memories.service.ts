@@ -32,7 +32,12 @@ export class MemoriesService {
     void query;
     const profileId = await this.getProfileId(userId);
     const result = await this.db.query(
-      'SELECT * FROM memories WHERE user_id = $1 ORDER BY last_used DESC LIMIT $2',
+      `SELECT *
+       FROM memories
+       WHERE user_id = $1
+         AND key NOT LIKE 'turn_%'
+       ORDER BY last_used DESC
+       LIMIT $2`,
       [profileId, limit],
     );
     return result.rows || [];

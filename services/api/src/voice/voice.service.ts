@@ -348,6 +348,36 @@ export class VoiceService {
       };
     }
 
+    // Deterministic greeting/small talk gate (prevents intent bias from recent action context).
+    // Only applies when we're NOT in a pending slot-filling flow.
+    if (!state?.pending_intent) {
+      const t = cleanedText.toLowerCase();
+      const isGreeting =
+        /^\s*(hola|buenas|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|hey|hello|hi|yo)\b/.test(t) ||
+        /^\s*(c[oó]mo\s+est[aá]s|how\s+are\s+you)\b/.test(t);
+
+      if (isGreeting) {
+        const responseText =
+          language === 'es'
+            ? 'Hola. Qué gusto escucharte. ¿Cómo estás hoy, de verdad?'
+            : "Hey. I’m really glad you’re here. How are you—really?";
+        const audioUrl = await this.generateTTS(responseText, language);
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          last_intent: 'query',
+          last_action: undefined,
+          last_question: responseText,
+        });
+        return {
+          transcription: cleanedText,
+          intent: { intent: 'query', confidence: 0.9, decision: 'COACH', original_text: cleanedText },
+          action_result: null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+    }
+
     const lower = cleanedText.toLowerCase();
     let requestedLanguage: SupportedLanguage | null = null;
     if (lower.includes('english') || lower.includes('inglés') || lower.includes('ingles')) {
