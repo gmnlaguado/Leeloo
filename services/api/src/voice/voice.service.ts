@@ -10,6 +10,10 @@ import { DatabaseService } from '../database/database.service';
 import { ProfilesService, SupportedLanguage } from '../profiles/profiles.service';
 import { R2Service } from '../r2/r2.service';
 import { EmailService } from '../email/email.service';
+import { buildLeelooUniversalPrompt } from './core/leeloo-core.prompt';
+import { detectEmotionHeuristic, emotionLeadSentence } from './core/emotion';
+import { computeConfidence, computeSlotConfidence } from './core/confidence';
+import { decide } from './core/decision-engine';
 
 @Injectable()
 export class VoiceService {
@@ -283,6 +287,67 @@ export class VoiceService {
         ((userContext?.language || 'en').toLowerCase() as any) ||
         'en') as SupportedLanguage;
 
+    // Global voice commands (bypass LLM)
+    const lowerGlobal = cleanedText.toLowerCase();
+    const isWake =
+      lowerGlobal.includes('leeloo despierta') ||
+      lowerGlobal.includes('leeloo, despierta') ||
+      lowerGlobal.includes('wake up') ||
+      lowerGlobal.includes('leeloo wake up');
+    const isSleep =
+      lowerGlobal.includes('leeloo apágate') ||
+      lowerGlobal.includes('leeloo apagate') ||
+      lowerGlobal.includes('leeloo, apágate') ||
+      lowerGlobal.includes('leeloo, apagate') ||
+      lowerGlobal.includes('sleep') ||
+      lowerGlobal.includes('go to sleep') ||
+      lowerGlobal.includes('leeloo sleep');
+
+    if (isWake) {
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+        system_on: true,
+      });
+      const responseText = language === 'es' ? 'Estoy aquí. ¿Qué necesitas?' : "I'm here. What do you need?";
+      const audioUrl = await this.generateTTS(responseText, language);
+      return {
+        transcription: cleanedText,
+        intent: { intent: 'system_on', confidence: 1 },
+        action_result: { system_on: true },
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
+    if (isSleep) {
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+        system_on: false,
+      });
+      const responseText = language === 'es' ? 'Listo. Me quedo en silencio. Cuando me necesites, di “Leeloo despierta”.' : 'Okay. Going quiet. When you need me, say “Leeloo wake up”.';
+      const audioUrl = await this.generateTTS(responseText, language);
+      return {
+        transcription: cleanedText,
+        intent: { intent: 'system_off', confidence: 1 },
+        action_result: { system_on: false },
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
+    const systemOn = this.profilesService.getSystemOn(profile);
+    if (!systemOn) {
+      const responseText = language === 'es' ? 'Estoy en silencio. Si quieres que vuelva, di “Leeloo despierta”.' : 'I’m quiet right now. If you want me back, say “Leeloo wake up”.';
+      const audioUrl = await this.generateTTS(responseText, language);
+      return {
+        transcription: cleanedText,
+        intent: { intent: 'system_off', confidence: 1 },
+        action_result: { system_on: false },
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
     const lower = cleanedText.toLowerCase();
     let requestedLanguage: SupportedLanguage | null = null;
     if (lower.includes('english') || lower.includes('inglés') || lower.includes('ingles')) {
@@ -352,6 +417,8 @@ export class VoiceService {
             pending_intent: updatedIntent,
             pending_slots: { filled_slots: filled },
             next_question: responseText,
+            last_question: responseText,
+            last_intent: String(updatedIntent?.intent || ''),
           });
 
           return {
@@ -365,8 +432,55 @@ export class VoiceService {
 
         // No more missing slots: execute the pending intent now.
         await this.profilesService.clearConversationState(clerkUserId);
-        const executed = await this.executeIntent(clerkUserId, updatedIntent, language);
-        const responseText = await this.generateResponse(updatedIntent, executed, language, userContext);
+
+        // Cognitive pipeline (post-slot-fill)
+        const emotion = detectEmotionHeuristic(cleanedText);
+        const slotConfidence = computeSlotConfidence({
+          intentName: String(updatedIntent?.intent || ''),
+          filled: updatedIntent?.filled_slots || {},
+          missing: [],
+        });
+        const confidence = computeConfidence({
+          intent_confidence_raw: updatedIntent?.confidence,
+          slot_confidence: slotConfidence,
+          floor: 0.65,
+        });
+        const decision = decide({
+          intentName: String(updatedIntent?.intent || ''),
+          missingSlots: [],
+          confidence,
+          last_intent: state?.last_intent || null,
+          last_question: state?.last_question || null,
+          last_action: state?.last_action || null,
+        });
+
+        // Emotion can downgrade ACTION to COACH when intense.
+        const emotionOverridesAction =
+          emotion && emotion.intensity >= 0.6 &&
+          ['stressed', 'confused', 'sad', 'frustrated', 'anxious', 'angry'].includes(emotion.label);
+
+        let executed: any = null;
+        if (decision.decision === 'ACTION' && !emotionOverridesAction) {
+          executed = await this.executeIntent(clerkUserId, updatedIntent, language);
+          await this.profilesService.setConversationState(clerkUserId, {
+            preferred_language: language,
+            last_intent: String(updatedIntent?.intent || ''),
+            last_action: String(updatedIntent?.intent || ''),
+          });
+        }
+
+        const responseText = await this.generateResponse(
+          {
+            ...updatedIntent,
+            confidence: confidence.combined_confidence,
+            emotion,
+            decision: emotionOverridesAction && decision.decision === 'ACTION' ? 'COACH' : decision.decision,
+            original_text: cleanedText,
+          },
+          executed,
+          language,
+          userContext,
+        );
         const audioUrl = await this.generateTTS(responseText, language);
         return {
           transcription: cleanedText,
@@ -396,11 +510,27 @@ export class VoiceService {
 
     // Get user context/memories
     const memories = await this.memoriesService.getRelevantMemories(clerkUserId, cleanedText);
+    const recentTurns = await this.memoriesService.getRecentConversationTurns(clerkUserId, 5);
+    const turnsContext = recentTurns
+      .reverse()
+      .map((m: any) => {
+        const v = m?.value;
+        const u = v?.user ? String(v.user) : '';
+        const a = v?.assistant ? String(v.assistant) : '';
+        return u && a ? `User: ${u}\nAssistant: ${a}` : '';
+      })
+      .filter(Boolean)
+      .join('\n\n');
     const memoryContext = memories
       .map((m: any) => `${m.key}: ${JSON.stringify(m.value)}`)
       .join('\n');
 
-    const intent = await this.extractIntent(cleanedText, memoryContext, language);
+    const fullContext = [turnsContext ? `Recent conversation:\n${turnsContext}` : null, memoryContext || null]
+      .filter(Boolean)
+      .join('\n\n');
+
+    // PIPELINE: Intent Detection
+    const intent = await this.extractIntent(cleanedText, fullContext, language);
 
     // Normalize slot names from different models/providers so execution is deterministic.
     if (intent && typeof intent === 'object') {
@@ -449,31 +579,122 @@ export class VoiceService {
       };
     }
 
-    // Execute actions based on intent
+    // PIPELINE: Emotion Detection (separate from intent)
+    const emotion = detectEmotionHeuristic(cleanedText);
+
+    // PIPELINE: Confidence Scoring
     const missingSlots: string[] = Array.isArray(intent?.missing_slots) ? intent.missing_slots : [];
-    if (missingSlots.length > 0) {
-      const responseText = intent?.next_question || this.buildMissingTaskTitleMessage(language);
+    const slotConfidence = computeSlotConfidence({
+      intentName: String(intent?.intent || ''),
+      filled: intent?.filled_slots || {},
+      missing: missingSlots,
+    });
+    const confidence = computeConfidence({
+      intent_confidence_raw: intent?.confidence,
+      slot_confidence: slotConfidence,
+      floor: 0.65,
+    });
+
+    // PIPELINE: Decision Engine
+    const decision = decide({
+      intentName: String(intent?.intent || ''),
+      missingSlots,
+      confidence,
+      last_intent: state?.last_intent || null,
+      last_question: state?.last_question || null,
+      last_action: state?.last_action || null,
+    });
+
+    const emotionOverridesAction =
+      emotion && emotion.intensity >= 0.6 &&
+      ['stressed', 'confused', 'sad', 'frustrated', 'anxious', 'angry'].includes(emotion.label);
+
+    // QUESTION path: missing critical slots OR low confidence
+    if (decision.decision === 'QUESTION') {
+      let responseText = intent?.next_question || this.buildMissingTaskTitleMessage(language);
+      const lastQ = state?.last_question;
+      if (lastQ && responseText && lastQ.trim() === responseText.trim()) {
+        responseText = language === 'es'
+          ? 'Ok, lo pregunto de otra forma: ¿qué dato exacto te falta definirme para poder hacerlo ya?'
+          : 'Okay—another way: what exact detail do you need to tell me so I can do it right now?';
+      }
+
+      const lead = emotionLeadSentence(language, emotion);
+      responseText = lead ? `${lead} ${responseText}` : responseText;
+
       const audioUrl = await this.generateTTS(responseText, language);
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
         pending_intent: intent,
         pending_slots: { filled_slots: intent?.filled_slots || {} },
         next_question: responseText,
+        last_question: responseText,
+        last_intent: String(intent?.intent || ''),
       });
       return {
         transcription: cleanedText,
-        intent,
+        intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'QUESTION', original_text: cleanedText },
         action_result: null,
         response_text: responseText,
         response_audio_url: audioUrl,
       };
     }
 
-    const actionResult = await this.executeIntent(clerkUserId, intent, language);
+    // COACH path: mid confidence OR emotion override
+    if (decision.decision === 'COACH' || (decision.decision === 'ACTION' && emotionOverridesAction)) {
+      const responseText = await this.generateResponse(
+        {
+          ...intent,
+          emotion,
+          confidence: confidence.combined_confidence,
+          decision: 'COACH',
+          original_text: cleanedText,
+        },
+        null,
+        language,
+        userContext,
+      );
+      const audioUrl = await this.generateTTS(responseText, language);
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+        last_intent: String(intent?.intent || ''),
+        last_question: undefined,
+      });
+      return {
+        transcription: cleanedText,
+        intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'COACH', original_text: cleanedText },
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
 
-    // Generate TTS response
+    // IGNORE path: repeated intent/action lock
+    if (decision.decision === 'IGNORE') {
+      const responseText = language === 'es'
+        ? 'Ya lo tengo en marcha. Si quieres cambiar algo, dime exactamente qué parte.'
+        : 'I’ve got it in motion. If you want to change something, tell me exactly what.';
+      const audioUrl = await this.generateTTS(responseText, language);
+      return {
+        transcription: cleanedText,
+        intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'IGNORE', original_text: cleanedText },
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
+    // ACTION path
+    const actionResult = await this.executeIntent(clerkUserId, intent, language);
+    await this.profilesService.setConversationState(clerkUserId, {
+      preferred_language: language,
+      last_intent: String(intent?.intent || ''),
+      last_action: String(intent?.intent || ''),
+      last_question: undefined,
+    });
+
     const responseText = await this.generateResponse(
-      intent,
+      { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'ACTION', original_text: cleanedText },
       actionResult,
       language,
       userContext,
@@ -688,7 +909,11 @@ export class VoiceService {
             {
               role: 'system',
               content:
-                'Eres el Intent Engine de Leeloo Mom. NUNCA ejecutes acciones incompletas. Si faltan datos, llena missing_slots y formula next_question (una sola pregunta clara). Responde SOLO JSON válido.',
+                buildLeelooUniversalPrompt({ language, mode: 'intent' }) +
+                'INTENT MODE CONTRACT:\n' +
+                '- Output ONLY valid JSON.\n' +
+                '- NEVER output markdown.\n' +
+                '- If data is missing, fill missing_slots and write next_question as ONE clear question.\n',
             },
             { role: 'user', content: prompt },
           ],
@@ -712,14 +937,20 @@ export class VoiceService {
         traceId,
         ms: Date.now() - t0,
       });
-      return JSON.parse(content);
+      const parsed = JSON.parse(content);
+      // Ensure confidence is never 0; downstream uses a floor and combined scoring.
+      if (!parsed || typeof parsed !== 'object') return parsed;
+      if (typeof parsed.confidence !== 'number' || !Number.isFinite(parsed.confidence) || parsed.confidence <= 0) {
+        parsed.confidence = 0.65;
+      }
+      return parsed;
     } catch (err) {
       console.error('[LeelooApi] voice.llm.intent.error', {
         ...this.axiosErrorSummary(err),
       });
       return {
         intent: 'system_unavailable',
-        confidence: 0,
+        confidence: 0.65,
         required_slots: [],
         filled_slots: {},
         missing_slots: [],
@@ -749,27 +980,26 @@ export class VoiceService {
       return this.buildAiUnavailableMessage(language);
     }
 
-    const leelooCore =
-      'You are Leeloo.\n' +
-      'Leeloo is a high-intelligence AI companion, life coach, and trusted ally.\n' +
-      'You are voice-first: calm, warm, reassuring, confident.\n' +
-      'PRIMARY OBJECTIVE: deeply understand the user’s intent, context, emotional state, and goal.\n' +
-      'If helpfulness conflicts with schema/slots, choose helpfulness.\n' +
-      'Do NOT sound robotic or form-like.\n' +
-      'When info is missing, ask ONE focused question conversationally.\n' +
-      'Never mention JSON, intent, model, system, tools, or being an AI.\n' +
-      'Language is absolute: respond only in the requested language and keep it consistent.\n';
+    const leelooCore = buildLeelooUniversalPrompt({ language, mode: 'response' });
 
     const roleTone = userContext?.role ? `User role/context: ${userContext.role}.\n` : '';
+
+    const lead = intent?.emotion ? emotionLeadSentence(language, intent.emotion) : null;
+    const decision = intent?.decision || 'RESPONSE';
 
     const prompt =
       `${roleTone}` +
       `Language: ${language}.\n\n` +
+      `Decision: ${decision}.\n` +
+      `Combined confidence: ${JSON.stringify(intent?.confidence ?? null)}\n` +
       `User said: ${JSON.stringify(intent?.original_text || '')}\n` +
       `Intent (internal): ${JSON.stringify(intent)}\n` +
       `Action result (internal): ${JSON.stringify(actionResult)}\n\n` +
+      (lead ? `Start with this exact emotional lead sentence (then continue naturally): ${JSON.stringify(lead)}\n\n` : '') +
       'Write the user-facing response.\n' +
-      'Structure internally: Acknowledge -> Meaningful response -> Guided next step (if needed).\n' +
+      'If Decision=COACH: coach briefly, then ask ONE clarifying question.\n' +
+      'If Decision=ACTION: confirm completion clearly and give ONE next step option.\n' +
+      'If Decision=QUESTION: ask ONE crisp question.\n' +
       'Be concise but meaningful (2-6 short sentences).';
 
     try {
