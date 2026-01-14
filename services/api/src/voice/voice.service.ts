@@ -14,6 +14,43 @@ import { R2Service } from '../r2/r2.service';
 export class VoiceService {
   private readonly openai: OpenAI | null;
 
+  private createTraceId(prefix: string) {
+    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  private truncate(value: any, max = 800): string {
+    try {
+      const str =
+        typeof value === 'string'
+          ? value
+          : value instanceof Buffer
+            ? value.toString('utf8')
+            : JSON.stringify(value);
+      return str.length > max ? `${str.slice(0, max)}…(truncated ${str.length - max})` : str;
+    } catch {
+      try {
+        return String(value);
+      } catch {
+        return '[unprintable]';
+      }
+    }
+  }
+
+  private axiosErrorSummary(err: any) {
+    const status = err?.response?.status;
+    const method = err?.config?.method;
+    const url = err?.config?.url;
+    const data = err?.response?.data;
+    return {
+      status,
+      method,
+      url,
+      data_preview: data ? this.truncate(data, 1200) : undefined,
+      message: err?.message,
+      code: err?.code,
+    };
+  }
+
   constructor(
     private configService: ConfigService,
     private tasksService: TasksService,
@@ -34,11 +71,23 @@ export class VoiceService {
       return '';
     }
 
+    const traceId = (userContext as any)?.trace_id || this.createTraceId('voice');
+    const startedAt = Date.now();
+
     const endpoint =
       this.configService.get<string>('STT_ENDPOINT') ||
       this.configService.get<string>('WHISPER_ENDPOINT');
 
     const language = (userContext?.language || 'en').toLowerCase();
+
+    console.log('[LeelooApi] voice.stt.start', {
+      traceId,
+      bytes: audioBuffer.length,
+      language,
+      hasEndpoint: Boolean(endpoint),
+      endpoint,
+      hasOpenAI: Boolean(this.openai),
+    });
 
     if (endpoint) {
       try {
@@ -50,7 +99,8 @@ export class VoiceService {
         // Try OpenAI-style Whisper endpoint first: POST /v1/transcribe (multipart, field "file")
         try {
           const url = `${base}/v1/transcribe`;
-          console.log('[LeelooApi] STT: trying', url);
+          const t0 = Date.now();
+          console.log('[LeelooApi] voice.stt.try', { traceId, url });
           const form = new FormData();
           form.append('file', audioBuffer, {
             filename: 'audio.m4a',
@@ -69,14 +119,27 @@ export class VoiceService {
 
           const text = res.data?.text;
           const out = typeof text === 'string' ? text.trim() : '';
+          console.log('[LeelooApi] voice.stt.ok', {
+            traceId,
+            url,
+            status: res.status,
+            ms: Date.now() - t0,
+            hasText: Boolean(out),
+          });
           if (out) return out;
-        } catch {
+        } catch (err) {
+          console.warn('[LeelooApi] voice.stt.fail', {
+            traceId,
+            ...this.axiosErrorSummary(err),
+          });
           // Fall through to /asr
         }
 
         // Try whisper-asr-webservice style: POST /asr (multipart, field "audio_file")
         const url = `${base}/asr`;
-        console.log('[LeelooApi] STT: trying', url);
+        {
+          const t0 = Date.now();
+          console.log('[LeelooApi] voice.stt.try', { traceId, url });
         const form = new FormData();
         form.append('audio_file', audioBuffer, {
           filename: 'audio.m4a',
@@ -99,14 +162,25 @@ export class VoiceService {
         {
           const text = res.data?.text;
           const out = typeof text === 'string' ? text.trim() : '';
+          console.log('[LeelooApi] voice.stt.ok', {
+            traceId,
+            url,
+            status: res.status,
+            ms: Date.now() - t0,
+            hasText: Boolean(out),
+          });
           if (out) return out;
+        }
+
+        // If /asr returns 2xx but empty, keep trying.
         }
 
         // Try common FastAPI wrappers: POST /transcribe (multipart, field "file")
         // (Many deployments keep / as 404 but expose /docs and /openapi.json)
         {
           const url2 = `${base}/transcribe`;
-          console.log('[LeelooApi] STT: trying', url2);
+          const t0 = Date.now();
+          console.log('[LeelooApi] voice.stt.try', { traceId, url: url2 });
           const form2 = new FormData();
           form2.append('file', audioBuffer, {
             filename: 'audio.m4a',
@@ -125,21 +199,26 @@ export class VoiceService {
 
           const text2 = res2.data?.text;
           const out2 = typeof text2 === 'string' ? text2.trim() : '';
+          console.log('[LeelooApi] voice.stt.ok', {
+            traceId,
+            url: url2,
+            status: res2.status,
+            ms: Date.now() - t0,
+            hasText: Boolean(out2),
+          });
           if (out2) return out2;
         }
       } catch (err) {
-        const status = (err as any)?.response?.status;
-        const data = (err as any)?.response?.data;
-        console.error(
-          '[LeelooApi] STT error:',
-          status,
-          data || String(err),
-        );
+        console.error('[LeelooApi] voice.stt.error', {
+          traceId,
+          ...this.axiosErrorSummary(err),
+          total_ms: Date.now() - startedAt,
+        });
 
         // If external STT fails, fall back to OpenAI Whisper if available
       }
     } else {
-      console.error('[LeelooApi] STT: STT_ENDPOINT no configurado');
+      console.error('[LeelooApi] voice.stt.no_endpoint', { traceId });
     }
 
     // Fallback explícito: solo si hay OPENAI_API_KEY configurada.
@@ -160,10 +239,27 @@ export class VoiceService {
       });
 
       const text = (res as any)?.text;
-      return typeof text === 'string' ? text.trim() : '';
+      const out = typeof text === 'string' ? text.trim() : '';
+      console.log('[LeelooApi] voice.stt.openai.ok', {
+        traceId,
+        model,
+        total_ms: Date.now() - startedAt,
+        hasText: Boolean(out),
+      });
+      return out;
     } catch (err) {
-      console.error('[LeelooApi] OpenAI STT error:', (err as any)?.status, (err as any)?.error || String(err));
+      console.error('[LeelooApi] voice.stt.openai.error', {
+        traceId,
+        status: (err as any)?.status,
+        error: (err as any)?.error || String(err),
+        total_ms: Date.now() - startedAt,
+      });
       return '';
+    } finally {
+      console.log('[LeelooApi] voice.stt.end', {
+        traceId,
+        total_ms: Date.now() - startedAt,
+      });
     }
   }
 
@@ -453,6 +549,14 @@ export class VoiceService {
       `Idioma: ${language}.`;
 
     try {
+      const traceId = this.createTraceId('llm_intent');
+      const t0 = Date.now();
+      console.log('[LeelooApi] voice.llm.intent.start', {
+        traceId,
+        endpoint,
+        model,
+        language,
+      });
       const res = await axios.post(
         endpoint,
         {
@@ -481,9 +585,15 @@ export class VoiceService {
         throw new Error('No content from LLM');
       }
 
+      console.log('[LeelooApi] voice.llm.intent.ok', {
+        traceId,
+        ms: Date.now() - t0,
+      });
       return JSON.parse(content);
     } catch (err) {
-      console.error('[LeelooApi] LLM intent error:', (err as any)?.response?.status, (err as any)?.response?.data || String(err));
+      console.error('[LeelooApi] voice.llm.intent.error', {
+        ...this.axiosErrorSummary(err),
+      });
       return {
         intent: 'system_unavailable',
         confidence: 0,
@@ -540,6 +650,8 @@ export class VoiceService {
       'Be concise but meaningful (2-6 short sentences).';
 
     try {
+      const traceId = this.createTraceId('llm_resp');
+      const t0 = Date.now();
       const res = await axios.post(
         endpoint,
         {
@@ -568,9 +680,15 @@ export class VoiceService {
         throw new Error('No content from LLM');
       }
 
+      console.log('[LeelooApi] voice.llm.response.ok', {
+        traceId,
+        ms: Date.now() - t0,
+      });
       return content;
     } catch (err) {
-      console.error('[LeelooApi] LLM response error:', (err as any)?.response?.status, (err as any)?.response?.data || String(err));
+      console.error('[LeelooApi] voice.llm.response.error', {
+        ...this.axiosErrorSummary(err),
+      });
       return this.buildAiUnavailableMessage(language);
     }
   }
