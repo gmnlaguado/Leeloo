@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import FormData from 'form-data';
+import FormData = require('form-data');
 import OpenAI from 'openai';
 import { toFile } from 'openai/uploads';
 import { TasksService } from '../tasks/tasks.service';
