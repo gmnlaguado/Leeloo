@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 
-export type SupportedLanguage = 'es' | 'en' | 'pt' | 'fr';
+export type SupportedLanguage = 'es' | 'en' | 'pt' | 'fr' | 'ja';
 
 @Injectable()
 export class ProfilesService {
@@ -41,12 +41,12 @@ export class ProfilesService {
   getPreferredLanguage(profile: any): SupportedLanguage | null {
     const state = this.getConversationState(profile);
     const lang = state?.preferred_language;
-    if (lang === 'es' || lang === 'en' || lang === 'pt' || lang === 'fr') {
+    if (lang === 'es' || lang === 'en' || lang === 'pt' || lang === 'fr' || lang === 'ja') {
       return lang;
     }
 
     const locale = profile?.locale;
-    if (locale === 'es' || locale === 'en' || locale === 'pt' || locale === 'fr') {
+    if (locale === 'es' || locale === 'en' || locale === 'pt' || locale === 'fr' || locale === 'ja') {
       return locale;
     }
 
@@ -57,7 +57,7 @@ export class ProfilesService {
     clerkUserId: string,
     defaults?: { language?: SupportedLanguage },
   ) {
-    const language = defaults?.language || 'es';
+    const language = defaults?.language || 'en';
 
     const existing = await this.getProfileByClerkUserId(clerkUserId);
     if (existing) return existing;

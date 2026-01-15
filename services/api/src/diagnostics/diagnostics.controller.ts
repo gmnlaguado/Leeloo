@@ -1,6 +1,7 @@
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 import { AuthGuard } from '../auth/auth.guard';
 import { ProfilesService } from '../profiles/profiles.service';
 
@@ -45,5 +46,58 @@ export class DiagnosticsController {
       claims,
       profile,
     };
+  }
+
+  @Get('llm')
+  @ApiOperation({ summary: 'Diagnostics: LLM endpoint reachability' })
+  async llm() {
+    const endpoint =
+      this.configService.get<string>('LLM_ENDPOINT') ||
+      this.configService.get<string>('LOCAL_LLM_ENDPOINT');
+    const model =
+      this.configService.get<string>('LLM_MODEL') ||
+      this.configService.get<string>('LOCAL_LLM_MODEL');
+
+    if (!endpoint || !model) {
+      return {
+        has_endpoint: Boolean(endpoint),
+        has_model: Boolean(model),
+        reachable: false,
+        error: 'missing LLM_ENDPOINT and/or LLM_MODEL',
+      };
+    }
+
+    const t0 = Date.now();
+    try {
+      const res = await axios.post(
+        endpoint,
+        {
+          model,
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 1,
+          temperature: 0,
+        },
+        { timeout: 8000 },
+      );
+
+      return {
+        has_endpoint: true,
+        has_model: true,
+        reachable: true,
+        ms: Date.now() - t0,
+        status: res.status,
+      };
+    } catch (err) {
+      const status = (err as any)?.response?.status;
+      const message = (err as any)?.message || String(err);
+      return {
+        has_endpoint: true,
+        has_model: true,
+        reachable: false,
+        ms: Date.now() - t0,
+        status: status || null,
+        error: message,
+      };
+    }
   }
 }

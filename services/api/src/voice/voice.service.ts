@@ -388,6 +388,14 @@ export class VoiceService {
       requestedLanguage = 'pt';
     } else if (lower.includes('français') || lower.includes('francais') || lower.includes('french')) {
       requestedLanguage = 'fr';
+    } else if (
+      lower.includes('japanese') ||
+      lower.includes('nihongo') ||
+      lower.includes('日本語') ||
+      lower.includes('japonés') ||
+      lower.includes('japones')
+    ) {
+      requestedLanguage = 'ja';
     }
 
     if (requestedLanguage) {
@@ -404,7 +412,9 @@ export class VoiceService {
             ? 'Listo. A partir de ahora te hablo en español.'
             : language === 'pt'
               ? 'Certo. A partir de agora vou falar em português.'
-              : 'D’accord. Je parlerai français à partir de maintenant.';
+              : language === 'fr'
+                ? 'D’accord. Je parlerai français à partir de maintenant.'
+                : 'わかった。これから日本語で話すね。';
       const audioUrl = await this.generateTTS(responseText, language);
       return {
         transcription: cleanedText,
@@ -1161,6 +1171,8 @@ export class VoiceService {
         return 'No momento não consigo acessar o serviço de IA. Você pode tentar novamente em alguns segundos?';
       case 'fr':
         return "Je n'arrive pas à me connecter au service d'IA pour le moment. Peux-tu réessayer dans quelques secondes ?";
+      case 'ja':
+        return '今はAIサービスに接続できません。数秒後にもう一度試してくれる？';
       case 'en':
       default:
         return "I can't reach the AI service right now. Can you try again in a few seconds?";
@@ -1175,6 +1187,8 @@ export class VoiceService {
         return 'Não consegui transcrever seu áudio com clareza. Você pode repetir ou digitar?';
       case 'fr':
         return "Je n'ai pas pu transcrire ton audio clairement. Peux-tu répéter ou écrire ?";
+      case 'ja':
+        return '音声をうまく文字起こしできなかった。もう一度言うか、テキストで送ってくれる？';
       case 'en':
       default:
         return "I couldn't transcribe your audio clearly. Can you repeat it or type it?";

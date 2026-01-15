@@ -9,7 +9,7 @@ export class ProcessVoiceDto {
 
   @ApiProperty({
     required: false,
-    description: 'UI language for this request (es|en|pt|fr)',
+    description: 'UI language for this request (es|en|pt|fr|ja)',
   })
   @IsOptional()
   @IsString()
