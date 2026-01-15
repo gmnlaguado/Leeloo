@@ -723,12 +723,41 @@ export class VoiceService {
       last_question: undefined,
     });
 
-    const responseText = await this.generateResponse(
-      { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'ACTION', original_text: cleanedText },
-      actionResult,
-      language,
-      userContext,
-    );
+    let responseText: string;
+    if (String(intent?.intent || '') === 'send_email') {
+      const meta = (actionResult as any)?.metadata || {};
+      const status = String(meta?.status || '').toLowerCase();
+      const to = String(intent?.filled_slots?.to || intent?.filled_slots?.email || '').trim();
+      const subject = String(intent?.filled_slots?.subject || intent?.filled_slots?.title || 'Message').trim();
+
+      if (status === 'sent') {
+        responseText =
+          language === 'es'
+            ? `Listo. Ya envié el correo a ${to} con asunto "${subject}".`
+            : `Done. I sent the email to ${to} with subject "${subject}".`;
+      } else if (status === 'failed') {
+        const err = String(meta?.error || '').toLowerCase();
+        const missingProvider = err.includes('missing resend_api_key') || err.includes('missing email_from') || err.includes('provider is not configured');
+        responseText = missingProvider
+          ? (language === 'es'
+              ? 'Puedo enviarlo, pero ahora mismo el servicio de correo no está configurado. Configura RESEND_API_KEY y EMAIL_FROM en Render y vuelvo a intentarlo.'
+              : 'I can send it, but the email provider is not configured. Set RESEND_API_KEY and EMAIL_FROM in Render and I’ll try again.')
+          : (language === 'es'
+              ? 'Intenté enviar el correo, pero falló. ¿Quieres que lo intente de nuevo o que revisemos el destinatario y el contenido?'
+              : 'I tried to send the email, but it failed. Want me to retry, or should we double-check the recipient and message?');
+      } else {
+        responseText = language === 'es'
+          ? 'Estoy lista para enviar el correo. ¿Quieres que lo envíe ahora?'
+          : 'I’m ready to send the email. Do you want me to send it now?';
+      }
+    } else {
+      responseText = await this.generateResponse(
+        { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'ACTION', original_text: cleanedText },
+        actionResult,
+        language,
+        userContext,
+      );
+    }
     const audioUrl = await this.generateTTS(responseText, language);
 
     try {
@@ -898,7 +927,7 @@ export class VoiceService {
     if (!endpoint || !model) {
       return {
         intent: 'system_unavailable',
-        confidence: 0,
+        confidence: 0.65,
         required_slots: [],
         filled_slots: {},
         missing_slots: [],
