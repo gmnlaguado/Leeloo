@@ -156,10 +156,24 @@ export const useVoiceStore = create<VoiceState>((set) => ({
       const msg = e?.message || 'Voice request failed.';
 
       if (typeof status === 'number') {
-        const detail =
+        let detail =
           typeof data === 'string'
             ? data
             : data?.message || data?.error || JSON.stringify(data);
+
+        const isHtml =
+          typeof detail === 'string' &&
+          (detail.includes('<!DOCTYPE html') || detail.includes('<html') || detail.includes('<head>'));
+
+        if (isHtml) {
+          detail =
+            'The voice service is temporarily unavailable (upstream error). Please try again in a few seconds.';
+        }
+
+        if (typeof detail === 'string' && detail.length > 800) {
+          detail = `${detail.slice(0, 800)}…`;
+        }
+
         set({ lastError: `HTTP ${status}: ${detail}` });
       } else if (msg === 'Network Error') {
         set({
