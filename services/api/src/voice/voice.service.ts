@@ -829,8 +829,11 @@ export class VoiceService {
         let sendResult: any = null;
         let sendError: string | null = null;
 
+        const profile = await this.profilesService.ensureProfileByClerkUserId(clerkUserId);
+        const replyTo = profile?.preferences?.user_identity?.reply_to_email;
+
         try {
-          sendResult = await this.emailService.sendEmail({ to, subject, text });
+          sendResult = await this.emailService.sendEmail({ to, subject, text, replyTo });
           sendOk = true;
         } catch (err) {
           sendError = String(err);

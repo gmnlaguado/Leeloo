@@ -79,6 +79,24 @@ export class ProfilesService {
     return res.rows[0] || null;
   }
 
+  async upsertUserIdentity(
+    clerkUserId: string,
+    identity: { display_name?: string; reply_to_email?: string },
+  ) {
+    const existing = await this.ensureProfileByClerkUserId(clerkUserId);
+    const current = (existing?.preferences?.user_identity && typeof existing.preferences.user_identity === 'object')
+      ? existing.preferences.user_identity
+      : {};
+
+    const next = {
+      ...current,
+      ...(identity.display_name !== undefined ? { display_name: identity.display_name } : {}),
+      ...(identity.reply_to_email !== undefined ? { reply_to_email: identity.reply_to_email } : {}),
+    };
+
+    return this.updatePreferences(clerkUserId, { user_identity: next });
+  }
+
   async updatePreferences(clerkUserId: string, patch: Record<string, any>) {
     const res = await this.db.query(
       `UPDATE profiles

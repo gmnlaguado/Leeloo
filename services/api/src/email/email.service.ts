@@ -6,12 +6,17 @@ import axios from 'axios';
 export class EmailService {
   constructor(private readonly configService: ConfigService) {}
 
-  async sendEmail(params: { to: string; subject: string; text: string }): Promise<{ id: string; provider: string }> {
+  async sendEmail(params: {
+    to: string;
+    subject: string;
+    text: string;
+    replyTo?: string;
+  }): Promise<{ id: string; provider: string }> {
     const apiKey = this.configService.get<string>('RESEND_API_KEY');
     const from = this.configService.get<string>('EMAIL_FROM');
 
     if (!apiKey || !from) {
-      throw new Error('Email is not configured');
+      throw new Error('Email provider is not configured (missing RESEND_API_KEY or EMAIL_FROM)');
     }
 
     const res = await axios.post(
@@ -21,6 +26,7 @@ export class EmailService {
         to: params.to,
         subject: params.subject,
         text: params.text,
+        ...(params.replyTo ? { reply_to: params.replyTo } : {}),
       },
       {
         headers: {

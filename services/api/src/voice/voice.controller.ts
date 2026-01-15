@@ -42,12 +42,42 @@ export class VoiceController {
     @Request() req: any,
   ) {
     const userId = req.user.id;
+    const claims = req.user?.claims || {};
 
     // Prefer persisted language from profile/conversation state.
     // dto.language is treated as a UI hint, not authoritative.
     const profile = await this.profilesService.ensureProfileByClerkUserId(userId, {
       language: ((dto?.user_context?.language || dto?.language || 'en').toLowerCase() as any) || 'en',
     });
+
+    // Best-effort identity capture from auth provider (Clerk/Google).
+    // We store it as preferences.user_identity so mobile Settings can show/edit defaults.
+    try {
+      const displayName =
+        typeof claims?.name === 'string'
+          ? claims.name
+          : typeof claims?.full_name === 'string'
+            ? claims.full_name
+            : typeof claims?.given_name === 'string'
+              ? claims.given_name
+              : undefined;
+
+      const email =
+        typeof claims?.email === 'string'
+          ? claims.email
+          : typeof claims?.primary_email_address === 'string'
+            ? claims.primary_email_address
+            : undefined;
+
+      if (displayName || email) {
+        await this.profilesService.upsertUserIdentity(userId, {
+          ...(displayName ? { display_name: displayName } : {}),
+          ...(email ? { reply_to_email: email } : {}),
+        });
+      }
+    } catch {
+      // best effort only
+    }
     const preferredLanguage = this.profilesService.getPreferredLanguage(profile) || 'en';
 
     const userContext = {
