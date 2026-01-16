@@ -1,6 +1,6 @@
 import { ConfidenceBreakdown } from './confidence';
 
-export type DecisionType = 'ACTION' | 'QUESTION' | 'COACH' | 'IGNORE';
+export type DecisionType = 'ACTION' | 'QUESTION' | 'COACH' | 'CONVERSATION' | 'IGNORE';
 
 export type DecisionInput = {
   intentName: string;
@@ -19,6 +19,18 @@ export type DecisionOutput = {
 export function decide(input: DecisionInput): DecisionOutput {
   const { intentName, missingSlots, confidence, last_intent, last_action } = input;
   const c = confidence.combined_confidence;
+
+  // Conversational intents should never trigger ACTION.
+  if (
+    intentName === 'greeting' ||
+    intentName === 'small_talk' ||
+    intentName === 'emotional_expression' ||
+    intentName === 'daily_planning' ||
+    intentName === 'query' ||
+    intentName === 'emotional_support'
+  ) {
+    return { decision: 'CONVERSATION', reason: 'conversational_intent' };
+  }
 
   // Hard block: missing critical slots => QUESTION (even if confidence is high)
   if (missingSlots && missingSlots.length > 0) {

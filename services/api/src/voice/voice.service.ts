@@ -427,6 +427,35 @@ export class VoiceService {
       /^\s*(hola|buenas|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|hey|hello|hi|yo)\b/.test(t) ||
       /^\s*(c[oó]mo\s+est[aá]s|how\s+are\s+you)\b/.test(t);
 
+    const conversationalIntent = (() => {
+      const lower = t;
+      const isEmotional =
+        /\b(estoy\s+(triste|mal|ansioso|ansiosa|estresado|estresada|frustrado|frustrada|enojado|enojada)|me\s+siento\s+(triste|mal|ansioso|ansiosa|estresado|estresada|frustrado|frustrada|enojado|enojada))\b/.test(lower) ||
+        /\b(i\s*(am|'m)\s+(sad|down|anxious|stressed|frustrated|angry)|i\s+feel\s+(sad|down|anxious|stressed|frustrated|angry))\b/.test(lower);
+
+      const isDailyPlanning =
+        /\b(planifica(mi\s+d[ií]a|el\s+d[ií]a)|organiza(mi\s+d[ií]a|el\s+d[ií]a)|agenda|mi\s+agenda|qu[eé]\s+tengo\s+hoy|hoy\s+qu[eé]\s+tengo)\b/.test(lower) ||
+        /\b(plan\s+my\s+day|organize\s+my\s+day|my\s+schedule|what\s+do\s+i\s+have\s+today|today\s+what\s+do\s+i\s+have)\b/.test(lower);
+
+      const isSmallTalk =
+        /^\s*(gracias|thank\s+you)\b/.test(lower) ||
+        /^\s*(qu[eé]\s+tal|todo\s+bien|c[oó]mo\s+vas|what'?s\s+up|how'?s\s+it\s+going)\b/.test(lower);
+
+      if (isGreeting) {
+        return { intent: 'greeting', confidence: 0.95 };
+      }
+      if (isEmotional) {
+        return { intent: 'emotional_expression', confidence: 0.9 };
+      }
+      if (isDailyPlanning) {
+        return { intent: 'daily_planning', confidence: 0.9 };
+      }
+      if (isSmallTalk) {
+        return { intent: 'small_talk', confidence: 0.85 };
+      }
+      return null;
+    })();
+
     // Premium safety: if the user greets while a send_email flow is pending,
     // cancel the pending flow instead of treating the greeting as the email body.
     if (state?.pending_intent && isGreeting && String(state.pending_intent?.intent || '') === 'send_email') {
@@ -746,7 +775,39 @@ export class VoiceService {
       .join('\n\n');
 
     // PIPELINE: Intent Detection
-    const intent = await this.extractIntent(cleanedText, fullContext, language);
+    const intent = conversationalIntent || (await this.extractIntent(cleanedText, fullContext, language));
+
+    if (intent?.intent === 'set_language') {
+      const requested = String((intent as any)?.language || '').toLowerCase() as SupportedLanguage;
+      if (requested === 'es' || requested === 'en' || requested === 'pt' || requested === 'fr' || requested === 'ja') {
+        language = requested;
+        await this.profilesService.ensureProfileByClerkUserId(clerkUserId, { language });
+        await this.profilesService.updateLanguage(clerkUserId, language);
+        await this.profilesService.clearConversationState(clerkUserId);
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+        });
+
+        const responseText =
+          language === 'en'
+            ? "Got it. I'll speak English from now on."
+            : language === 'es'
+              ? 'Listo. A partir de ahora te hablo en español.'
+              : language === 'pt'
+                ? 'Certo. A partir de agora vou falar em português.'
+                : language === 'fr'
+                  ? 'D’accord. Je parlerai français à partir de maintenant.'
+                  : 'わかった。これから日本語で話すね。';
+        const audioUrl = await this.generateTTS(responseText, language);
+        return {
+          transcription: cleanedText,
+          intent: { ...intent, confidence: 1, language },
+          action_result: { preferred_language: language },
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+    }
 
     // Normalize slot names from different models/providers so execution is deterministic.
     if (intent && typeof intent === 'object') {
@@ -850,6 +911,34 @@ export class VoiceService {
       return {
         transcription: cleanedText,
         intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'QUESTION', original_text: cleanedText },
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
+    if (decision.decision === 'CONVERSATION') {
+      const responseText = await this.generateResponse(
+        {
+          ...intent,
+          emotion,
+          confidence: confidence.combined_confidence,
+          decision: 'COACH',
+          original_text: cleanedText,
+        },
+        null,
+        language,
+        userContext,
+      );
+      const audioUrl = await this.generateTTS(responseText, language);
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+        last_intent: String(intent?.intent || ''),
+        last_question: undefined,
+      });
+      return {
+        transcription: cleanedText,
+        intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'CONVERSATION', original_text: cleanedText },
         action_result: null,
         response_text: responseText,
         response_audio_url: audioUrl,
@@ -1127,7 +1216,8 @@ export class VoiceService {
       `Texto del usuario: "${text}"\n\n` +
       'Devuelve SOLO JSON (sin markdown) con este schema fijo:\n' +
       '{\n' +
-      '  "intent": "schedule_meeting" | "create_task" | "reminder" | "send_email" | "emotional_support" | "query",\n' +
+      '  "intent": "schedule_meeting" | "create_task" | "reminder" | "send_email" | "emotional_support" | "query" | "greeting" | "small_talk" | "emotional_expression" | "daily_planning" | "set_language",\n' +
+      '  "language": "es" | "en" | "pt" | "fr" | "ja" | null,\n' +
       '  "confidence": 0.0,\n' +
       '  "required_slots": [],\n' +
       '  "filled_slots": {},\n' +
