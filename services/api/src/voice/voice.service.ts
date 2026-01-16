@@ -348,45 +348,104 @@ export class VoiceService {
       };
     }
 
-    // Deterministic greeting/small talk gate (prevents intent bias from recent action context).
-    // Only applies when we're NOT in a pending slot-filling flow.
-    if (!state?.pending_intent) {
-      const t = cleanedText.toLowerCase();
-      const isGreeting =
-        /^\s*(hola|buenas|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|hey|hello|hi|yo)\b/.test(t) ||
-        /^\s*(c[oó]mo\s+est[aá]s|how\s+are\s+you)\b/.test(t);
+    const t = cleanedText.toLowerCase();
+    const isGreeting =
+      /^\s*(hola|buenas|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|hey|hello|hi|yo)\b/.test(t) ||
+      /^\s*(c[oó]mo\s+est[aá]s|how\s+are\s+you)\b/.test(t);
 
-      if (isGreeting) {
-        const responseText =
-          language === 'es'
-            ? 'Hola. Qué gusto escucharte. ¿Cómo estás hoy, de verdad?'
-            : "Hey. I’m really glad you’re here. How are you—really?";
-        const audioUrl = await this.generateTTS(responseText, language);
-        await this.profilesService.setConversationState(clerkUserId, {
-          preferred_language: language,
-          last_intent: 'query',
-          last_action: undefined,
-          last_question: responseText,
-        });
-        return {
-          transcription: cleanedText,
-          intent: { intent: 'query', confidence: 0.9, decision: 'COACH', original_text: cleanedText },
-          action_result: null,
-          response_text: responseText,
-          response_audio_url: audioUrl,
-        };
-      }
+    // Premium safety: if the user greets while a send_email flow is pending,
+    // cancel the pending flow instead of treating the greeting as the email body.
+    if (state?.pending_intent && isGreeting && String(state.pending_intent?.intent || '') === 'send_email') {
+      await this.profilesService.clearConversationState(clerkUserId);
+      const responseText =
+        language === 'es'
+          ? 'Hola. Estoy aquí contigo. ¿Cómo estás hoy, de verdad?'
+          : "Hey. I’m here with you. How are you—really?";
+      const audioUrl = await this.generateTTS(responseText, language);
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+        last_intent: 'query',
+        last_action: undefined,
+        last_question: responseText,
+      });
+      return {
+        transcription: cleanedText,
+        intent: { intent: 'query', confidence: 0.9, decision: 'COACH', original_text: cleanedText },
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
     }
 
-    const lower = cleanedText.toLowerCase();
+    // Normal deterministic greeting gate (prevents intent bias from recent action context).
+    // Only applies when we're NOT in a pending slot-filling flow.
+    if (!state?.pending_intent && isGreeting) {
+      const responseText =
+        language === 'es'
+          ? 'Hola. Qué gusto escucharte. ¿Cómo estás hoy, de verdad?'
+          : "Hey. I’m really glad you’re here. How are you—really?";
+      const audioUrl = await this.generateTTS(responseText, language);
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+        last_intent: 'query',
+        last_action: undefined,
+        last_question: responseText,
+      });
+      return {
+        transcription: cleanedText,
+        intent: { intent: 'query', confidence: 0.9, decision: 'COACH', original_text: cleanedText },
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
+    const lower = t;
     let requestedLanguage: SupportedLanguage | null = null;
-    if (lower.includes('english') || lower.includes('inglés') || lower.includes('ingles')) {
+    const wantsEnglish =
+      lower.includes('english') ||
+      lower.includes('inglés') ||
+      lower.includes('ingles') ||
+      lower.includes('speak english') ||
+      lower.includes('in english') ||
+      lower.includes('habla en inglés') ||
+      lower.includes('habla en ingles') ||
+      lower.includes('cambia a inglés') ||
+      lower.includes('cambia a ingles');
+    const wantsSpanish =
+      lower.includes('español') ||
+      lower.includes('espanol') ||
+      lower.includes('spanish') ||
+      lower.includes('speak spanish') ||
+      lower.includes('in spanish') ||
+      lower.includes('habla en español') ||
+      lower.includes('habla en espanol') ||
+      lower.includes('cambia a español') ||
+      lower.includes('cambia a espanol');
+    const wantsPortuguese =
+      lower.includes('portugu') ||
+      lower.includes('speak portuguese') ||
+      lower.includes('in portuguese') ||
+      lower.includes('habla en portugu') ||
+      lower.includes('cambia a portugu');
+    const wantsFrench =
+      lower.includes('français') ||
+      lower.includes('francais') ||
+      lower.includes('french') ||
+      lower.includes('speak french') ||
+      lower.includes('in french') ||
+      lower.includes('habla en francés') ||
+      lower.includes('habla en frances') ||
+      lower.includes('cambia a francés') ||
+      lower.includes('cambia a frances');
+
+    if (wantsEnglish) {
       requestedLanguage = 'en';
-    } else if (lower.includes('español') || lower.includes('espanol') || lower.includes('spanish')) {
+    } else if (wantsSpanish) {
       requestedLanguage = 'es';
-    } else if (lower.includes('portugu') || lower.includes('português') || lower.includes('português')) {
+    } else if (wantsPortuguese) {
       requestedLanguage = 'pt';
-    } else if (lower.includes('français') || lower.includes('francais') || lower.includes('french')) {
+    } else if (wantsFrench) {
       requestedLanguage = 'fr';
     } else if (
       lower.includes('japanese') ||
@@ -402,6 +461,8 @@ export class VoiceService {
       language = requestedLanguage;
       await this.profilesService.ensureProfileByClerkUserId(clerkUserId, { language });
       await this.profilesService.updateLanguage(clerkUserId, language);
+      // Ensure no stale pending flow keeps forcing prior language/intent context.
+      await this.profilesService.clearConversationState(clerkUserId);
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
       });
@@ -436,10 +497,51 @@ export class VoiceService {
       const slotToFill = missingSlots[0] || null;
 
       if (slotToFill) {
+        const normalizeEmail = (raw: string): string => {
+          const s = String(raw || '').trim().toLowerCase();
+          if (!s) return '';
+          return s
+            .replace(/\s+at\s+/g, '@')
+            .replace(/\s+arroba\s+/g, '@')
+            .replace(/\s+dot\s+/g, '.')
+            .replace(/\s+punto\s+/g, '.')
+            .replace(/\s+/g, '')
+            .replace(/,+/g, '')
+            .replace(/;+/g, '');
+        };
+
+        const value = slotToFill === 'to' ? normalizeEmail(cleanedText) : cleanedText;
+
+        if (slotToFill === 'to') {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!value || !emailRegex.test(value)) {
+            const responseText =
+              language === 'es'
+                ? 'No alcancé a captar bien el correo. Dímelo de nuevo, o deletrea el usuario y el dominio (por ejemplo: g-n-i-n-o arroba gmail punto com).'
+                : "I didn't catch the email address clearly. Say it again, or spell it (for example: g-n-i-n-o at gmail dot com).";
+            const audioUrl = await this.generateTTS(responseText, language);
+            await this.profilesService.setConversationState(clerkUserId, {
+              preferred_language: language,
+              pending_intent: pendingIntent,
+              pending_slots: { filled_slots: pendingSlots?.filled_slots || {} },
+              next_question: responseText,
+              last_question: responseText,
+              last_intent: String(pendingIntent?.intent || ''),
+            });
+            return {
+              transcription: cleanedText,
+              intent: pendingIntent,
+              action_result: null,
+              response_text: responseText,
+              response_audio_url: audioUrl,
+            };
+          }
+        }
+
         const filled = {
           ...(pendingIntent?.filled_slots || {}),
           ...(pendingSlots?.filled_slots || {}),
-          [slotToFill]: cleanedText,
+          [slotToFill]: value,
         };
 
         const newMissing = missingSlots.slice(1);

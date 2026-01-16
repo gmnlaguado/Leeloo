@@ -48,6 +48,22 @@ export class DiagnosticsController {
     };
   }
 
+  @Get('state')
+  @ApiOperation({ summary: 'Diagnostics: profile language + conversation state' })
+  async state(@Req() req: AuthedRequest) {
+    const userId = req.user.id;
+    const profile = await this.profilesService.ensureProfileByClerkUserId(userId);
+    const preferred = this.profilesService.getPreferredLanguage(profile);
+    const state = this.profilesService.getConversationState(profile);
+
+    return {
+      user_id: userId,
+      profile_locale: profile?.locale || null,
+      preferred_language: preferred || null,
+      conversation_state: state,
+    };
+  }
+
   @Get('llm')
   @ApiOperation({ summary: 'Diagnostics: LLM endpoint reachability' })
   async llm() {
