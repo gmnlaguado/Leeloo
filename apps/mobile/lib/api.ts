@@ -2,6 +2,8 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 import { getAuthToken } from './authToken';
 
+declare const __DEV__: boolean;
+
 const getDefaultApiBaseUrl = () => {
   const hostUri =
     (Constants.expoConfig as any)?.hostUri ||
@@ -21,20 +23,33 @@ const FALLBACK_BEARER_TOKEN =
     | undefined) ||
   ((Constants.expoConfig as any)?.extra?.bearerToken as string | undefined);
 
+const SHOULD_LOG_AUTH_TOKEN =
+  process.env.EXPO_PUBLIC_LOG_AUTH_TOKEN === 'true' ||
+  ((Constants.expoConfig as any)?.extra?.EXPO_PUBLIC_LOG_AUTH_TOKEN as string | undefined) === 'true';
+
 const API_V1_BASE_URL = `${API_BASE_URL}/v1`;
 
 const resolveBearerToken = async (): Promise<{ token?: string; source: string }> => {
+  const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
   let clerkToken: string | undefined;
   try {
     clerkToken = await getAuthToken();
   } catch (e) {
-    if (__DEV__) {
+    if (isDev) {
       console.log('[api] getAuthToken failed:', String(e));
     }
   }
 
   const token = clerkToken || FALLBACK_BEARER_TOKEN;
   const source = clerkToken ? 'clerk' : FALLBACK_BEARER_TOKEN ? 'env' : 'none';
+
+  if (isDev && token && source === 'clerk') {
+    const preview = `${token.slice(0, 12)}…${token.slice(-12)}`;
+    console.log('[api] clerk jwt preview =', preview);
+    if (SHOULD_LOG_AUTH_TOKEN) {
+      console.log('[api] clerk jwt (full) =', token);
+    }
+  }
 
   return { token, source };
 };
