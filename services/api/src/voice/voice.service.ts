@@ -80,6 +80,16 @@ export class VoiceService {
     const traceId = (userContext as any)?.trace_id || this.createTraceId('voice');
     const startedAt = Date.now();
 
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const isRateLimited = (err: any) => {
+      const status = err?.response?.status;
+      if (status === 429) return true;
+      const data = err?.response?.data;
+      if (typeof data === 'string' && data.includes('Just a moment')) return true;
+      return false;
+    };
+
     const endpoint =
       this.configService.get<string>('STT_ENDPOINT') ||
       this.configService.get<string>('WHISPER_ENDPOINT');
@@ -114,14 +124,45 @@ export class VoiceService {
           });
           form.append('language', language);
 
-          const res = await axios.post(url, form, {
-            timeout: 120000,
-            headers: {
-              ...form.getHeaders(),
-            },
-            maxBodyLength: Infinity,
-            maxContentLength: Infinity,
-          });
+          let res;
+          try {
+            res = await axios.post(url, form, {
+              timeout: 120000,
+              headers: {
+                ...form.getHeaders(),
+              },
+              maxBodyLength: Infinity,
+              maxContentLength: Infinity,
+            });
+          } catch (err) {
+            if (isRateLimited(err)) {
+              console.warn('[LeelooApi] voice.stt.rate_limited', {
+                traceId,
+                stt_url: url,
+                ...this.axiosErrorSummary(err),
+              });
+              await sleep(900);
+              try {
+                res = await axios.post(url, form, {
+                  timeout: 120000,
+                  headers: {
+                    ...form.getHeaders(),
+                  },
+                  maxBodyLength: Infinity,
+                  maxContentLength: Infinity,
+                });
+              } catch (err2) {
+                console.warn('[LeelooApi] voice.stt.rate_limited.retry_failed', {
+                  traceId,
+                  stt_url: url,
+                  ...this.axiosErrorSummary(err2),
+                });
+                return '';
+              }
+            } else {
+              throw err;
+            }
+          }
 
           const text = res.data?.text;
           const out = typeof text === 'string' ? text.trim() : '';
@@ -138,6 +179,9 @@ export class VoiceService {
             traceId,
             ...this.axiosErrorSummary(err),
           });
+          if (isRateLimited(err)) {
+            return '';
+          }
           // Fall through to /asr
         }
 
@@ -156,14 +200,27 @@ export class VoiceService {
         // request JSON response when supported
         form.append('output', 'json');
 
-        const res = await axios.post(url, form, {
-          timeout: 120000,
-          headers: {
-            ...form.getHeaders(),
-          },
-          maxBodyLength: Infinity,
-          maxContentLength: Infinity,
-        });
+        let res;
+        try {
+          res = await axios.post(url, form, {
+            timeout: 120000,
+            headers: {
+              ...form.getHeaders(),
+            },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+          });
+        } catch (err) {
+          if (isRateLimited(err)) {
+            console.warn('[LeelooApi] voice.stt.rate_limited', {
+              traceId,
+              stt_url: url,
+              ...this.axiosErrorSummary(err),
+            });
+            return '';
+          }
+          throw err;
+        }
 
         {
           const text = res.data?.text;
@@ -194,14 +251,27 @@ export class VoiceService {
           });
           form2.append('language', language);
 
-          const res2 = await axios.post(url2, form2, {
-            timeout: 120000,
-            headers: {
-              ...form2.getHeaders(),
-            },
-            maxBodyLength: Infinity,
-            maxContentLength: Infinity,
-          });
+          let res2;
+          try {
+            res2 = await axios.post(url2, form2, {
+              timeout: 120000,
+              headers: {
+                ...form2.getHeaders(),
+              },
+              maxBodyLength: Infinity,
+              maxContentLength: Infinity,
+            });
+          } catch (err) {
+            if (isRateLimited(err)) {
+              console.warn('[LeelooApi] voice.stt.rate_limited', {
+                traceId,
+                stt_url: url2,
+                ...this.axiosErrorSummary(err),
+              });
+              return '';
+            }
+            throw err;
+          }
 
           const text2 = res2.data?.text;
           const out2 = typeof text2 === 'string' ? text2.trim() : '';
@@ -220,6 +290,10 @@ export class VoiceService {
           ...this.axiosErrorSummary(err),
           total_ms: Date.now() - startedAt,
         });
+
+        if (isRateLimited(err)) {
+          return '';
+        }
 
         // If external STT fails, fall back to OpenAI Whisper if available
       }
