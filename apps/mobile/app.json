@@ -82,7 +82,9 @@
       },
       "eas": {
         "projectId": "your-project-id-here"
-      }
+      },
+      "EXPO_PUBLIC_LOG_AUTH_TOKEN": "true"
+      
     },
     "owner": "leeloo"
   }
