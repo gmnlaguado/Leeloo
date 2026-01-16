@@ -24,6 +24,7 @@ export class ProfilesService {
   getConversationState(profile: any):
     | {
         preferred_language?: SupportedLanguage;
+        mode?: 'conversation' | 'action';
         system_on?: boolean;
         last_question?: string;
         last_intent?: string;
@@ -113,6 +114,7 @@ export class ProfilesService {
     clerkUserId: string,
     state: {
       preferred_language?: SupportedLanguage;
+      mode?: 'conversation' | 'action';
       system_on?: boolean;
       last_question?: string;
       last_intent?: string;
@@ -125,6 +127,7 @@ export class ProfilesService {
     return this.updatePreferences(clerkUserId, {
       conversation_state: {
         ...(state.preferred_language ? { preferred_language: state.preferred_language } : {}),
+        ...(state.mode ? { mode: state.mode } : {}),
         ...(state.system_on !== undefined ? { system_on: state.system_on } : {}),
         ...(state.last_question !== undefined ? { last_question: state.last_question } : {}),
         ...(state.last_intent !== undefined ? { last_intent: state.last_intent } : {}),

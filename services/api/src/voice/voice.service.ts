@@ -356,10 +356,28 @@ export class VoiceService {
       (await this.profilesService.ensureProfileByClerkUserId(clerkUserId));
     const state = this.profilesService.getConversationState(profile);
 
+    const conversationMode: 'conversation' | 'action' =
+      (state?.mode === 'action' || state?.mode === 'conversation')
+        ? state.mode
+        : 'conversation';
+
     let language =
       (this.profilesService.getPreferredLanguage(profile) ||
         ((userContext?.language || 'en').toLowerCase() as any) ||
         'en') as SupportedLanguage;
+
+    // Make sure mode is persisted at least once so production debugging is consistent.
+    if (!state?.mode) {
+      try {
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          mode: conversationMode,
+          system_on: state?.system_on,
+        });
+      } catch {
+        // best effort
+      }
+    }
 
     // Global voice commands (bypass LLM)
     const lowerGlobal = cleanedText.toLowerCase();
@@ -568,6 +586,7 @@ export class VoiceService {
       await this.profilesService.clearConversationState(clerkUserId);
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
+        mode: 'conversation',
       });
       const responseText =
         language === 'en'
@@ -786,6 +805,7 @@ export class VoiceService {
         await this.profilesService.clearConversationState(clerkUserId);
         await this.profilesService.setConversationState(clerkUserId, {
           preferred_language: language,
+          mode: 'conversation',
         });
 
         const responseText =
@@ -881,6 +901,19 @@ export class VoiceService {
       last_question: state?.last_question || null,
       last_action: state?.last_action || null,
     });
+
+    const isExplicitActionRequest = (() => {
+      const lower = cleanedText.toLowerCase();
+      // Email explicit asks
+      if (/(^|\b)(send|enviar|manda|mandar)\b.*\b(email|correo)\b/.test(lower)) return true;
+      if (/\b(env[ií]a|manda)\s+(un\s+)?correo\b/.test(lower)) return true;
+      // Task explicit asks
+      if (/(^|\b)(create|crear|haz|hacer)\b.*\b(task|tarea|recordatorio|reminder)\b/.test(lower)) return true;
+      if (/\b(agrega|añade|anade)\s+(una\s+)?tarea\b/.test(lower)) return true;
+      // Meeting explicit asks
+      if (/(^|\b)(schedule|programa|agenda)\b.*\b(meeting|reuni[oó]n)\b/.test(lower)) return true;
+      return false;
+    })();
 
     const emotionOverridesAction =
       emotion && emotion.intensity >= 0.6 &&
@@ -990,9 +1023,34 @@ export class VoiceService {
     }
 
     // ACTION path
+    if (conversationMode === 'conversation' && !isExplicitActionRequest) {
+      const responseText = await this.generateResponse(
+        { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'COACH', original_text: cleanedText },
+        null,
+        language,
+        userContext,
+      );
+      const audioUrl = await this.generateTTS(responseText, language);
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+        mode: conversationMode,
+        last_intent: String(intent?.intent || ''),
+        last_action: undefined,
+        last_question: undefined,
+      });
+      return {
+        transcription: cleanedText,
+        intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'CONVERSATION', original_text: cleanedText },
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
     const actionResult = await this.executeIntent(clerkUserId, intent, language);
     await this.profilesService.setConversationState(clerkUserId, {
       preferred_language: language,
+      mode: 'action',
       last_intent: String(intent?.intent || ''),
       last_action: String(intent?.intent || ''),
       last_question: undefined,
@@ -1004,6 +1062,12 @@ export class VoiceService {
       const status = String(meta?.status || '').toLowerCase();
       const to = String(intent?.filled_slots?.to || intent?.filled_slots?.email || '').trim();
       const subject = String(intent?.filled_slots?.subject || intent?.filled_slots?.title || 'Message').trim();
+
+      if (!actionResult) {
+        responseText = language === 'es'
+          ? 'Intenté enviar el correo, pero no recibí confirmación del sistema. ¿Quieres que lo intentemos de nuevo?'
+          : "I tried to send the email, but I didn't get a confirmation from the system. Want me to retry?";
+      } else
 
       if (status === 'sent') {
         responseText =
@@ -1026,12 +1090,18 @@ export class VoiceService {
           : 'I’m ready to send the email. Do you want me to send it now?';
       }
     } else {
+      if (!actionResult) {
+        responseText = language === 'es'
+          ? 'Quise hacerlo, pero falló y no pude completarlo. ¿Quieres que me lo repitas con un poco más de detalle?'
+          : "I tried, but it failed and I couldn't complete it. Want to try again with a bit more detail?";
+      } else {
       responseText = await this.generateResponse(
         { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'ACTION', original_text: cleanedText },
         actionResult,
         language,
         userContext,
       );
+      }
     }
     const audioUrl = await this.generateTTS(responseText, language);
 
@@ -1334,48 +1404,81 @@ export class VoiceService {
       `Intent (internal): ${JSON.stringify(intent)}\n` +
       `Action result (internal): ${JSON.stringify(actionResult)}\n\n` +
       (lead ? `Start with this exact emotional lead sentence (then continue naturally): ${JSON.stringify(lead)}\n\n` : '') +
+      `HARD RULE: Respond ONLY in ${language}. Do not mix languages.\n` +
       'Write the user-facing response.\n' +
       'If Decision=COACH: coach briefly, then ask ONE clarifying question.\n' +
       'If Decision=ACTION: confirm completion clearly and give ONE next step option.\n' +
       'If Decision=QUESTION: ask ONE crisp question.\n' +
       'Be concise but meaningful (2-6 short sentences).';
 
+    const looksLikeSpanish = (s: string) => /\b(el|la|de|que|y|para|hola|gracias|por favor|enviar|correo)\b/i.test(s);
+    const looksLikeEnglish = (s: string) => /\b(the|and|to|please|hello|thanks|send|email)\b/i.test(s);
+    const isWrongLanguage = (target: SupportedLanguage, output: string) => {
+      const out = (output || '').trim();
+      if (!out) return false;
+      if (target === 'es') return looksLikeEnglish(out) && !looksLikeSpanish(out);
+      if (target === 'en') return looksLikeSpanish(out) && !looksLikeEnglish(out);
+      return false; // keep conservative for pt/fr/ja
+    };
+
     try {
       const traceId = this.createTraceId('llm_resp');
       const t0 = Date.now();
-      const res = await axios.post(
-        endpoint,
-        {
-          model,
-          messages: [
-            {
-              role: 'system',
-              content: leelooCore + (userContext?.faith_mode ? '' : 'Avoid religious content.\n'),
-            },
-            { role: 'user', content: prompt },
-          ],
-          temperature: 0.4,
-          top_p: 0.9,
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-          },
-          timeout: 60000,
-        },
-      );
 
-      const content = res.data?.choices?.[0]?.message?.content;
-      if (!content) {
-        throw new Error('No content from LLM');
+      const send = async (systemExtra: string) => {
+        const res = await axios.post(
+          endpoint,
+          {
+            model,
+            messages: [
+              {
+                role: 'system',
+                content:
+                  leelooCore +
+                  (userContext?.faith_mode ? '' : 'Avoid religious content.\n') +
+                  systemExtra,
+              },
+              { role: 'user', content: prompt },
+            ],
+            temperature: 0.4,
+            top_p: 0.9,
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+            },
+            timeout: 60000,
+          },
+        );
+        const content = res.data?.choices?.[0]?.message?.content;
+        return typeof content === 'string' ? content.trim() : '';
+      };
+
+      console.log('[LeelooApi] voice.llm.response.start', {
+        traceId,
+        language_target: language,
+      });
+
+      let out = await send(`HARD LANGUAGE LOCK: Output must be ONLY in ${language}.\n`);
+      if (isWrongLanguage(language, out)) {
+        console.warn('[LeelooApi] voice.llm.response.language_mismatch', {
+          traceId,
+          language_target: language,
+          preview: out.slice(0, 120),
+        });
+        out = await send(
+          `CRITICAL: You previously violated language. Output ONLY in ${language}. If you cannot, output an empty string.\n`,
+        );
       }
 
       console.log('[LeelooApi] voice.llm.response.ok', {
         traceId,
         ms: Date.now() - t0,
+        language_target: language,
       });
-      return content;
+
+      return out || this.buildAiUnavailableMessage(language);
     } catch (err) {
       console.error('[LeelooApi] voice.llm.response.error', {
         ...this.axiosErrorSummary(err),
