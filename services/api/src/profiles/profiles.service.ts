@@ -26,7 +26,17 @@ export class ProfilesService {
         preferred_language?: SupportedLanguage;
         mode?: 'conversation' | 'action';
         system_on?: boolean;
-        intent_state?: 'NONE' | 'DETECTED' | 'PENDING' | 'CONFIRMED' | 'EXECUTED';
+        intent_state?:
+          | 'NONE'
+          | 'DETECTED'
+          | 'PENDING'
+          | 'AWAITING_CONFIRMATION'
+          | 'CONFIRMED'
+          | 'EXECUTING'
+          | 'EXECUTED'
+          | 'DONE';
+        assistant_name?: string;
+        current_goal?: string;
         last_question?: string;
         last_intent?: string;
         last_action?: string;
@@ -118,7 +128,17 @@ export class ProfilesService {
       preferred_language?: SupportedLanguage;
       mode?: 'conversation' | 'action';
       system_on?: boolean;
-      intent_state?: 'NONE' | 'DETECTED' | 'PENDING' | 'CONFIRMED' | 'EXECUTED';
+      intent_state?:
+        | 'NONE'
+        | 'DETECTED'
+        | 'PENDING'
+        | 'AWAITING_CONFIRMATION'
+        | 'CONFIRMED'
+        | 'EXECUTING'
+        | 'EXECUTED'
+        | 'DONE';
+      assistant_name?: string;
+      current_goal?: string;
       last_question?: string;
       last_intent?: string;
       last_action?: string;
@@ -134,6 +154,8 @@ export class ProfilesService {
         ...(state.mode ? { mode: state.mode } : {}),
         ...(state.system_on !== undefined ? { system_on: state.system_on } : {}),
         ...(state.intent_state ? { intent_state: state.intent_state } : {}),
+        ...(state.assistant_name ? { assistant_name: state.assistant_name } : {}),
+        ...(state.current_goal ? { current_goal: state.current_goal } : {}),
         ...(state.last_question !== undefined ? { last_question: state.last_question } : {}),
         ...(state.last_intent !== undefined ? { last_intent: state.last_intent } : {}),
         ...(state.last_action !== undefined ? { last_action: state.last_action } : {}),
