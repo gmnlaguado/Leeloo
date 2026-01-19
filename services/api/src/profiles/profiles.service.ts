@@ -26,11 +26,13 @@ export class ProfilesService {
         preferred_language?: SupportedLanguage;
         mode?: 'conversation' | 'action';
         system_on?: boolean;
+        intent_state?: 'NONE' | 'DETECTED' | 'PENDING' | 'CONFIRMED' | 'EXECUTED';
         last_question?: string;
         last_intent?: string;
         last_action?: string;
         pending_intent?: any;
         pending_slots?: any;
+        missing_slots?: string[];
         next_question?: string;
         updated_at?: string;
       }
@@ -116,11 +118,13 @@ export class ProfilesService {
       preferred_language?: SupportedLanguage;
       mode?: 'conversation' | 'action';
       system_on?: boolean;
+      intent_state?: 'NONE' | 'DETECTED' | 'PENDING' | 'CONFIRMED' | 'EXECUTED';
       last_question?: string;
       last_intent?: string;
       last_action?: string;
       pending_intent?: any;
       pending_slots?: any;
+      missing_slots?: string[];
       next_question?: string;
     },
   ) {
@@ -129,11 +133,13 @@ export class ProfilesService {
         ...(state.preferred_language ? { preferred_language: state.preferred_language } : {}),
         ...(state.mode ? { mode: state.mode } : {}),
         ...(state.system_on !== undefined ? { system_on: state.system_on } : {}),
+        ...(state.intent_state ? { intent_state: state.intent_state } : {}),
         ...(state.last_question !== undefined ? { last_question: state.last_question } : {}),
         ...(state.last_intent !== undefined ? { last_intent: state.last_intent } : {}),
         ...(state.last_action !== undefined ? { last_action: state.last_action } : {}),
         ...(state.pending_intent !== undefined ? { pending_intent: state.pending_intent } : {}),
         ...(state.pending_slots !== undefined ? { pending_slots: state.pending_slots } : {}),
+        ...(state.missing_slots !== undefined ? { missing_slots: state.missing_slots } : {}),
         ...(state.next_question !== undefined ? { next_question: state.next_question } : {}),
         updated_at: new Date().toISOString(),
       },

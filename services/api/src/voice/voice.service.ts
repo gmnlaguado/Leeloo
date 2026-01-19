@@ -361,6 +361,73 @@ export class VoiceService {
         ? state.mode
         : 'conversation';
 
+    const normalize = (s: string) =>
+      String(s || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const isCancel = (raw: string) => {
+      const s = normalize(raw);
+      return (
+        s === 'cancel' ||
+        s === 'cancelar' ||
+        s.includes('cancela eso') ||
+        s.includes('cancelalo') ||
+        s.includes('cancelalo') ||
+        s.includes('olvidalo') ||
+        s.includes('olvidate') ||
+        s.includes('ya no') ||
+        s.includes('no lo hagas') ||
+        s.includes('no lo envies') ||
+        s.includes('no lo mandes')
+      );
+    };
+
+    const isConfirm = (raw: string) => {
+      const s = normalize(raw);
+      // Keep this intentionally strict to avoid accidental execution.
+      return (
+        s === 'si' ||
+        s === 'sí' ||
+        s === 'dale' ||
+        s === 'ok' ||
+        s === 'okay' ||
+        s === 'hazlo' ||
+        s === 'envialo' ||
+        s === 'envialo ahora' ||
+        s === 'mandalo' ||
+        s === 'adelante' ||
+        s === 'confirma' ||
+        s === 'confirmo'
+      );
+    };
+
+    const buildConfirmQuestion = (intentName: string, language: SupportedLanguage): string => {
+      const i = String(intentName || '');
+      if (i === 'send_email') {
+        return language === 'es'
+          ? 'Perfecto. ¿Quieres que lo envíe ahora?'
+          : 'Perfect. Do you want me to send it now?';
+      }
+      if (i === 'create_task') {
+        return language === 'es'
+          ? 'Listo. ¿Quieres que la cree ahora?'
+          : 'Got it. Do you want me to create it now?';
+      }
+      if (i === 'reminder') {
+        return language === 'es'
+          ? 'Ok. ¿Lo confirmas y lo dejo creado?'
+          : 'Okay. Can you confirm and I’ll create it?';
+      }
+      return language === 'es'
+        ? 'Ok. ¿Quieres que lo haga ahora?'
+        : 'Okay. Do you want me to do it now?';
+    };
+
     let language =
       (this.profilesService.getPreferredLanguage(profile) ||
         ((userContext?.language || 'en').toLowerCase() as any) ||
@@ -608,10 +675,102 @@ export class VoiceService {
       };
     }
 
-    // If we have a pending multi-turn flow, treat this message as the answer for the next missing slot.
+    // If we have a pending multi-turn flow, this message either:
+    // - cancels it
+    // - confirms execution (ONLY if no missing slots)
+    // - or fills the next missing slot.
     if (state?.pending_intent && cleanedText) {
       const pendingIntent = state.pending_intent;
       const pendingSlots = state.pending_slots || {};
+
+      if (isCancel(cleanedText)) {
+        console.log('[LeelooApi] intent_state.transition', {
+          userId: clerkUserId,
+          from: state?.intent_state || null,
+          to: 'NONE',
+          reason: 'cancel',
+          pending_intent: String(pendingIntent?.intent || ''),
+        });
+        await this.profilesService.clearConversationState(clerkUserId);
+        const responseText = language === 'es'
+          ? 'Listo. Lo dejamos en pausa. ¿Qué quieres hacer ahora?'
+          : 'Okay. We’ll drop that. What do you want to do now?';
+        const audioUrl = await this.generateTTS(responseText, language);
+        return {
+          transcription: cleanedText,
+          intent: { intent: 'cancel', confidence: 1, decision: 'COACH', original_text: cleanedText },
+          action_result: null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
+      const pendingMissing: string[] = Array.isArray((pendingIntent as any)?.missing_slots)
+        ? (pendingIntent as any).missing_slots
+        : Array.isArray((state as any)?.missing_slots)
+          ? ((state as any).missing_slots as any)
+          : [];
+
+      if (pendingMissing.length === 0 && isConfirm(cleanedText)) {
+        console.log('[LeelooApi] intent_state.transition', {
+          userId: clerkUserId,
+          from: state?.intent_state || null,
+          to: 'CONFIRMED',
+          pending_intent: String(pendingIntent?.intent || ''),
+        });
+
+        await this.profilesService.clearConversationState(clerkUserId);
+        const actionResult = await this.executeIntent(clerkUserId, pendingIntent, language);
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          intent_state: 'EXECUTED',
+          last_intent: String(pendingIntent?.intent || ''),
+          last_action: String(pendingIntent?.intent || ''),
+          last_question: undefined,
+        });
+
+        let responseText: string;
+        if (String(pendingIntent?.intent || '') === 'send_email') {
+          const meta = (actionResult as any)?.metadata || {};
+          const status = String(meta?.status || '').toLowerCase();
+          const to = String((pendingIntent as any)?.filled_slots?.to || (pendingIntent as any)?.filled_slots?.email || '').trim();
+          const subject = String((pendingIntent as any)?.filled_slots?.subject || (pendingIntent as any)?.filled_slots?.title || 'Message').trim();
+          if (!actionResult) {
+            responseText = language === 'es'
+              ? 'Quise enviarlo, pero no recibí confirmación del sistema. ¿Quieres que lo intentemos de nuevo?'
+              : "I tried, but I didn't get a system confirmation. Want me to retry?";
+          } else if (status === 'sent') {
+            responseText = language === 'es'
+              ? `Listo. Ya envié el correo a ${to} con asunto "${subject}".`
+              : `Done. I sent the email to ${to} with subject "${subject}".`;
+          } else {
+            responseText = language === 'es'
+              ? 'Intenté enviar el correo, pero falló. ¿Quieres que lo intentemos otra vez?'
+              : 'I tried to send it, but it failed. Want to try again?';
+          }
+        } else if (!actionResult) {
+          responseText = language === 'es'
+            ? 'Lo intenté, pero falló. ¿Quieres que lo intentemos de otra forma?'
+            : "I tried, but it failed. Want to try a different way?";
+        } else {
+          responseText = await this.generateResponse(
+            { ...pendingIntent, decision: 'ACTION', original_text: cleanedText },
+            actionResult,
+            language,
+            userContext,
+          );
+        }
+
+        const audioUrl = await this.generateTTS(responseText, language);
+        return {
+          transcription: cleanedText,
+          intent: { ...pendingIntent, decision: 'ACTION', original_text: cleanedText },
+          action_result: actionResult,
+          task_id: (actionResult as any)?.id || null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
 
       const buildSendEmailNextQuestion = (slot: string): string => {
         if (slot === 'to') {
@@ -745,99 +904,36 @@ export class VoiceService {
           };
         }
 
-        // No more missing slots: execute the pending intent now.
-        await this.profilesService.clearConversationState(clerkUserId);
-
-        // Cognitive pipeline (post-slot-fill)
-        const emotion = detectEmotionHeuristic(cleanedText);
-        const slotConfidence = computeSlotConfidence({
-          intentName: String(updatedIntent?.intent || ''),
-          filled: updatedIntent?.filled_slots || {},
-          missing: [],
-        });
-        const confidence = computeConfidence({
-          intent_confidence_raw: updatedIntent?.confidence,
-          slot_confidence: slotConfidence,
-          floor: 0.65,
-        });
-        const decision = decide({
-          intentName: String(updatedIntent?.intent || ''),
-          missingSlots: [],
-          confidence,
-          last_intent: state?.last_intent || null,
-          last_question: state?.last_question || null,
-          last_action: state?.last_action || null,
+        // No more missing slots: DO NOT execute yet. Ask for explicit confirmation.
+        const confirmQ = buildConfirmQuestion(String(updatedIntent?.intent || ''), language);
+        const audioUrl = await this.generateTTS(confirmQ, language);
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          intent_state: 'DETECTED',
+          pending_intent: updatedIntent,
+          pending_slots: { filled_slots: filled },
+          missing_slots: [],
+          next_question: confirmQ,
+          last_question: confirmQ,
+          last_intent: String(updatedIntent?.intent || ''),
         });
 
-        // Emotion can downgrade ACTION to COACH when intense.
-        const emotionOverridesAction =
-          emotion && emotion.intensity >= 0.6 &&
-          ['stressed', 'confused', 'sad', 'frustrated', 'anxious', 'angry'].includes(emotion.label);
+        console.log('[LeelooApi] intent_state.transition', {
+          userId: clerkUserId,
+          from: state?.intent_state || null,
+          to: 'DETECTED',
+          reason: 'slots_complete_awaiting_confirmation',
+          intent: String(updatedIntent?.intent || ''),
+        });
 
-        let executed: any = null;
-        if (decision.decision === 'ACTION' && !emotionOverridesAction) {
-          executed = await this.executeIntent(clerkUserId, updatedIntent, language);
-          await this.profilesService.setConversationState(clerkUserId, {
-            preferred_language: language,
-            last_intent: String(updatedIntent?.intent || ''),
-            last_action: String(updatedIntent?.intent || ''),
-          });
-        }
-
-        let responseText: string;
-        if (String(updatedIntent?.intent || '') === 'send_email' && decision.decision === 'ACTION' && !emotionOverridesAction) {
-          const meta = (executed as any)?.metadata || {};
-          const status = String(meta?.status || '').toLowerCase();
-          const to = String(updatedIntent?.filled_slots?.to || updatedIntent?.filled_slots?.email || '').trim();
-          const subject = String(updatedIntent?.filled_slots?.subject || updatedIntent?.filled_slots?.title || 'Message').trim();
-
-          if (!executed) {
-            responseText = language === 'es'
-              ? 'Intenté enviar el correo, pero no recibí confirmación del sistema. ¿Quieres que lo intentemos de nuevo?'
-              : "I tried to send the email, but I didn't get a confirmation from the system. Want me to retry?";
-          } else if (status === 'sent') {
-            responseText =
-              language === 'es'
-                ? `Listo. Ya envié el correo a ${to} con asunto "${subject}".`
-                : `Done. I sent the email to ${to} with subject "${subject}".`;
-          } else if (status === 'failed') {
-            const err = String(meta?.error || '').toLowerCase();
-            const missingProvider = err.includes('missing resend_api_key') || err.includes('missing email_from') || err.includes('provider is not configured');
-            responseText = missingProvider
-              ? (language === 'es'
-                  ? 'Puedo enviarlo, pero ahora mismo el servicio de correo no está configurado. Configura RESEND_API_KEY y EMAIL_FROM en Render y vuelvo a intentarlo.'
-                  : 'I can send it, but the email provider is not configured. Set RESEND_API_KEY and EMAIL_FROM in Render and I’ll try again.')
-              : (language === 'es'
-                  ? 'Intenté enviar el correo, pero falló. ¿Quieres que lo intente de nuevo o que revisemos el destinatario y el contenido?'
-                  : 'I tried to send the email, but it failed. Want me to retry, or should we double-check the recipient and message?');
-          } else {
-            responseText = language === 'es'
-              ? 'Estoy lista para enviar el correo. ¿Quieres que lo envíe ahora?'
-              : 'I’m ready to send the email. Do you want me to send it now?';
-          }
-        } else {
-          responseText = await this.generateResponse(
-            {
-              ...updatedIntent,
-              confidence: confidence.combined_confidence,
-              emotion,
-              decision: emotionOverridesAction && decision.decision === 'ACTION' ? 'COACH' : decision.decision,
-              original_text: cleanedText,
-            },
-            executed,
-            language,
-            userContext,
-          );
-        }
-        const audioUrl = await this.generateTTS(responseText, language);
         return {
           transcription: cleanedText,
           intent: updatedIntent,
-          action_result: executed,
-          task_id: (executed as any)?.id || null,
-          response_text: responseText,
+          action_result: null,
+          response_text: confirmQ,
           response_audio_url: audioUrl,
         };
+
       }
     }
 
@@ -1058,11 +1154,21 @@ export class VoiceService {
       const audioUrl = await this.generateTTS(responseText, language);
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
+        intent_state: 'PENDING',
         pending_intent: intent,
         pending_slots: { filled_slots: intent?.filled_slots || {} },
+        missing_slots: missingSlots,
         next_question: responseText,
         last_question: responseText,
         last_intent: String(intent?.intent || ''),
+      });
+
+      console.log('[LeelooApi] intent_state.transition', {
+        userId: clerkUserId,
+        from: state?.intent_state || null,
+        to: 'PENDING',
+        intent: String(intent?.intent || ''),
+        missing_slots: missingSlots,
       });
       return {
         transcription: cleanedText,
@@ -1145,109 +1251,37 @@ export class VoiceService {
       };
     }
 
-    // ACTION path
-    if (conversationMode === 'conversation' && !isExplicitActionRequest) {
-      const responseText = await this.generateResponse(
-        { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'COACH', original_text: cleanedText },
-        null,
-        language,
-        userContext,
-      );
-      const audioUrl = await this.generateTTS(responseText, language);
-      await this.profilesService.setConversationState(clerkUserId, {
-        preferred_language: language,
-        mode: conversationMode,
-        last_intent: String(intent?.intent || ''),
-        last_action: undefined,
-        last_question: undefined,
-      });
-      return {
-        transcription: cleanedText,
-        intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'CONVERSATION', original_text: cleanedText },
-        action_result: null,
-        response_text: responseText,
-        response_audio_url: audioUrl,
-      };
-    }
-
-    const actionResult = await this.executeIntent(clerkUserId, intent, language);
+    // ACTION intent detected, but NEVER execute without explicit confirmation.
+    const confirmQ = buildConfirmQuestion(String(intent?.intent || ''), language);
+    const audioUrl = await this.generateTTS(confirmQ, language);
     await this.profilesService.setConversationState(clerkUserId, {
       preferred_language: language,
-      mode: 'action',
+      intent_state: 'DETECTED',
+      pending_intent: intent,
+      pending_slots: { filled_slots: intent?.filled_slots || {} },
+      missing_slots: [],
+      next_question: confirmQ,
+      last_question: confirmQ,
       last_intent: String(intent?.intent || ''),
-      last_action: String(intent?.intent || ''),
-      last_question: undefined,
+      last_action: undefined,
     });
 
-    let responseText: string;
-    if (String(intent?.intent || '') === 'send_email') {
-      const meta = (actionResult as any)?.metadata || {};
-      const status = String(meta?.status || '').toLowerCase();
-      const to = String(intent?.filled_slots?.to || intent?.filled_slots?.email || '').trim();
-      const subject = String(intent?.filled_slots?.subject || intent?.filled_slots?.title || 'Message').trim();
-
-      if (!actionResult) {
-        responseText = language === 'es'
-          ? 'Intenté enviar el correo, pero no recibí confirmación del sistema. ¿Quieres que lo intentemos de nuevo?'
-          : "I tried to send the email, but I didn't get a confirmation from the system. Want me to retry?";
-      } else
-
-      if (status === 'sent') {
-        responseText =
-          language === 'es'
-            ? `Listo. Ya envié el correo a ${to} con asunto "${subject}".`
-            : `Done. I sent the email to ${to} with subject "${subject}".`;
-      } else if (status === 'failed') {
-        const err = String(meta?.error || '').toLowerCase();
-        const missingProvider = err.includes('missing resend_api_key') || err.includes('missing email_from') || err.includes('provider is not configured');
-        responseText = missingProvider
-          ? (language === 'es'
-              ? 'Puedo enviarlo, pero ahora mismo el servicio de correo no está configurado. Configura RESEND_API_KEY y EMAIL_FROM en Render y vuelvo a intentarlo.'
-              : 'I can send it, but the email provider is not configured. Set RESEND_API_KEY and EMAIL_FROM in Render and I’ll try again.')
-          : (language === 'es'
-              ? 'Intenté enviar el correo, pero falló. ¿Quieres que lo intente de nuevo o que revisemos el destinatario y el contenido?'
-              : 'I tried to send the email, but it failed. Want me to retry, or should we double-check the recipient and message?');
-      } else {
-        responseText = language === 'es'
-          ? 'Estoy lista para enviar el correo. ¿Quieres que lo envíe ahora?'
-          : 'I’m ready to send the email. Do you want me to send it now?';
-      }
-    } else {
-      if (!actionResult) {
-        responseText = language === 'es'
-          ? 'Quise hacerlo, pero falló y no pude completarlo. ¿Quieres que me lo repitas con un poco más de detalle?'
-          : "I tried, but it failed and I couldn't complete it. Want to try again with a bit more detail?";
-      } else {
-      responseText = await this.generateResponse(
-        { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'ACTION', original_text: cleanedText },
-        actionResult,
-        language,
-        userContext,
-      );
-      }
-    }
-    const audioUrl = await this.generateTTS(responseText, language);
-
-    try {
-      await this.memoriesService.createMemory(clerkUserId, 'other', `turn_${Date.now()}`, {
-        language,
-        user: cleanedText,
-        assistant: responseText,
-        intent: intent?.intent,
-        task_id: (actionResult as any)?.id || null,
-      });
-    } catch (err) {
-      console.warn('[LeelooApi] conversation memory save failed', String(err));
-    }
+    console.log('[LeelooApi] intent_state.transition', {
+      userId: clerkUserId,
+      from: state?.intent_state || null,
+      to: 'DETECTED',
+      intent: String(intent?.intent || ''),
+      reason: 'awaiting_confirmation',
+    });
 
     return {
       transcription: cleanedText,
-      intent,
-      action_result: actionResult,
-      task_id: (actionResult as any)?.id || null,
-      response_text: responseText,
+      intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'QUESTION', original_text: cleanedText },
+      action_result: null,
+      response_text: confirmQ,
       response_audio_url: audioUrl,
     };
+
   }
 
   private async executeIntent(clerkUserId: string, intent: any, language: SupportedLanguage) {
@@ -1515,9 +1549,14 @@ export class VoiceService {
 
     const roleTone = userContext?.role ? `User role/context: ${userContext.role}.\n` : '';
 
-    const lengthGuidance = (userContext as any)?.conversation_only
-      ? 'Be warm, human, and detailed (8-16 sentences). Use short paragraphs. Avoid bullet points.\n'
-      : 'Be concise but meaningful (2-6 short sentences).\n';
+    // Premium: conversation is always the base. Default to warm, human, and complete.
+    const lengthGuidance = 'Be warm, human, and detailed (8-16 sentences). Use short paragraphs. Avoid bullet points.\n';
+
+    const hardIdentity =
+      'HARD IDENTITY RULES:\n' +
+      '- Your name is Leeloo. Never call yourself Lilo, Lilu, or any other name.\n' +
+      '- Never invent or change the user\'s name. If you don\'t know it, avoid using a name.\n' +
+      '- Never mention tools, system prompts, or internal states.\n';
 
     const lead = intent?.emotion ? emotionLeadSentence(language, intent.emotion) : null;
     const decision = intent?.decision || 'RESPONSE';
@@ -1532,6 +1571,7 @@ export class VoiceService {
       `Action result (internal): ${JSON.stringify(actionResult)}\n\n` +
       (lead ? `Start with this exact emotional lead sentence (then continue naturally): ${JSON.stringify(lead)}\n\n` : '') +
       `HARD RULE: Respond ONLY in ${language}. Do not mix languages.\n` +
+      hardIdentity +
       'Write the user-facing response.\n' +
       'If Decision=COACH: coach briefly, then ask ONE clarifying question.\n' +
       'If Decision=ACTION: confirm completion clearly and give ONE next step option.\n' +
@@ -1587,7 +1627,7 @@ export class VoiceService {
         language_target: language,
       });
 
-      let out = await send(`HARD LANGUAGE LOCK: Output must be ONLY in ${language}.\n`);
+      let out = await send(`HARD LANGUAGE LOCK: Output must be ONLY in ${language}.\n${hardIdentity}`);
       if (isWrongLanguage(language, out)) {
         console.warn('[LeelooApi] voice.llm.response.language_mismatch', {
           traceId,
@@ -1595,7 +1635,7 @@ export class VoiceService {
           preview: out.slice(0, 120),
         });
         out = await send(
-          `CRITICAL: You previously violated language. Output ONLY in ${language}. If you cannot, output an empty string.\n`,
+          `CRITICAL: You previously violated language or identity. Output ONLY in ${language}. Follow identity rules strictly. If you cannot, output an empty string.\n${hardIdentity}`,
         );
       }
 
