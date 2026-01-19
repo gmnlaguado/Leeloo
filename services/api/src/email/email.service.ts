@@ -12,11 +12,21 @@ export class EmailService {
     text: string;
     replyTo?: string;
   }): Promise<{ id: string; provider: string }> {
-    const apiKey = this.configService.get<string>('RESEND_API_KEY');
-    const from = this.configService.get<string>('EMAIL_FROM');
+    const apiKey =
+      this.configService.get<string>('RESEND_API_KEY') ||
+      this.configService.get<string>('RESEND_KEY') ||
+      this.configService.get<string>('RESEND_APIKEY') ||
+      this.configService.get<string>('RESEND_TOKEN');
+
+    const from =
+      this.configService.get<string>('EMAIL_FROM') ||
+      this.configService.get<string>('RESEND_FROM') ||
+      this.configService.get<string>('MAIL_FROM');
 
     if (!apiKey || !from) {
-      throw new Error('Email provider is not configured (missing RESEND_API_KEY or EMAIL_FROM)');
+      throw new Error(
+        `Email provider is not configured (missing ${apiKey ? '' : 'RESEND_API_KEY '} ${from ? '' : 'EMAIL_FROM'})`.trim(),
+      );
     }
 
     const res = await axios.post(

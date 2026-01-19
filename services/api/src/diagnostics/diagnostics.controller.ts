@@ -22,8 +22,15 @@ export class DiagnosticsController {
   @Get('email')
   @ApiOperation({ summary: 'Diagnostics: email provider config presence' })
   async emailConfig() {
-    const apiKey = this.configService.get<string>('RESEND_API_KEY');
-    const from = this.configService.get<string>('EMAIL_FROM');
+    const apiKey =
+      this.configService.get<string>('RESEND_API_KEY') ||
+      this.configService.get<string>('RESEND_KEY') ||
+      this.configService.get<string>('RESEND_APIKEY') ||
+      this.configService.get<string>('RESEND_TOKEN');
+    const from =
+      this.configService.get<string>('EMAIL_FROM') ||
+      this.configService.get<string>('RESEND_FROM') ||
+      this.configService.get<string>('MAIL_FROM');
 
     return {
       provider: 'resend',
@@ -31,6 +38,10 @@ export class DiagnosticsController {
       resend_api_key_len: apiKey ? apiKey.length : 0,
       has_email_from: Boolean(from),
       email_from: from || null,
+      env_checked: {
+        api_key: ['RESEND_API_KEY', 'RESEND_KEY', 'RESEND_APIKEY', 'RESEND_TOKEN'],
+        from: ['EMAIL_FROM', 'RESEND_FROM', 'MAIL_FROM'],
+      },
     };
   }
 

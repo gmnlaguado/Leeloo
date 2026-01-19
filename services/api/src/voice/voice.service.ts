@@ -182,60 +182,8 @@ export class VoiceService {
           if (isRateLimited(err)) {
             return '';
           }
-          // Fall through to /asr
-        }
-
-        // Try whisper-asr-webservice style: POST /asr (multipart, field "audio_file")
-        const url = `${base}/asr`;
-        {
-          const t0 = Date.now();
-          console.log('[LeelooApi] voice.stt.try', { traceId, url });
-        const form = new FormData();
-        form.append('audio_file', audioBuffer, {
-          filename: 'audio.m4a',
-          contentType: 'audio/m4a',
-        });
-        form.append('task', 'transcribe');
-        form.append('language', language);
-        // request JSON response when supported
-        form.append('output', 'json');
-
-        let res;
-        try {
-          res = await axios.post(url, form, {
-            timeout: 120000,
-            headers: {
-              ...form.getHeaders(),
-            },
-            maxBodyLength: Infinity,
-            maxContentLength: Infinity,
-          });
-        } catch (err) {
-          if (isRateLimited(err)) {
-            console.warn('[LeelooApi] voice.stt.rate_limited', {
-              traceId,
-              stt_url: url,
-              ...this.axiosErrorSummary(err),
-            });
-            return '';
-          }
-          throw err;
-        }
-
-        {
-          const text = res.data?.text;
-          const out = typeof text === 'string' ? text.trim() : '';
-          console.log('[LeelooApi] voice.stt.ok', {
-            traceId,
-            url,
-            status: res.status,
-            ms: Date.now() - t0,
-            hasText: Boolean(out),
-          });
-          if (out) return out;
-        }
-
-        // If /asr returns 2xx but empty, keep trying.
+          // Do NOT fall through to /asr. Our deployed STT is /v1/transcribe and /transcribe.
+          // Falling through causes slow 404s and destabilizes voice loops.
         }
 
         // Try common FastAPI wrappers: POST /transcribe (multipart, field "file")
@@ -452,6 +400,30 @@ export class VoiceService {
         ((userContext?.language || 'en').toLowerCase() as any) ||
         'en') as SupportedLanguage;
 
+    const persistTurn = async (assistantText: string, meta?: any) => {
+      try {
+        await this.memoriesService.appendTurn(clerkUserId, {
+          user: cleanedText,
+          assistant: assistantText,
+          language,
+          meta,
+        });
+
+        const existing = await this.memoriesService.getMemoryByKey(clerkUserId, 'session_summary');
+        const prev = (existing?.value && typeof existing.value === 'object') ? String(existing.value.summary || '') : '';
+        const addition = `User: ${cleanedText}\nAssistant: ${assistantText}`;
+        const next = prev ? `${prev}\n\n${addition}` : addition;
+        const trimmed = next.length > 2400 ? next.slice(next.length - 2400) : next;
+        await this.memoriesService.setSessionSummary(clerkUserId, {
+          assistant_name: 'Leeloo',
+          language,
+          summary: trimmed,
+        });
+      } catch {
+        // best-effort
+      }
+    };
+
     // Make sure mode is persisted at least once so production debugging is consistent.
     if (!state?.mode) {
       try {
@@ -488,6 +460,7 @@ export class VoiceService {
       });
       const responseText = language === 'es' ? 'Estoy aquí. ¿Qué necesitas?' : "I'm here. What do you need?";
       const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { system: 'wake' });
       return {
         transcription: cleanedText,
         intent: { intent: 'system_on', confidence: 1 },
@@ -504,6 +477,7 @@ export class VoiceService {
       });
       const responseText = language === 'es' ? 'Listo. Me quedo en silencio. Cuando me necesites, di “Leeloo despierta”.' : 'Okay. Going quiet. When you need me, say “Leeloo wake up”.';
       const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { system: 'sleep' });
       return {
         transcription: cleanedText,
         intent: { intent: 'system_off', confidence: 1 },
@@ -517,6 +491,7 @@ export class VoiceService {
     if (!systemOn) {
       const responseText = language === 'es' ? 'Estoy en silencio. Si quieres que vuelva, di “Leeloo despierta”.' : 'I’m quiet right now. If you want me back, say “Leeloo wake up”.';
       const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { system: 'off' });
       return {
         transcription: cleanedText,
         intent: { intent: 'system_off', confidence: 1 },
@@ -563,14 +538,20 @@ export class VoiceService {
     // Premium safety: if the user greets while a send_email flow is pending,
     // cancel the pending flow instead of treating the greeting as the email body.
     if (state?.pending_intent && isGreeting && String(state.pending_intent?.intent || '') === 'send_email') {
-      await this.profilesService.clearConversationState(clerkUserId);
       const responseText =
         language === 'es'
           ? 'Hola. Estoy aquí contigo. ¿Cómo estás hoy, de verdad?'
           : "Hey. I’m here with you. How are you—really?";
       const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { intent: 'send_email', cancel: true, reason: 'greeting_while_pending' });
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
+        assistant_name: 'Leeloo',
+        current_goal: undefined,
+        intent_state: 'NONE',
+        pending_intent: null,
+        pending_slots: null,
+        missing_slots: [],
         last_intent: 'query',
         last_action: undefined,
         last_question: responseText,
@@ -749,6 +730,7 @@ export class VoiceService {
             ? 'Perfecto. No lo hago. ¿Qué quieres hacer ahora?'
             : "Okay. I won’t do it. What do you want to do now?";
           const audioUrl = await this.generateTTS(responseText, language);
+          await persistTurn(responseText, { intent: String(pendingIntent?.intent || ''), decision: token });
           return {
             transcription: cleanedText,
             intent: { intent: 'cancel', confidence: 1, decision: 'COACH', original_text: cleanedText },
@@ -853,6 +835,7 @@ export class VoiceService {
           ? `${confirmQ} (Responde “sí” o “no”.)`
           : `${confirmQ} (Answer “yes” or “no”.)`;
         const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { intent: String(pendingIntent?.intent || ''), awaiting_confirmation: true });
         await this.profilesService.setConversationState(clerkUserId, {
           preferred_language: language,
           assistant_name: 'Leeloo',
@@ -897,6 +880,7 @@ export class VoiceService {
           ? 'Listo. Lo dejamos en pausa. ¿Qué quieres hacer ahora?'
           : 'Okay. We’ll drop that. What do you want to do now?';
         const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { intent: String(pendingIntent?.intent || ''), cancel: true });
         return {
           transcription: cleanedText,
           intent: { intent: 'cancel', confidence: 1, decision: 'COACH', original_text: cleanedText },
@@ -1020,6 +1004,7 @@ export class VoiceService {
               ? buildSendEmailNextQuestion(String(newMissing[0] || ''))
               : (pendingIntent?.next_question || this.buildMissingTaskTitleMessage(language));
           const audioUrl = await this.generateTTS(responseText, language);
+          await persistTurn(responseText, { intent: String(pendingIntent?.intent || ''), slot: slotToFill, invalid: true });
           await this.profilesService.setConversationState(clerkUserId, {
             preferred_language: language,
             pending_intent: updatedIntent,
@@ -1041,6 +1026,7 @@ export class VoiceService {
         // No more missing slots: DO NOT execute yet. Ask for explicit confirmation.
         const confirmQ = buildConfirmQuestion(String(updatedIntent?.intent || ''), language);
         const audioUrl = await this.generateTTS(confirmQ, language);
+        await persistTurn(confirmQ, { intent: String(updatedIntent?.intent || ''), awaiting_confirmation: true });
         await this.profilesService.setConversationState(clerkUserId, {
           preferred_language: language,
           assistant_name: 'Leeloo',
@@ -1076,7 +1062,11 @@ export class VoiceService {
     await this.profilesService.ensureProfileByClerkUserId(clerkUserId, { language });
 
     if (!cleanedText) {
-      const responseText = this.buildSttFailureMessage(language);
+      // Premium rule: do not reset or re-run intent detection if STT failed.
+      // If there is a pending flow, re-ask the last question deterministically.
+      const responseText = state?.pending_intent
+        ? (state?.last_question || state?.next_question || this.buildSttFailureMessage(language))
+        : this.buildSttFailureMessage(language);
       const audioUrl = await this.generateTTS(responseText, language);
 
       return {
@@ -1134,6 +1124,11 @@ export class VoiceService {
 
     // PIPELINE: Intent Detection
     const intent = conversationalIntent || (await this.extractIntent(cleanedText, fullContext, language));
+
+    // HARD RULE: only explicit set_language can change session language.
+    if (intent && typeof intent === 'object' && intent.intent !== 'set_language') {
+      (intent as any).language = language;
+    }
 
     if (intent?.intent === 'set_language') {
       const requested = String((intent as any)?.language || '').toLowerCase() as SupportedLanguage;
@@ -1221,6 +1216,7 @@ export class VoiceService {
     if (intent?.intent === 'system_unavailable') {
       const responseText = intent?.next_question || this.buildAiUnavailableMessage(language);
       const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { system_unavailable: true });
 
       return {
         transcription: cleanedText,
@@ -1288,8 +1284,11 @@ export class VoiceService {
       responseText = lead ? `${lead} ${responseText}` : responseText;
 
       const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'QUESTION', missing: missingSlots });
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
+        assistant_name: 'Leeloo',
+        current_goal: String(intent?.intent || ''),
         intent_state: 'PENDING',
         pending_intent: intent,
         pending_slots: { filled_slots: intent?.filled_slots || {} },
@@ -1329,8 +1328,10 @@ export class VoiceService {
         userContext,
       );
       const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'CONVERSATION' });
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
+        assistant_name: 'Leeloo',
         last_intent: String(intent?.intent || ''),
         last_question: undefined,
       });
@@ -1358,8 +1359,10 @@ export class VoiceService {
         userContext,
       );
       const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'COACH' });
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
+        assistant_name: 'Leeloo',
         last_intent: String(intent?.intent || ''),
         last_question: undefined,
       });
@@ -1378,6 +1381,7 @@ export class VoiceService {
         ? 'Ya lo tengo en marcha. Si quieres cambiar algo, dime exactamente qué parte.'
         : 'I’ve got it in motion. If you want to change something, tell me exactly what.';
       const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'IGNORE' });
       return {
         transcription: cleanedText,
         intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'IGNORE', original_text: cleanedText },
@@ -1390,9 +1394,12 @@ export class VoiceService {
     // ACTION intent detected, but NEVER execute without explicit confirmation.
     const confirmQ = buildConfirmQuestion(String(intent?.intent || ''), language);
     const audioUrl = await this.generateTTS(confirmQ, language);
+    await persistTurn(confirmQ, { intent: String(intent?.intent || ''), awaiting_confirmation: true });
     await this.profilesService.setConversationState(clerkUserId, {
       preferred_language: language,
-      intent_state: 'DETECTED',
+      assistant_name: 'Leeloo',
+      current_goal: String(intent?.intent || ''),
+      intent_state: 'AWAITING_CONFIRMATION',
       pending_intent: intent,
       pending_slots: { filled_slots: intent?.filled_slots || {} },
       missing_slots: [],
@@ -1405,7 +1412,7 @@ export class VoiceService {
     console.log('[LeelooApi] intent_state.transition', {
       userId: clerkUserId,
       from: state?.intent_state || null,
-      to: 'DETECTED',
+      to: 'AWAITING_CONFIRMATION',
       intent: String(intent?.intent || ''),
       reason: 'awaiting_confirmation',
     });

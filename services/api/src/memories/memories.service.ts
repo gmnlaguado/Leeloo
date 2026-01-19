@@ -14,6 +14,15 @@ export class MemoriesService {
     return profile.id;
   }
 
+  async getMemoryByKey(userId: string, key: string) {
+    const profileId = await this.getProfileId(userId);
+    const res = await this.db.query(
+      `SELECT * FROM memories WHERE user_id = $1 AND key = $2 LIMIT 1`,
+      [profileId, key],
+    );
+    return res.rows[0] || null;
+  }
+
   async getRecentConversationTurns(userId: string, limit = 5) {
     const profileId = await this.getProfileId(userId);
     const res = await this.db.query(
@@ -52,6 +61,41 @@ export class MemoriesService {
       [profileId, category, key, value, 1.0],
     );
     return res.rows[0];
+  }
+
+  async upsertMemoryByKey(userId: string, category: string, key: string, value: any) {
+    const profileId = await this.getProfileId(userId);
+    const existing = await this.db.query(
+      `SELECT * FROM memories WHERE user_id = $1 AND key = $2 LIMIT 1`,
+      [profileId, key],
+    );
+
+    const row = existing.rows[0] || null;
+    if (!row) {
+      return this.createMemory(userId, category, key, value);
+    }
+
+    return this.updateMemory(row.id, { category, value, confidence: 1.0 });
+  }
+
+  async appendTurn(userId: string, turn: { user: string; assistant: string; language?: string; meta?: any }) {
+    const key = `turn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    return this.createMemory(userId, 'conversation_turn', key, {
+      user: turn.user,
+      assistant: turn.assistant,
+      ...(turn.language ? { language: turn.language } : {}),
+      ...(turn.meta ? { meta: turn.meta } : {}),
+      at: new Date().toISOString(),
+    });
+  }
+
+  async setSessionSummary(userId: string, summary: { language?: string; assistant_name?: string; summary: string }) {
+    return this.upsertMemoryByKey(userId, 'session', 'session_summary', {
+      assistant_name: summary.assistant_name || 'Leeloo',
+      ...(summary.language ? { language: summary.language } : {}),
+      summary: summary.summary,
+      updated_at: new Date().toISOString(),
+    });
   }
 
   async updateMemory(id: string, updates: any) {
