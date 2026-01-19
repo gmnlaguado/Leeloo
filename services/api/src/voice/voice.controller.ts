@@ -82,6 +82,8 @@ export class VoiceController {
 
     const userContext = {
       ...(dto.user_context || {}),
+      ...(dto.role ? { role: dto.role } : {}),
+      ...(dto.conversation_only === 'true' ? { conversation_only: true } : {}),
       language: preferredLanguage,
     };
 

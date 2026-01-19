@@ -613,6 +613,54 @@ export class VoiceService {
       const pendingIntent = state.pending_intent;
       const pendingSlots = state.pending_slots || {};
 
+      const buildSendEmailNextQuestion = (slot: string): string => {
+        if (slot === 'to') {
+          switch (language) {
+            case 'en':
+              return 'What email address should I send it to?';
+            case 'pt':
+              return 'Para qual e-mail você quer que eu envie?';
+            case 'fr':
+              return "À quelle adresse e-mail veux-tu que je l’envoie ?";
+            case 'ja':
+              return 'どのメールアドレスに送ればいい？';
+            case 'es':
+            default:
+              return '¿A qué correo quieres que lo envíe?';
+          }
+        }
+
+        if (slot === 'body') {
+          switch (language) {
+            case 'en':
+              return 'What should the email say? Tell me exactly and I’ll send it.';
+            case 'pt':
+              return 'O que você quer que o e-mail diga? Diga exatamente e eu envio.';
+            case 'fr':
+              return "Que veux-tu que l’e-mail dise ? Dis-le-moi exactement et je l’envoie.";
+            case 'ja':
+              return 'メール本文は何て書く？そのまま言ってくれたら送るよ。';
+            case 'es':
+            default:
+              return '¿Qué quieres que diga el correo? Dímelo tal cual y lo mando.';
+          }
+        }
+
+        switch (language) {
+          case 'en':
+            return "What's missing?";
+          case 'pt':
+            return 'O que está faltando?';
+          case 'fr':
+            return "Qu'est-ce qui manque ?";
+          case 'ja':
+            return '何が足りない？';
+          case 'es':
+          default:
+            return '¿Qué dato te falta?';
+        }
+      };
+
       const missingSlots: string[] = Array.isArray(pendingIntent?.missing_slots)
         ? pendingIntent.missing_slots
         : [];
@@ -674,7 +722,10 @@ export class VoiceService {
         };
 
         if (newMissing.length > 0) {
-          const responseText = pendingIntent?.next_question || this.buildMissingTaskTitleMessage(language);
+          const responseText =
+            String(updatedIntent?.intent || '') === 'send_email'
+              ? buildSendEmailNextQuestion(String(newMissing[0] || ''))
+              : (pendingIntent?.next_question || this.buildMissingTaskTitleMessage(language));
           const audioUrl = await this.generateTTS(responseText, language);
           await this.profilesService.setConversationState(clerkUserId, {
             preferred_language: language,
@@ -805,6 +856,29 @@ export class VoiceService {
       };
     }
 
+    const conversationOnly = Boolean((userContext as any)?.conversation_only);
+    if (conversationOnly) {
+      const responseText = await this.generateResponse(
+        {
+          intent: 'conversation_only',
+          confidence: 1,
+          decision: 'COACH',
+          original_text: cleanedText,
+        },
+        null,
+        language,
+        userContext,
+      );
+      const audioUrl = await this.generateTTS(responseText, language);
+      return {
+        transcription: cleanedText,
+        intent: { intent: 'conversation_only', confidence: 1, language },
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
     // Get user context/memories
     const memories = await this.memoriesService.getRelevantMemories(clerkUserId, cleanedText);
     const recentTurns = await this.memoriesService.getRecentConversationTurns(clerkUserId, 5);
@@ -883,8 +957,24 @@ export class VoiceService {
           intent.missing_slots = missing;
           intent.next_question =
             missing[0] === 'to'
-              ? '¿A qué correo quieres que lo envíe?'
-              : '¿Qué quieres que diga el correo? Dímelo tal cual y lo mando.';
+              ? (language === 'en'
+                  ? 'What email address should I send it to?'
+                  : language === 'pt'
+                    ? 'Para qual e-mail você quer que eu envie?'
+                    : language === 'fr'
+                      ? "À quelle adresse e-mail veux-tu que je l’envoie ?"
+                      : language === 'ja'
+                        ? 'どのメールアドレスに送ればいい？'
+                        : '¿A qué correo quieres que lo envíe?')
+              : (language === 'en'
+                  ? 'What should the email say? Tell me exactly and I’ll send it.'
+                  : language === 'pt'
+                    ? 'O que você quer que o e-mail diga? Diga exatamente e eu envio.'
+                    : language === 'fr'
+                      ? "Que veux-tu que l’e-mail dise ? Dis-le-moi exactement et je l’envoie."
+                      : language === 'ja'
+                        ? 'メール本文は何て書く？そのまま言ってくれたら送るよ。'
+                        : '¿Qué quieres que diga el correo? Dímelo tal cual y lo mando.');
         }
       }
     }
@@ -1425,6 +1515,10 @@ export class VoiceService {
 
     const roleTone = userContext?.role ? `User role/context: ${userContext.role}.\n` : '';
 
+    const lengthGuidance = (userContext as any)?.conversation_only
+      ? 'Be warm, human, and detailed (8-16 sentences). Use short paragraphs. Avoid bullet points.\n'
+      : 'Be concise but meaningful (2-6 short sentences).\n';
+
     const lead = intent?.emotion ? emotionLeadSentence(language, intent.emotion) : null;
     const decision = intent?.decision || 'RESPONSE';
 
@@ -1442,7 +1536,7 @@ export class VoiceService {
       'If Decision=COACH: coach briefly, then ask ONE clarifying question.\n' +
       'If Decision=ACTION: confirm completion clearly and give ONE next step option.\n' +
       'If Decision=QUESTION: ask ONE crisp question.\n' +
-      'Be concise but meaningful (2-6 short sentences).';
+      lengthGuidance;
 
     const looksLikeSpanish = (s: string) => /\b(el|la|de|que|y|para|hola|gracias|por favor|enviar|correo)\b/i.test(s);
     const looksLikeEnglish = (s: string) => /\b(the|and|to|please|hello|thanks|send|email)\b/i.test(s);

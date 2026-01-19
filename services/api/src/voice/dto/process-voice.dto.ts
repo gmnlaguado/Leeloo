@@ -25,5 +25,15 @@ export class ProcessVoiceDto {
     language?: string;
     faith_mode?: boolean;
     role?: string;
+    conversation_only?: boolean;
   };
+
+  @ApiProperty({ required: false, description: 'Force conversation-only mode (no actions/tools) (multipart field)' })
+  @IsOptional()
+  conversation_only?: string;
+
+  @ApiProperty({ required: false, description: 'Role/persona hint for conversation (multipart field)' })
+  @IsOptional()
+  @IsString()
+  role?: string;
 }
