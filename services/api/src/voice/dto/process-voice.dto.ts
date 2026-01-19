@@ -36,4 +36,13 @@ export class ProcessVoiceDto {
   @IsOptional()
   @IsString()
   role?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Wake-word detector mode: only transcribe and return transcription; do not run intent/LLM/TTS (multipart field)',
+  })
+  @IsOptional()
+  @IsString()
+  wake_word_only?: string;
 }

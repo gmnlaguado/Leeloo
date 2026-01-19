@@ -87,16 +87,27 @@ export class VoiceController {
       language: preferredLanguage,
     };
 
+    const wakeWordOnly = String((dto as any)?.wake_word_only || '').toLowerCase() === 'true';
+
     // If audio file is provided, transcribe it first
     if (audio) {
       const transcription = await this.voiceService.transcribeAudio(
         audio.buffer,
         userContext,
       );
+
+      if (wakeWordOnly) {
+        return { transcription };
+      }
+
       return this.voiceService.processIntent(userId, transcription, userContext);
     }
 
     // Otherwise process text directly
+    if (wakeWordOnly) {
+      return { transcription: (dto.text || '').toString() };
+    }
+
     return this.voiceService.processIntent(userId, dto.text, userContext);
   }
 
