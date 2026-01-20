@@ -94,6 +94,8 @@ export class VoiceService {
       this.configService.get<string>('STT_ENDPOINT') ||
       this.configService.get<string>('WHISPER_ENDPOINT');
 
+    const preferOpenAI = String(this.configService.get<string>('STT_PREFER_OPENAI') || 'true').toLowerCase() !== 'false';
+
     const language = (userContext?.language || 'en').toLowerCase();
 
     console.log('[LeelooApi] voice.stt.start', {
@@ -103,7 +105,42 @@ export class VoiceService {
       hasEndpoint: Boolean(endpoint),
       endpoint,
       hasOpenAI: Boolean(this.openai),
+      preferOpenAI,
     });
+
+    // FAST PATH: Prefer OpenAI Whisper when configured.
+    // This avoids very slow self-hosted STT deployments (often 30-45s+ on free tiers).
+    if (preferOpenAI && this.openai) {
+      try {
+        const model = this.configService.get<string>('OPENAI_WHISPER_MODEL') || 'whisper-1';
+        const file = await toFile(audioBuffer, 'audio.m4a', {
+          type: 'audio/m4a',
+        });
+
+        const res = await this.openai.audio.transcriptions.create({
+          file,
+          model,
+          language,
+        });
+
+        const text = (res as any)?.text;
+        const out = typeof text === 'string' ? text.trim() : '';
+        console.log('[LeelooApi] voice.stt.openai.ok', {
+          traceId,
+          model,
+          total_ms: Date.now() - startedAt,
+          hasText: Boolean(out),
+        });
+
+        if (out) return out;
+      } catch (err) {
+        console.error('[LeelooApi] voice.stt.openai.error', {
+          traceId,
+          ...this.axiosErrorSummary(err),
+          total_ms: Date.now() - startedAt,
+        });
+      }
+    }
 
     if (endpoint) {
       try {
