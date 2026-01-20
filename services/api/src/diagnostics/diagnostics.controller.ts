@@ -11,15 +11,39 @@ type AuthedRequest = {
 
 @ApiTags('diagnostics')
 @Controller('diagnostics')
-@UseGuards(AuthGuard)
-@ApiBearerAuth()
 export class DiagnosticsController {
   constructor(
     private readonly configService: ConfigService,
     private readonly profilesService: ProfilesService,
   ) {}
 
+  @Get('email-public')
+  @ApiOperation({ summary: 'Public diagnostics: email provider config presence (no secrets)' })
+  async emailConfigPublic() {
+    const apiKey =
+      this.configService.get<string>('RESEND_API_KEY') ||
+      this.configService.get<string>('RESEND_KEY') ||
+      this.configService.get<string>('RESEND_APIKEY') ||
+      this.configService.get<string>('RESEND_TOKEN');
+    const from =
+      this.configService.get<string>('EMAIL_FROM') ||
+      this.configService.get<string>('RESEND_FROM') ||
+      this.configService.get<string>('MAIL_FROM');
+
+    return {
+      provider: 'resend',
+      has_resend_api_key: Boolean(apiKey),
+      has_email_from: Boolean(from),
+      env_checked: {
+        api_key: ['RESEND_API_KEY', 'RESEND_KEY', 'RESEND_APIKEY', 'RESEND_TOKEN'],
+        from: ['EMAIL_FROM', 'RESEND_FROM', 'MAIL_FROM'],
+      },
+    };
+  }
+
   @Get('email')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Diagnostics: email provider config presence' })
   async emailConfig() {
     const apiKey =
@@ -46,6 +70,8 @@ export class DiagnosticsController {
   }
 
   @Get('whoami')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Diagnostics: who am I (auth claims + profile)' })
   async whoami(@Req() req: AuthedRequest) {
     const userId = req.user.id;
@@ -60,6 +86,8 @@ export class DiagnosticsController {
   }
 
   @Get('state')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Diagnostics: profile language + conversation state' })
   async state(@Req() req: AuthedRequest) {
     const userId = req.user.id;
