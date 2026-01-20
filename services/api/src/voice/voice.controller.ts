@@ -44,10 +44,12 @@ export class VoiceController {
     const userId = req.user.id;
     const claims = req.user?.claims || {};
 
-    // Prefer persisted language from profile/conversation state.
-    // dto.language is treated as a UI hint, not authoritative.
-    const profile = await this.profilesService.ensureProfileByClerkUserId(userId, {
-      language: ((dto?.user_context?.language || dto?.language || 'en').toLowerCase() as any) || 'en',
+    const requestedLanguage = ((dto?.user_context?.language || dto?.language || '').toString().toLowerCase() as any) || null;
+    const isSupported = (l: any) => l === 'es' || l === 'en' || l === 'pt' || l === 'fr' || l === 'ja';
+
+    // Ensure profile exists first.
+    let profile = await this.profilesService.ensureProfileByClerkUserId(userId, {
+      language: (isSupported(requestedLanguage) ? requestedLanguage : 'en') as any,
     });
 
     // Best-effort identity capture from auth provider (Clerk/Google).
@@ -78,7 +80,22 @@ export class VoiceController {
     } catch {
       // best effort only
     }
-    const preferredLanguage = this.profilesService.getPreferredLanguage(profile) || 'en';
+    // Authoritative language selection:
+    // - If client explicitly provided a supported language, honor it and persist.
+    // - Otherwise fall back to persisted profile language.
+    let preferredLanguage = this.profilesService.getPreferredLanguage(profile) || 'en';
+    if (isSupported(requestedLanguage) && requestedLanguage !== preferredLanguage) {
+      try {
+        await this.profilesService.updateLanguage(userId, requestedLanguage);
+        await this.profilesService.setConversationState(userId, {
+          preferred_language: requestedLanguage,
+        });
+        profile = await this.profilesService.getProfileByClerkUserId(userId);
+      } catch {
+        // best effort only
+      }
+      preferredLanguage = requestedLanguage;
+    }
 
     const userContext = {
       ...(dto.user_context || {}),
