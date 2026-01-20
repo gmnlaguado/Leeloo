@@ -424,6 +424,38 @@ export class VoiceService {
       }
     };
 
+    const buildExecutedResponse = (intentName: string, actionResult: any, language: SupportedLanguage) => {
+      const i = String(intentName || '');
+      if (i === 'send_email') {
+        const meta = (actionResult as any)?.metadata || {};
+        const status = String(meta?.status || '').toLowerCase();
+        const to = String((actionResult as any)?.to || meta?.to || '').trim();
+        if (status === 'sent') {
+          return language === 'es'
+            ? `Listo. Ya envié el correo${to ? ` a ${to}` : ''}.`
+            : `Done. I sent the email${to ? ` to ${to}` : ''}.`;
+        }
+        return language === 'es'
+          ? 'Intenté enviar el correo, pero falló. ¿Quieres que lo intentemos otra vez?'
+          : 'I tried to send the email, but it failed. Want to try again?';
+      }
+      if (i === 'create_task') {
+        const title = String((actionResult as any)?.title || (actionResult as any)?.name || '').trim();
+        return language === 'es'
+          ? `Listo. Creé la tarea${title ? `: "${title}"` : ''}.`
+          : `Done. I created the task${title ? `: "${title}"` : ''}.`;
+      }
+      if (i === 'reminder') {
+        return language === 'es'
+          ? 'Listo. Ya quedó creado.'
+          : 'Done. It’s created.';
+      }
+
+      return language === 'es'
+        ? 'Listo. Ya está hecho.'
+        : 'Done.';
+    };
+
     // Make sure mode is persisted at least once so production debugging is consistent.
     if (!state?.mode) {
       try {
@@ -811,12 +843,8 @@ export class VoiceService {
               ? 'Lo intenté, pero falló. ¿Quieres que lo intentemos de otra forma?'
               : 'I tried, but it failed. Want to try a different way?';
           } else {
-            responseText = await this.generateResponse(
-              { ...pendingIntent, decision: 'ACTION', original_text: cleanedText },
-              actionResult,
-              language,
-              userContext,
-            );
+            // Executive rule: once confirmed, do not ask the LLM to phrase the result.
+            responseText = buildExecutedResponse(String(pendingIntent?.intent || ''), actionResult, language);
           }
 
           const audioUrl = await this.generateTTS(responseText, language);
@@ -1095,6 +1123,117 @@ export class VoiceService {
       return {
         transcription: cleanedText,
         intent: { intent: 'conversation_only', confidence: 1, language },
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
+    // MANDATORY EXECUTIVE ROUTER (outside the LLM):
+    // If we are awaiting confirmation, do not call the LLM for anything.
+    // Only accept YES/NO/CANCEL deterministically.
+    if ((state as any)?.intent_state === 'AWAITING_CONFIRMATION') {
+      const pendingIntent = state?.pending_intent;
+      const pendingSlots = state?.pending_slots || {};
+      const pendingMissing: string[] = Array.isArray((pendingIntent as any)?.missing_slots)
+        ? (pendingIntent as any).missing_slots
+        : Array.isArray((state as any)?.missing_slots)
+          ? ((state as any).missing_slots as any)
+          : [];
+
+      const token = decisionToken(cleanedText);
+
+      // If state is inconsistent, fall back to a deterministic confirm prompt.
+      if (!pendingIntent || pendingMissing.length > 0) {
+        const responseText = language === 'es'
+          ? 'Para continuar, por favor confirma con “sí” o “no”.'
+          : 'To continue, please confirm with “yes” or “no”.';
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { awaiting_confirmation: true, inconsistent_state: true });
+        return {
+          transcription: cleanedText,
+          intent: pendingIntent || { intent: 'awaiting_confirmation', confidence: 1, language },
+          action_result: null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
+      if (token === 'CANCEL' || token === 'NO') {
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          current_goal: undefined,
+          intent_state: 'NONE',
+          pending_intent: null,
+          pending_slots: null,
+          missing_slots: [],
+          next_question: undefined,
+          last_question: undefined,
+        } as any);
+        const responseText = language === 'es'
+          ? 'Perfecto. No lo hago. ¿Qué quieres hacer ahora?'
+          : "Okay. I won’t do it. What do you want to do now?";
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { intent: String((pendingIntent as any)?.intent || ''), decision: token, executive_router: true });
+        return {
+          transcription: cleanedText,
+          intent: { intent: 'cancel', confidence: 1, decision: 'COACH', original_text: cleanedText },
+          action_result: null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
+      if (token === 'YES') {
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          current_goal: String(pendingIntent?.intent || ''),
+          intent_state: 'EXECUTING',
+          pending_intent: pendingIntent,
+          pending_slots: pendingSlots,
+          missing_slots: [],
+        });
+
+        const actionResult = await this.executeIntent(clerkUserId, pendingIntent, language);
+
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          current_goal: undefined,
+          intent_state: 'DONE',
+          last_intent: String(pendingIntent?.intent || ''),
+          last_action: String(pendingIntent?.intent || ''),
+          pending_intent: null,
+          pending_slots: null,
+          missing_slots: [],
+          next_question: undefined,
+          last_question: undefined,
+        });
+
+        const responseText = buildExecutedResponse(String(pendingIntent?.intent || ''), actionResult, language);
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { intent: String(pendingIntent?.intent || ''), decision: 'YES', executive_router: true });
+        return {
+          transcription: cleanedText,
+          intent: { ...pendingIntent, decision: 'ACTION', original_text: cleanedText },
+          action_result: actionResult,
+          task_id: (actionResult as any)?.id || null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
+      const confirmQ = buildConfirmQuestion(String(pendingIntent?.intent || ''), language);
+      const responseText = language === 'es'
+        ? `${confirmQ} (Responde “sí” o “no”.)`
+        : `${confirmQ} (Answer “yes” or “no”.)`;
+      const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { intent: String(pendingIntent?.intent || ''), awaiting_confirmation: true, executive_router: true });
+      return {
+        transcription: cleanedText,
+        intent: pendingIntent,
         action_result: null,
         response_text: responseText,
         response_audio_url: audioUrl,
