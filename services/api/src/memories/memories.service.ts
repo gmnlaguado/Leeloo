@@ -9,6 +9,15 @@ export class MemoriesService {
     private readonly profilesService: ProfilesService,
   ) {}
 
+  private safeKeyPart(value: string) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-z0-9_:\-]/g, '')
+      .slice(0, 80);
+  }
+
   private async getProfileId(clerkUserId: string): Promise<string> {
     const profile = await this.profilesService.ensureProfileByClerkUserId(clerkUserId);
     return profile.id;
@@ -21,6 +30,21 @@ export class MemoriesService {
       [profileId, key],
     );
     return res.rows[0] || null;
+  }
+
+  async getMemoriesByKeyPrefix(userId: string, prefix: string, limit = 50) {
+    const profileId = await this.getProfileId(userId);
+    const safePrefix = String(prefix || '').replace(/%/g, '');
+    const res = await this.db.query(
+      `SELECT *
+       FROM memories
+       WHERE user_id = $1
+         AND key LIKE $2
+       ORDER BY last_used DESC
+       LIMIT $3`,
+      [profileId, `${safePrefix}%`, limit],
+    );
+    return res.rows || [];
   }
 
   async getRecentConversationTurns(userId: string, limit = 5) {
@@ -96,6 +120,37 @@ export class MemoriesService {
       summary: summary.summary,
       updated_at: new Date().toISOString(),
     });
+  }
+
+  async getSessionSummary(userId: string) {
+    const row = await this.getMemoryByKey(userId, 'session_summary');
+    const value = row?.value;
+    if (!value || typeof value !== 'object') return null;
+    const summary = typeof (value as any).summary === 'string' ? String((value as any).summary) : '';
+    return summary ? summary : null;
+  }
+
+  async upsertFact(userId: string, namespace: string, key: string, value: any) {
+    const ns = this.safeKeyPart(namespace);
+    const k = this.safeKeyPart(key);
+    const memoryKey = `fact:${ns}:${k}`;
+    return this.upsertMemoryByKey(userId, 'fact', memoryKey, {
+      namespace: ns,
+      key: k,
+      value,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  async getFacts(userId: string, namespaces: string[], limitPerNamespace = 30) {
+    const out: any[] = [];
+    for (const nsRaw of namespaces || []) {
+      const ns = this.safeKeyPart(nsRaw);
+      if (!ns) continue;
+      const rows = await this.getMemoriesByKeyPrefix(userId, `fact:${ns}:`, limitPerNamespace);
+      for (const r of rows || []) out.push(r);
+    }
+    return out;
   }
 
   async updateMemory(id: string, updates: any) {

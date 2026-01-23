@@ -14,6 +14,9 @@ import { buildLeelooUniversalPrompt } from './core/leeloo-core.prompt';
 import { detectEmotionHeuristic, emotionLeadSentence } from './core/emotion';
 import { computeConfidence, computeSlotConfidence } from './core/confidence';
 import { decide } from './core/decision-engine';
+import { InputNormalizer } from './core/input-normalizer';
+import { ExecutiveSupervisor } from './core/executive-supervisor';
+import { FactIngestor } from './core/fact-ingestor';
 
 @Injectable()
 export class VoiceService {
@@ -333,7 +336,11 @@ export class VoiceService {
     text?: string,
     userContext?: { language?: string; faith_mode?: boolean; role?: string },
   ) {
-    const cleanedText = (text || '').trim();
+    const normalizer = new InputNormalizer();
+    const supervisor = new ExecutiveSupervisor();
+    const factIngestor = new FactIngestor();
+    const input = normalizer.normalize(text || '');
+    const cleanedText = input.cleaned;
 
     // Resolve persisted user state (language + pending intent/slots).
     const profile =
@@ -346,69 +353,8 @@ export class VoiceService {
         ? state.mode
         : 'conversation';
 
-    const normalize = (s: string) =>
-      String(s || '')
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/\p{Diacritic}/gu, '')
-        .replace(/[^a-z0-9\s]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-    const normalizeForDecision = (s: string) => {
-      let out = normalize(s);
-      out = out
-        .replace(/\b(este|eh|mmm|mm|um|uh|pues|bueno|okey|oye|a ver)\b/g, ' ')
-        .replace(/\b(por favor|pls|please|gracias|muchas gracias)\b/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      return out;
-    };
-
-    type DecisionToken = 'YES' | 'NO' | 'CANCEL' | 'OTHER';
-
-    const decisionToken = (raw: string): DecisionToken => {
-      const s = normalizeForDecision(raw);
-      if (!s) return 'OTHER';
-
-      const cancel =
-        s === 'cancel' ||
-        s === 'cancelar' ||
-        s.includes('cancela eso') ||
-        s.includes('cancelalo') ||
-        s.includes('olvidalo') ||
-        s.includes('olvidate') ||
-        s.includes('ya no') ||
-        s.includes('no lo hagas') ||
-        s.includes('no lo envies') ||
-        s.includes('no lo mandes');
-      if (cancel) return 'CANCEL';
-
-      const yesRegex = /^(si|s i|claro|dale|ok|okay|vale|de una|hazlo|envialo|mandalo|adelante|confirma|confirmo|yes|yeah|yep|sure|go ahead|do it|send it|send it now|confirm)(\b|$)/;
-      const noRegex = /^(no|negativo|mejor no|no gracias|nope|nah|dont|do not|don t|stop)(\b|$)/;
-
-      const hasYes =
-        yesRegex.test(s) ||
-        /\bsi\b/.test(s) ||
-        /\byes\b/.test(s) ||
-        s.includes('claro que si') ||
-        s.includes('por supuesto') ||
-        s.includes('of course') ||
-        s.includes('sure');
-
-      const hasNo =
-        noRegex.test(s) ||
-        /\bno\b/.test(s) ||
-        /\bnope\b/.test(s) ||
-        /\bnah\b/.test(s);
-
-      if (hasYes && !hasNo) return 'YES';
-      if (hasNo && !hasYes) return 'NO';
-      return 'OTHER';
-    };
-
-    const isCancel = (raw: string) => decisionToken(raw) === 'CANCEL';
-    const isConfirm = (raw: string) => decisionToken(raw) === 'YES';
+    const isCancel = (raw: string) => normalizer.decisionToken(raw) === 'CANCEL';
+    const isConfirm = (raw: string) => normalizer.decisionToken(raw) === 'YES';
 
     const buildConfirmQuestion = (intentName: string, language: SupportedLanguage): string => {
       const i = String(intentName || '');
@@ -461,6 +407,65 @@ export class VoiceService {
       }
     };
 
+    const namespacesForIntent = () => {
+      // Minimal, deterministic context for intent extraction.
+      return ['identity', 'preferences'];
+    };
+
+    const namespacesForResponse = (intentName: string) => {
+      const i = String(intentName || '');
+      if (i === 'send_email') return ['identity', 'preferences', 'relationships'];
+      if (i === 'create_task' || i === 'reminder') return ['identity', 'preferences'];
+      if (i === 'daily_planning') return ['identity', 'preferences', 'household'];
+      if (i === 'emotional_expression' || i === 'emotional_support') return ['identity', 'preferences', 'relationships'];
+      return ['identity', 'preferences'];
+    };
+
+    const memoryGate = async (namespaces: string[]) => {
+      const sessionSummary = await this.memoriesService.getSessionSummary(clerkUserId);
+      const recentTurns = await this.memoriesService.getRecentConversationTurns(clerkUserId, 6);
+
+      const turnsContext = recentTurns
+        .reverse()
+        .map((m: any) => {
+          const v = m?.value;
+          const u = v?.user ? String(v.user) : '';
+          const a = v?.assistant ? String(v.assistant) : '';
+          return u && a ? `User: ${u}\nAssistant: ${a}` : '';
+        })
+        .filter(Boolean)
+        .join('\n\n');
+
+      const facts = await this.memoriesService.getFacts(clerkUserId, namespaces, 40);
+      const factsContext = (facts || [])
+        .map((m: any) => {
+          const k = String(m?.key || '');
+          const v = m?.value;
+          return k ? `${k}: ${JSON.stringify(v)}` : '';
+        })
+        .filter(Boolean)
+        .join('\n');
+
+      const context = [
+        `AUTHORITATIVE IDENTITY (NON-NEGOTIABLE):\n- assistant_name: Leeloo\n- language_lock: ${language}\n`,
+        sessionSummary ? `SESSION SUMMARY (authoritative):\n${sessionSummary}` : null,
+        factsContext ? `LONG-TERM FACTS (authoritative):\n${factsContext}` : null,
+        turnsContext ? `RECENT TURNS:\n${turnsContext}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
+      console.log('[LeelooApi] memory.gate', {
+        userId: clerkUserId,
+        has_session_summary: Boolean(sessionSummary),
+        facts_count: Array.isArray(facts) ? facts.length : 0,
+        turns_count: Array.isArray(recentTurns) ? recentTurns.length : 0,
+        namespaces,
+      });
+
+      return { context, facts, sessionSummary };
+    };
+
     const buildExecutedResponse = (intentName: string, actionResult: any, language: SupportedLanguage) => {
       const i = String(intentName || '');
       if (i === 'send_email') {
@@ -489,8 +494,145 @@ export class VoiceService {
       }
 
       return language === 'es'
-        ? 'Listo. Ya está hecho.'
+        ? 'Listo.'
         : 'Done.';
+    };
+
+    const getFactValue = (rows: any[], namespace: string, key: string) => {
+      const ns = String(namespace || '').toLowerCase();
+      const k = String(key || '').toLowerCase();
+      for (const r of rows || []) {
+        const v = r?.value;
+        const rNs = String(v?.namespace || '').toLowerCase();
+        const rKey = String(v?.key || '').toLowerCase();
+        if (rNs === ns && rKey === k) return v?.value;
+      }
+      return null;
+    };
+
+    const parseMinutes = (raw: string): number | null => {
+      const s = String(raw || '').toLowerCase();
+      const m1 = s.match(/\b(\d{1,3})\s*(min|mins|minutes|minutos)\b/);
+      if (m1 && m1[1]) {
+        const n = Number(m1[1]);
+        return Number.isFinite(n) && n > 0 ? n : null;
+      }
+      const m2 = s.match(/\b(\d{1,2})\s*h\b/);
+      if (m2 && m2[1]) {
+        const n = Number(m2[1]);
+        const mins = n * 60;
+        return Number.isFinite(mins) && mins > 0 ? mins : null;
+      }
+      if (s.includes('quick') || s.includes('rapido') || s.includes('rápido')) return 15;
+      if (s.includes('half an hour') || s.includes('media hora')) return 30;
+      return null;
+    };
+
+    const mealPlanningTrigger = (rawLower: string) => {
+      const t = String(rawLower || '');
+      return (
+        /\b(what\s+should\s+i\s+cook|what\s+can\s+i\s+cook|what\s+to\s+cook|dinner\s+ideas|lunch\s+ideas|meal\s+ideas)\b/.test(t) ||
+        /\b(no\s+se\s+que\s+hacer\s+de\s+comer|no\s+sé\s+qué\s+hacer\s+de\s+comer|que\s+cocino|qué\s+cocino|ideas\s+de\s+comida|ideas\s+para\s+cenar|ideas\s+para\s+almorzar)\b/.test(t)
+      );
+    };
+
+    const buildMealOptions = (params: {
+      items: string[];
+      minutes: number;
+      diet?: string | null;
+      dislikes?: string[] | null;
+      language: SupportedLanguage;
+    }) => {
+      const items = (params.items || []).map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
+      const minutes = params.minutes;
+      const diet = String(params.diet || '').toLowerCase();
+      const dislikes = (params.dislikes || []).map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
+
+      const has = (w: string) => items.some((i) => i.includes(w));
+      const hasAny = (ws: string[]) => ws.some((w) => has(w));
+      const disliked = (w: string) => dislikes.some((d) => d.includes(w));
+
+      const eggs = hasAny(['egg', 'eggs', 'huevo', 'huevos']);
+      const rice = hasAny(['rice', 'arroz']);
+      const chicken = hasAny(['chicken', 'pollo']);
+      const pasta = hasAny(['pasta', 'spaghetti', 'macaroni']);
+      const tuna = hasAny(['tuna', 'atun', 'atún']);
+      const veggies = hasAny(['tomato', 'tomatoes', 'onion', 'garlic', 'pepper', 'spinach', 'broccoli', 'zanahoria', 'tomate', 'cebolla', 'ajo', 'pimiento', 'espinaca', 'brocoli', 'brócoli']);
+
+      const options: { title: string; why: string; steps: string }[] = [];
+
+      const push = (o: { title: string; why: string; steps: string }) => {
+        if (options.length >= 4) return;
+        if (options.some((x) => x.title === o.title)) return;
+        options.push(o);
+      };
+
+      const isVeg = diet === 'vegetarian';
+
+      if (minutes <= 15) {
+        if (eggs && veggies && !disliked('egg')) {
+          push({
+            title: params.language === 'es' ? 'Veggie omelet' : 'Veggie omelet',
+            why: params.language === 'es' ? 'Rápido y usa lo que ya tienes.' : 'Fast and uses what you already have.',
+            steps: params.language === 'es'
+              ? 'Saltea verduras 3–4 min, agrega huevos batidos, cuaja y listo.'
+              : 'Sauté veggies 3–4 min, add beaten eggs, set, done.',
+          });
+        }
+        if (tuna && pasta && !disliked('tuna')) {
+          push({
+            title: params.language === 'es' ? 'Pasta rápida con atún' : 'Quick tuna pasta',
+            why: params.language === 'es' ? '15 min, simple y con proteína.' : '15 min, simple, protein-friendly.',
+            steps: params.language === 'es'
+              ? 'Hierve pasta, mezcla con atún y un toque de aceite/ajo si hay.'
+              : 'Boil pasta, mix in tuna and a bit of oil/garlic if you have it.',
+          });
+        }
+      }
+
+      if (minutes <= 30) {
+        if (rice && eggs && veggies && !disliked('egg')) {
+          push({
+            title: params.language === 'es' ? 'Arroz frito simple' : 'Simple fried rice',
+            why: params.language === 'es' ? 'Rinde y aprovecha sobras.' : 'Filling and great for leftovers.',
+            steps: params.language === 'es'
+              ? 'Saltea verduras, agrega arroz y luego huevo. Sazona y listo.'
+              : 'Sauté veggies, add rice, then egg. Season and done.',
+          });
+        }
+
+        if (!isVeg && chicken && rice && !disliked('chicken')) {
+          push({
+            title: params.language === 'es' ? 'Pollo salteado con arroz' : 'Chicken stir-fry with rice',
+            why: params.language === 'es' ? 'Balanceado y fácil.' : 'Balanced and easy.',
+            steps: params.language === 'es'
+              ? 'Dora pollo, agrega verduras si hay, sirve sobre arroz.'
+              : 'Brown chicken, add veggies if you have them, serve over rice.',
+          });
+        }
+
+        if (pasta && veggies) {
+          push({
+            title: params.language === 'es' ? 'Pasta con verduras' : 'Veggie pasta',
+            why: params.language === 'es' ? 'Flexible con lo que haya.' : 'Flexible with whatever you have.',
+            steps: params.language === 'es'
+              ? 'Hierve pasta, saltea verduras, mezcla y ajusta sal/pimienta.'
+              : 'Boil pasta, sauté veggies, toss, adjust salt/pepper.',
+          });
+        }
+      }
+
+      if (options.length === 0) {
+        push({
+          title: params.language === 'es' ? 'Bowl simple' : 'Simple bowl',
+          why: params.language === 'es' ? 'No requiere receta: arma con lo que tengas.' : 'No recipe needed—assemble from what you have.',
+          steps: params.language === 'es'
+            ? 'Elige base (arroz/pasta), agrega proteína si hay y verduras. Sazona.'
+            : 'Pick a base (rice/pasta), add protein if you have it and veggies. Season.',
+        });
+      }
+
+      return options.slice(0, 4);
     };
 
     // Make sure mode is persisted at least once so production debugging is consistent.
@@ -506,26 +648,32 @@ export class VoiceService {
       }
     }
 
-    // Global voice commands (bypass LLM)
-    const lowerGlobal = cleanedText.toLowerCase();
-    const isWake =
-      lowerGlobal.includes('leeloo despierta') ||
-      lowerGlobal.includes('leeloo, despierta') ||
-      lowerGlobal.includes('wake up') ||
-      lowerGlobal.includes('leeloo wake up');
-    const isSleep =
-      lowerGlobal.includes('leeloo apágate') ||
-      lowerGlobal.includes('leeloo apagate') ||
-      lowerGlobal.includes('leeloo, apágate') ||
-      lowerGlobal.includes('leeloo, apagate') ||
-      lowerGlobal.includes('sleep') ||
-      lowerGlobal.includes('go to sleep') ||
-      lowerGlobal.includes('leeloo sleep');
+    const systemOn = this.profilesService.getSystemOn(profile);
 
-    if (isWake) {
+    const execDecision = supervisor.decide({
+      input,
+      state,
+      language,
+      system_on: systemOn,
+    });
+
+    console.log('[LeelooApi] executive.supervisor', {
+      userId: clerkUserId,
+      intent_state_in: state?.intent_state || null,
+      decision: execDecision.kind,
+      token: (execDecision as any)?.token || null,
+    });
+
+    if (execDecision.kind === 'SYSTEM_WAKE') {
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
         system_on: true,
+        intent_state: 'NONE',
+        pending_intent: null,
+        pending_slots: null,
+        missing_slots: [],
+        next_question: undefined,
+        current_goal: undefined,
       });
       const responseText = language === 'es' ? 'Estoy aquí. ¿Qué necesitas?' : "I'm here. What do you need?";
       const audioUrl = await this.generateTTS(responseText, language);
@@ -539,10 +687,17 @@ export class VoiceService {
       };
     }
 
-    if (isSleep) {
+    if (execDecision.kind === 'SYSTEM_SLEEP') {
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
         system_on: false,
+        intent_state: 'NONE',
+        pending_intent: null,
+        pending_slots: null,
+        missing_slots: [],
+        next_question: undefined,
+        last_question: undefined,
+        current_goal: undefined,
       });
       const responseText = language === 'es' ? 'Listo. Me quedo en silencio. Cuando me necesites, di “Leeloo despierta”.' : 'Okay. Going quiet. When you need me, say “Leeloo wake up”.';
       const audioUrl = await this.generateTTS(responseText, language);
@@ -556,8 +711,7 @@ export class VoiceService {
       };
     }
 
-    const systemOn = this.profilesService.getSystemOn(profile);
-    if (!systemOn) {
+    if (execDecision.kind === 'SYSTEM_OFF_BLOCK') {
       const responseText = language === 'es' ? 'Estoy en silencio. Si quieres que vuelva, di “Leeloo despierta”.' : 'I’m quiet right now. If you want me back, say “Leeloo wake up”.';
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { system: 'off' });
@@ -565,6 +719,190 @@ export class VoiceService {
         transcription: cleanedText,
         intent: { intent: 'system_off', confidence: 1 },
         action_result: { system_on: false },
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
+    if (execDecision.kind === 'BLOCK_EXECUTING') {
+      const responseText = language === 'es'
+        ? 'Dame un segundo: estoy terminando algo. ¿Quieres que lo cancele?' 
+        : "Give me a second—I’m finishing something. Do you want me to cancel it?";
+      const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { executive_block: 'EXECUTING' });
+      return {
+        transcription: cleanedText,
+        intent: { intent: 'executing', confidence: 1, decision: 'QUESTION', original_text: cleanedText } as any,
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
+    if (execDecision.kind === 'HANDLE_CONFIRMATION') {
+      const pendingIntent = state?.pending_intent || null;
+      const pendingSlots = state?.pending_slots || {};
+      const pendingName = String(pendingIntent?.intent || '');
+
+      const fromState = state?.intent_state || null;
+
+      if (!pendingIntent || !pendingName) {
+        console.log('[LeelooApi] intent_state.transition', {
+          userId: clerkUserId,
+          from: fromState,
+          to: 'NONE',
+          reason: 'confirm_without_pending_intent',
+        });
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          intent_state: 'NONE',
+          pending_intent: null,
+          pending_slots: null,
+          missing_slots: [],
+          next_question: undefined,
+          last_question: undefined,
+          current_goal: undefined,
+        } as any);
+        const responseText = language === 'es'
+          ? 'Ok. ¿Qué quieres hacer ahora?'
+          : 'Okay. What do you want to do now?';
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { executive_router: true, reason: 'no_pending_intent' });
+        return {
+          transcription: cleanedText,
+          intent: { intent: 'query', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
+          action_result: null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
+      // Deterministic confirmation gate: NEVER call extractIntent here.
+      const token = (execDecision as any)?.token;
+      if (token === 'CANCEL' || token === 'NO') {
+        console.log('[LeelooApi] intent_state.transition', {
+          userId: clerkUserId,
+          from: fromState,
+          to: 'NONE',
+          reason: token === 'CANCEL' ? 'cancel' : 'no',
+          intent: pendingName,
+        });
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          current_goal: undefined,
+          intent_state: 'NONE',
+          pending_intent: null,
+          pending_slots: null,
+          missing_slots: [],
+          next_question: undefined,
+          last_question: undefined,
+          last_intent: pendingName,
+        } as any);
+        const responseText = language === 'es'
+          ? 'Listo. No lo hago. ¿Qué quieres hacer ahora?'
+          : "Okay. I won't do it. What do you want to do now?";
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { executive_router: true, intent: pendingName, token, cancel: true });
+        return {
+          transcription: cleanedText,
+          intent: { intent: 'cancel', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
+          action_result: null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
+      if (token === 'YES') {
+        console.log('[LeelooApi] intent_state.transition', {
+          userId: clerkUserId,
+          from: fromState,
+          to: 'EXECUTING',
+          reason: 'confirmed',
+          intent: pendingName,
+        });
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          current_goal: pendingName,
+          intent_state: 'EXECUTING',
+          pending_intent: pendingIntent,
+          pending_slots: pendingSlots,
+          missing_slots: [],
+          next_question: undefined,
+          last_question: undefined,
+          last_intent: pendingName,
+        } as any);
+
+        const actionResult = await this.executeIntent(clerkUserId, pendingIntent, language);
+        const responseText = buildExecutedResponse(pendingName, actionResult, language);
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { executive_router: true, intent: pendingName, token, executed: true });
+
+        console.log('[LeelooApi] intent_state.transition', {
+          userId: clerkUserId,
+          from: 'EXECUTING',
+          to: 'DONE',
+          reason: 'executed',
+          intent: pendingName,
+        });
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          current_goal: undefined,
+          intent_state: 'DONE',
+          pending_intent: null,
+          pending_slots: null,
+          missing_slots: [],
+          next_question: undefined,
+          last_question: undefined,
+          last_action: pendingName,
+          last_intent: pendingName,
+        } as any);
+
+        return {
+          transcription: cleanedText,
+          intent: { ...pendingIntent, confidence: 1, decision: 'ACTION', original_text: cleanedText } as any,
+          action_result: actionResult,
+          task_id: (actionResult as any)?.id || null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
+      // token OTHER: keep asking deterministically.
+      const confirmQ = buildConfirmQuestion(pendingName, language);
+      const responseText = language === 'es'
+        ? `${confirmQ} (Responde “sí” o “no”.)`
+        : `${confirmQ} (Answer “yes” or “no”.)`;
+      const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { executive_router: true, intent: pendingName, token, awaiting_confirmation: true });
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+        assistant_name: 'Leeloo',
+        current_goal: pendingName,
+        intent_state: 'AWAITING_CONFIRMATION',
+        pending_intent: pendingIntent,
+        pending_slots: pendingSlots,
+        missing_slots: [],
+        next_question: responseText,
+        last_question: responseText,
+        last_intent: pendingName,
+      } as any);
+
+      console.log('[LeelooApi] intent_state.transition', {
+        userId: clerkUserId,
+        from: fromState,
+        to: 'AWAITING_CONFIRMATION',
+        reason: 'token_other_reask',
+        intent: pendingName,
+      });
+
+      return {
+        transcription: cleanedText,
+        intent: pendingIntent,
+        action_result: null,
         response_text: responseText,
         response_audio_url: audioUrl,
       };
@@ -1035,140 +1373,192 @@ export class VoiceService {
       };
     }
 
-    // MANDATORY EXECUTIVE ROUTER (outside the LLM):
-    // If we are awaiting confirmation, do not call the LLM for anything.
-    // Only accept YES/NO/CANCEL deterministically.
-    if ((state as any)?.intent_state === 'AWAITING_CONFIRMATION') {
-      const pendingIntent = state?.pending_intent;
-      const pendingSlots = state?.pending_slots || {};
-      const pendingMissing: string[] = Array.isArray((pendingIntent as any)?.missing_slots)
-        ? (pendingIntent as any).missing_slots
-        : Array.isArray((state as any)?.missing_slots)
-          ? ((state as any).missing_slots as any)
-          : [];
-
-      const token = decisionToken(cleanedText);
-
-      // If state is inconsistent, fall back to a deterministic confirm prompt.
-      if (!pendingIntent || pendingMissing.length > 0) {
+    // HOUSEHOLD MANAGER (CORE MVP): deterministic meal planning using authoritative facts.
+    // Rules:
+    // - The LLM must not decide ingredients or facts.
+    // - Ask only one missing question per turn (default: time available).
+    // - Provide 2–4 options using grocery_list + preferences.
+    const isMealPlanningActive = String((state as any)?.current_goal || '') === 'meal_planning';
+    const wantsMealPlanning = mealPlanningTrigger(cleanedText.toLowerCase());
+    if ((isMealPlanningActive || wantsMealPlanning) && cleanedText) {
+      if (isCancel(cleanedText)) {
         const responseText = language === 'es'
-          ? 'Para continuar, por favor confirma con “sí” o “no”.'
-          : 'To continue, please confirm with “yes” or “no”.';
+          ? 'Listo. Cancelamos la planificación de comida. ¿Qué quieres hacer ahora?'
+          : 'Okay. Canceling meal planning. What do you want to do now?';
         const audioUrl = await this.generateTTS(responseText, language);
-        await persistTurn(responseText, { awaiting_confirmation: true, inconsistent_state: true });
-        return {
-          transcription: cleanedText,
-          intent: pendingIntent || { intent: 'awaiting_confirmation', confidence: 1, language },
-          action_result: null,
-          response_text: responseText,
-          response_audio_url: audioUrl,
-        };
-      }
-
-      if (token === 'CANCEL' || token === 'NO') {
+        await persistTurn(responseText, { household_manager: 'cancel' });
         await this.profilesService.setConversationState(clerkUserId, {
           preferred_language: language,
           assistant_name: 'Leeloo',
           current_goal: undefined,
-          intent_state: 'NONE',
           pending_intent: null,
           pending_slots: null,
           missing_slots: [],
-          next_question: undefined,
+          intent_state: 'NONE',
+          last_intent: 'meal_planning',
           last_question: undefined,
         } as any);
-        const responseText = language === 'es'
-          ? 'Perfecto. No lo hago. ¿Qué quieres hacer ahora?'
-          : "Okay. I won’t do it. What do you want to do now?";
-        const audioUrl = await this.generateTTS(responseText, language);
-        await persistTurn(responseText, { intent: String((pendingIntent as any)?.intent || ''), decision: token, executive_router: true });
         return {
           transcription: cleanedText,
-          intent: { intent: 'cancel', confidence: 1, decision: 'COACH', original_text: cleanedText },
+          intent: { intent: 'meal_planning', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
           action_result: null,
           response_text: responseText,
           response_audio_url: audioUrl,
         };
       }
 
-      if (token === 'YES') {
-        await this.profilesService.setConversationState(clerkUserId, {
-          preferred_language: language,
-          assistant_name: 'Leeloo',
-          current_goal: String(pendingIntent?.intent || ''),
-          intent_state: 'EXECUTING',
-          pending_intent: pendingIntent,
-          pending_slots: pendingSlots,
-          missing_slots: [],
-        });
+      const factsRows = await this.memoriesService.getFacts(clerkUserId, ['household', 'preferences'], 40);
+      const groceryList = getFactValue(factsRows, 'household', 'grocery_list');
+      const diet = getFactValue(factsRows, 'preferences', 'diet');
+      const dislikes = getFactValue(factsRows, 'preferences', 'dislikes');
 
-        const actionResult = await this.executeIntent(clerkUserId, pendingIntent, language);
+      const items: string[] = Array.isArray(groceryList) ? groceryList.map((x) => String(x || '').trim()).filter(Boolean) : [];
 
-        await this.profilesService.setConversationState(clerkUserId, {
-          preferred_language: language,
-          assistant_name: 'Leeloo',
-          current_goal: undefined,
-          intent_state: 'DONE',
-          last_intent: String(pendingIntent?.intent || ''),
-          last_action: String(pendingIntent?.intent || ''),
-          pending_intent: null,
-          pending_slots: null,
-          missing_slots: [],
-          next_question: undefined,
-          last_question: undefined,
-        });
+      const stateSlots = (state as any)?.pending_slots && typeof (state as any)?.pending_slots === 'object'
+        ? (state as any).pending_slots
+        : {};
+      const mealCtx = (stateSlots as any)?.meal_planning && typeof (stateSlots as any)?.meal_planning === 'object'
+        ? (stateSlots as any).meal_planning
+        : {};
 
-        const responseText = buildExecutedResponse(String(pendingIntent?.intent || ''), actionResult, language);
+      const minutesFromUser = parseMinutes(cleanedText);
+      const minutes = minutesFromUser || (typeof mealCtx?.minutes === 'number' ? mealCtx.minutes : null);
+
+      // If we don't have grocery_list, ask only for that (one question).
+      if (!items || items.length === 0) {
+        const responseText = language === 'es'
+          ? '¿Qué ingredientes tienes ahora mismo? Solo dímelos en lista (separados por comas).'
+          : 'What ingredients do you have right now? Just list them—comma separated.';
         const audioUrl = await this.generateTTS(responseText, language);
-        await persistTurn(responseText, { intent: String(pendingIntent?.intent || ''), decision: 'YES', executive_router: true });
+        await persistTurn(responseText, { household_manager: 'ask_grocery_list' });
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          current_goal: 'meal_planning',
+          intent_state: 'PENDING',
+          pending_intent: { intent: 'meal_planning' },
+          pending_slots: { ...(stateSlots || {}), meal_planning: { ...(mealCtx || {}), minutes } },
+          missing_slots: ['grocery_list'],
+          next_question: responseText,
+          last_question: responseText,
+          last_intent: 'meal_planning',
+        } as any);
         return {
           transcription: cleanedText,
-          intent: { ...pendingIntent, decision: 'ACTION', original_text: cleanedText },
-          action_result: actionResult,
-          task_id: (actionResult as any)?.id || null,
+          intent: { intent: 'meal_planning', confidence: 1, decision: 'QUESTION', original_text: cleanedText } as any,
+          action_result: null,
           response_text: responseText,
           response_audio_url: audioUrl,
         };
       }
 
-      const confirmQ = buildConfirmQuestion(String(pendingIntent?.intent || ''), language);
+      // If minutes missing, ask only that (default missing question).
+      if (!minutes) {
+        const responseText = language === 'es'
+          ? '¿Cuántos minutos tienes para cocinar? (por ejemplo: 15, 30, 45)'
+          : 'How many minutes do you have to cook? (for example: 15, 30, 45)';
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { household_manager: 'ask_minutes' });
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          current_goal: 'meal_planning',
+          intent_state: 'PENDING',
+          pending_intent: { intent: 'meal_planning' },
+          pending_slots: { ...(stateSlots || {}), meal_planning: { ...(mealCtx || {}), minutes: null } },
+          missing_slots: ['minutes'],
+          next_question: responseText,
+          last_question: responseText,
+          last_intent: 'meal_planning',
+        } as any);
+        return {
+          transcription: cleanedText,
+          intent: { intent: 'meal_planning', confidence: 1, decision: 'QUESTION', original_text: cleanedText } as any,
+          action_result: null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
+      const options = buildMealOptions({
+        items,
+        minutes,
+        diet: typeof diet === 'string' ? diet : null,
+        dislikes: Array.isArray(dislikes) ? dislikes : null,
+        language,
+      });
+
+      const selectionMatch = cleanedText.toLowerCase().match(/\b(option|opcion|opción)\s*(\d)\b|\b(\d)\b/);
+      const selectedIdx = selectionMatch ? Number(selectionMatch[2] || selectionMatch[3]) : null;
+      const prevOptions: any[] = Array.isArray(mealCtx?.options) ? mealCtx.options : [];
+      const usableOptions = prevOptions.length > 0 ? prevOptions : options;
+
+      if (selectedIdx && selectedIdx >= 1 && selectedIdx <= usableOptions.length) {
+        const chosen = usableOptions[selectedIdx - 1];
+        const responseText = language === 'es'
+          ? `Perfecto. Opción ${selectedIdx}: ${chosen.title}. ${chosen.steps}`
+          : `Great. Option ${selectedIdx}: ${chosen.title}. ${chosen.steps}`;
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { household_manager: 'selected', option: selectedIdx });
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          current_goal: 'meal_planning',
+          intent_state: 'DONE',
+          pending_intent: { intent: 'meal_planning' },
+          pending_slots: { ...(stateSlots || {}), meal_planning: { minutes, options: usableOptions } },
+          missing_slots: [],
+          last_intent: 'meal_planning',
+          last_question: undefined,
+        } as any);
+        return {
+          transcription: cleanedText,
+          intent: { intent: 'meal_planning', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
+          action_result: { selected_option: selectedIdx, option: chosen },
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
+      const lines = options
+        .slice(0, 4)
+        .map((o, idx) => `${idx + 1}) ${o.title} — ${o.why}`)
+        .join(language === 'es' ? '\n' : '\n');
+
       const responseText = language === 'es'
-        ? `${confirmQ} (Responde “sí” o “no”.)`
-        : `${confirmQ} (Answer “yes” or “no”.)`;
+        ? `Aquí tienes opciones basadas en tu despensa (${minutes} min):\n${lines}\nElige 1–${options.length}.`
+        : `Here are options based on your pantry (${minutes} min):\n${lines}\nPick 1–${options.length}.`;
       const audioUrl = await this.generateTTS(responseText, language);
-      await persistTurn(responseText, { intent: String(pendingIntent?.intent || ''), awaiting_confirmation: true, executive_router: true });
+      await persistTurn(responseText, { household_manager: 'options', minutes, options_count: options.length });
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+        assistant_name: 'Leeloo',
+        current_goal: 'meal_planning',
+        intent_state: 'PENDING',
+        pending_intent: { intent: 'meal_planning' },
+        pending_slots: { ...(stateSlots || {}), meal_planning: { minutes, options } },
+        missing_slots: [],
+        next_question: responseText,
+        last_question: responseText,
+        last_intent: 'meal_planning',
+      } as any);
       return {
         transcription: cleanedText,
-        intent: pendingIntent,
-        action_result: null,
+        intent: { intent: 'meal_planning', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
+        action_result: { minutes, options },
         response_text: responseText,
         response_audio_url: audioUrl,
       };
     }
 
-    // Get user context/memories
-    const memories = await this.memoriesService.getRelevantMemories(clerkUserId, cleanedText);
-    const recentTurns = await this.memoriesService.getRecentConversationTurns(clerkUserId, 5);
-    const turnsContext = recentTurns
-      .reverse()
-      .map((m: any) => {
-        const v = m?.value;
-        const u = v?.user ? String(v.user) : '';
-        const a = v?.assistant ? String(v.assistant) : '';
-        return u && a ? `User: ${u}\nAssistant: ${a}` : '';
-      })
-      .filter(Boolean)
-      .join('\n\n');
-    const memoryContext = memories
-      .map((m: any) => `${m.key}: ${JSON.stringify(m.value)}`)
-      .join('\n');
-
-    const fullContext = [turnsContext ? `Recent conversation:\n${turnsContext}` : null, memoryContext || null]
-      .filter(Boolean)
-      .join('\n\n');
+    const memForIntent = await memoryGate(namespacesForIntent());
+    const intentContext = memForIntent.context;
 
     // PIPELINE: Intent Detection
-    const intent = conversationalIntent || (await this.extractIntent(cleanedText, fullContext, language));
+    const intent = conversationalIntent || (await this.extractIntent(cleanedText, intentContext, language));
+
+    const memForResponse = await memoryGate(namespacesForResponse(String((intent as any)?.intent || '')));
+    const responseContext = memForResponse.context;
 
     // HARD RULE: only explicit set_language can change session language.
     if (intent && typeof intent === 'object' && intent.intent !== 'set_language') {
@@ -1371,6 +1761,7 @@ export class VoiceService {
         null,
         language,
         userContext,
+        responseContext,
       );
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'CONVERSATION' });
@@ -1402,6 +1793,7 @@ export class VoiceService {
         null,
         language,
         userContext,
+        responseContext,
       );
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'COACH' });
@@ -1604,17 +1996,27 @@ export class VoiceService {
   }
 
   private async extractIntent(text: string, context: string, language: SupportedLanguage) {
-    const endpoint =
-      this.configService.get<string>('LLM_ENDPOINT') ||
-      this.configService.get<string>('LOCAL_LLM_ENDPOINT');
+    const intentModelLabel =
+      this.configService.get<string>('LLM_INTENT_MODEL') ||
+      this.configService.get<string>('LLM_MODEL') ||
+      this.configService.get<string>('LOCAL_LLM_MODEL');
+    const qwenBaseUrl = this.configService.get<string>('QWEN_BASE_URL');
+    const intentEndpoint = qwenBaseUrl
+      ? `${qwenBaseUrl.replace(/\/$/, '')}/chat/completions`
+      : this.configService.get<string>('LLM_ENDPOINT') || this.configService.get<string>('LOCAL_LLM_ENDPOINT');
     const apiKey =
       this.configService.get<string>('LLM_API_KEY') ||
       this.configService.get<string>('LOCAL_LLM_API_KEY');
-    const model =
+    const qwenModel = this.configService.get<string>('QWEN_MODEL');
+    const fallbackModel =
       this.configService.get<string>('LLM_MODEL') ||
       this.configService.get<string>('LOCAL_LLM_MODEL');
+    const model =
+      intentModelLabel === 'qwen'
+        ? qwenModel || fallbackModel
+        : intentModelLabel || fallbackModel;
 
-    if (!endpoint || !model) {
+    if (!intentEndpoint || !model) {
       return {
         intent: 'system_unavailable',
         confidence: 0.65,
@@ -1650,12 +2052,13 @@ export class VoiceService {
       const t0 = Date.now();
       console.log('[LeelooApi] voice.llm.intent.start', {
         traceId,
-        endpoint,
+        endpoint: intentEndpoint,
         model,
+        intent_model: intentModelLabel || null,
         language,
       });
       const res = await axios.post(
-        endpoint,
+        intentEndpoint,
         {
           model,
           messages: [
@@ -1718,18 +2121,29 @@ export class VoiceService {
     actionResult: any,
     language: SupportedLanguage,
     userContext?: { faith_mode?: boolean; role?: string },
+    memoryContext?: string,
   ): Promise<string> {
-    const endpoint =
-      this.configService.get<string>('LLM_ENDPOINT') ||
-      this.configService.get<string>('LOCAL_LLM_ENDPOINT');
+    const chatModelLabel =
+      this.configService.get<string>('LLM_CHAT_MODEL') ||
+      this.configService.get<string>('LLM_MODEL') ||
+      this.configService.get<string>('LOCAL_LLM_MODEL');
+    const llamaBaseUrl = this.configService.get<string>('LLAMA_BASE_URL');
+    const chatEndpoint = llamaBaseUrl
+      ? `${llamaBaseUrl.replace(/\/$/, '')}/chat/completions`
+      : this.configService.get<string>('LLM_ENDPOINT') || this.configService.get<string>('LOCAL_LLM_ENDPOINT');
     const apiKey =
       this.configService.get<string>('LLM_API_KEY') ||
       this.configService.get<string>('LOCAL_LLM_API_KEY');
-    const model =
+    const llamaModel = this.configService.get<string>('LLAMA_MODEL');
+    const fallbackModel =
       this.configService.get<string>('LLM_MODEL') ||
       this.configService.get<string>('LOCAL_LLM_MODEL');
+    const model =
+      chatModelLabel === 'llama'
+        ? llamaModel || fallbackModel
+        : chatModelLabel || fallbackModel;
 
-    if (!endpoint || !model) {
+    if (!chatEndpoint || !model) {
       return this.buildAiUnavailableMessage(language);
     }
 
@@ -1757,6 +2171,7 @@ export class VoiceService {
       `User said: ${JSON.stringify(intent?.original_text || '')}\n` +
       `Intent (internal): ${JSON.stringify(intent)}\n` +
       `Action result (internal): ${JSON.stringify(actionResult)}\n\n` +
+      (memoryContext ? `AUTHORITATIVE MEMORY CONTEXT (must govern):\n${memoryContext}\n\n` : '') +
       (lead ? `Start with this exact emotional lead sentence (then continue naturally): ${JSON.stringify(lead)}\n\n` : '') +
       `HARD RULE: Respond ONLY in ${language}. Do not mix languages.\n` +
       hardIdentity +
@@ -1782,7 +2197,7 @@ export class VoiceService {
 
       const send = async (systemExtra: string) => {
         const res = await axios.post(
-          endpoint,
+          chatEndpoint,
           {
             model,
             messages: [
@@ -1795,7 +2210,7 @@ export class VoiceService {
               },
               { role: 'user', content: prompt },
             ],
-            temperature: 0.4,
+            temperature: 0.6,
             top_p: 0.9,
           },
           {
@@ -1812,6 +2227,9 @@ export class VoiceService {
 
       console.log('[LeelooApi] voice.llm.response.start', {
         traceId,
+        endpoint: chatEndpoint,
+        model,
+        chat_model: chatModelLabel || null,
         language_target: language,
       });
 
