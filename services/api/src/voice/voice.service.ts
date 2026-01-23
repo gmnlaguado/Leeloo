@@ -2073,6 +2073,7 @@ export class VoiceService {
             },
             { role: 'user', content: prompt },
           ],
+          max_tokens: 256,
           temperature: 0.2,
         },
         {
@@ -2210,6 +2211,7 @@ export class VoiceService {
               },
               { role: 'user', content: prompt },
             ],
+            max_tokens: 320,
             temperature: 0.6,
             top_p: 0.9,
           },
