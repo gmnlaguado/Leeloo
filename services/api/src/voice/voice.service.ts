@@ -356,7 +356,7 @@ export class VoiceService {
   async processIntent(
     clerkUserId: string,
     text?: string,
-    userContext?: { language?: string; faith_mode?: boolean; role?: string },
+    userContext?: { language?: string; faith_mode?: boolean; role?: string; channel?: 'VOICE' | 'TEXT'; role_policy?: any },
   ) {
     const normalizer = new InputNormalizer();
     const supervisor = new ExecutiveSupervisor();
@@ -672,6 +672,9 @@ export class VoiceService {
 
     const systemOn = this.profilesService.getSystemOn(profile);
 
+    const channel: 'VOICE' | 'TEXT' =
+      (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
+
     const execDecision = supervisor.decide({
       input,
       state,
@@ -966,6 +969,173 @@ export class VoiceService {
         response_text: responseText,
         response_audio_url: audioUrl,
       };
+    }
+
+    // ExecutiveBrain v2: if we have no usable text, avoid Qwen/Llama and respond deterministically.
+    if (!cleanedText) {
+      const responseText = this.buildSttFailureMessage(language);
+      const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { executive_router: true, reason: 'empty_input', channel });
+      return {
+        transcription: cleanedText,
+        intent: { intent: 'query', confidence: 0.65, decision: 'QUESTION', original_text: '' } as any,
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
+    // ExecutiveBrain v2: deterministic slot fill while an intent is pending.
+    // This avoids calling Qwen again (big latency) when the user is answering a missing slot question.
+    if (state?.pending_intent && Array.isArray(state?.missing_slots) && state.missing_slots.length > 0) {
+      const pendingIntent = state.pending_intent;
+      const intentName = String(pendingIntent?.intent || '');
+      const missing = (state.missing_slots as string[]).map((s: any) => String(s || '')).filter(Boolean);
+      const firstMissing = missing[0] || '';
+      const filled = (pendingIntent?.filled_slots && typeof pendingIntent.filled_slots === 'object')
+        ? { ...(pendingIntent.filled_slots as any) }
+        : {};
+
+      let changed = false;
+
+      if (intentName === 'send_email') {
+        if (firstMissing === 'to') {
+          const emailMatch = cleanedText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+          if (emailMatch && emailMatch[0]) {
+            filled.to = emailMatch[0];
+            changed = true;
+          } else {
+            filled.to = cleanedText.trim();
+            changed = true;
+          }
+        }
+        if (firstMissing === 'body') {
+          filled.body = cleanedText.trim();
+          changed = true;
+        }
+      }
+
+      if (intentName === 'create_task') {
+        if (firstMissing === 'title') {
+          filled.title = cleanedText.trim();
+          changed = true;
+        }
+      }
+
+      if (intentName === 'reminder') {
+        if (firstMissing === 'activity') {
+          filled.activity = cleanedText.trim();
+          changed = true;
+        }
+        if (firstMissing === 'time') {
+          filled.time = cleanedText.trim();
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        const nextPending = { ...pendingIntent, filled_slots: filled };
+
+        const recomputeMissing = () => {
+          if (intentName === 'send_email') {
+            const m: string[] = [];
+            if (!String(filled.to || '').trim()) m.push('to');
+            if (!String(filled.body || filled.content || '').trim()) m.push('body');
+            return m;
+          }
+          if (intentName === 'create_task') {
+            const m: string[] = [];
+            if (!String(filled.title || '').trim()) m.push('title');
+            return m;
+          }
+          return missing;
+        };
+
+        const nextMissing = recomputeMissing();
+
+        // If still missing, ask the next deterministic question.
+        if (nextMissing.length > 0) {
+          const responseText =
+            typeof nextPending?.next_question === 'string' && nextPending.next_question.trim()
+              ? nextPending.next_question.trim()
+              : intentName === 'send_email' && nextMissing[0] === 'to'
+                ? (language === 'en' ? 'What email address should I send it to?' : '¿A qué correo quieres que lo envíe?')
+                : intentName === 'send_email' && nextMissing[0] === 'body'
+                  ? (language === 'en' ? 'What should the email say?' : '¿Qué quieres que diga el correo?')
+                  : this.buildMissingTaskTitleMessage(language);
+
+          const audioUrl = await this.generateTTS(responseText, language);
+          await persistTurn(responseText, { executive_router: true, reason: 'slot_fill', intent: intentName, missing: nextMissing, channel });
+
+          await this.profilesService.setConversationState(clerkUserId, {
+            preferred_language: language,
+            assistant_name: 'Leeloo',
+            current_goal: intentName,
+            intent_state: 'PENDING',
+            pending_intent: nextPending,
+            pending_slots: { filled_slots: filled },
+            missing_slots: nextMissing,
+            next_question: responseText,
+            last_question: responseText,
+            last_intent: intentName,
+          } as any);
+
+          return {
+            transcription: cleanedText,
+            intent: { ...nextPending, decision: 'QUESTION', original_text: cleanedText } as any,
+            action_result: null,
+            response_text: responseText,
+            response_audio_url: audioUrl,
+          };
+        }
+
+        // No missing slots anymore -> move to confirmation (deterministic).
+        const confirmQ = buildConfirmQuestion(intentName, language);
+        const audioUrl = await this.generateTTS(confirmQ, language);
+        await persistTurn(confirmQ, { executive_router: true, reason: 'slot_fill_to_confirmation', intent: intentName, channel });
+
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          current_goal: intentName,
+          intent_state: 'AWAITING_CONFIRMATION',
+          pending_intent: nextPending,
+          pending_slots: { filled_slots: filled },
+          missing_slots: [],
+          next_question: confirmQ,
+          last_question: confirmQ,
+          last_intent: intentName,
+        } as any);
+
+        return {
+          transcription: cleanedText,
+          intent: { ...nextPending, decision: 'QUESTION', original_text: cleanedText } as any,
+          action_result: null,
+          response_text: confirmQ,
+          response_audio_url: audioUrl,
+        };
+      }
+    }
+
+    // ExecutiveBrain v2: goal governor (prevent drift). If a goal is active and the user says something unrelated,
+    // redirect back to the pending question without calling Qwen/Llama.
+    if (state?.current_goal && state?.next_question && (state?.intent_state === 'PENDING' || state?.intent_state === 'AWAITING_CONFIRMATION')) {
+      const goal = String(state.current_goal || '').trim();
+      const q = String(state.next_question || '').trim();
+      if (goal && q) {
+        const responseText = language === 'es'
+          ? `Un segundo: estamos con ${goal}. ${q}`
+          : `One second—we're on ${goal}. ${q}`;
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { executive_router: true, reason: 'redirect_to_goal', goal, channel });
+        return {
+          transcription: cleanedText,
+          intent: { intent: goal, confidence: 1, decision: 'QUESTION', original_text: cleanedText } as any,
+          action_result: null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
     }
 
     const t = cleanedText.toLowerCase();
