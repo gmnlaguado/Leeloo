@@ -106,6 +106,9 @@ export class VoiceService {
 
     const preferOpenAI = String(this.configService.get<string>('STT_PREFER_OPENAI') || 'true').toLowerCase() !== 'false';
 
+    const fallbackOnEmpty =
+      String(this.configService.get<string>('STT_FALLBACK_ON_EMPTY') || 'false').toLowerCase() === 'true';
+
     const language = (userContext?.language || 'en').toLowerCase();
 
     console.log('[LeelooApi] voice.stt.start', {
@@ -116,6 +119,7 @@ export class VoiceService {
       endpoint,
       hasOpenAI: Boolean(this.openai),
       preferOpenAI,
+      fallbackOnEmpty,
     });
 
     // FAST PATH: Prefer OpenAI Whisper when configured.
@@ -143,6 +147,17 @@ export class VoiceService {
         });
 
         if (out) return out;
+
+        // Premium UX: if Whisper returns empty (often silence/very short), do NOT fall back
+        // to slow STT services unless explicitly enabled.
+        if (!fallbackOnEmpty) {
+          console.warn('[LeelooApi] voice.stt.openai.empty', {
+            traceId,
+            model,
+            total_ms: Date.now() - startedAt,
+          });
+          return '';
+        }
       } catch (err) {
         console.error('[LeelooApi] voice.stt.openai.error', {
           traceId,
