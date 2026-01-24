@@ -22,6 +22,13 @@ import { FactIngestor } from './core/fact-ingestor';
 export class VoiceService {
   private readonly openai: OpenAI | null;
 
+  private llmTimeoutMs() {
+    const raw = this.configService.get<string>('LLM_TIMEOUT_MS');
+    const parsed = raw ? Number(raw) : NaN;
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    return 120000;
+  }
+
   private createTraceId(prefix: string) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
   }
@@ -2057,50 +2064,68 @@ export class VoiceService {
         intent_model: intentModelLabel || null,
         language,
       });
-      const res = await axios.post(
-        intentEndpoint,
-        {
-          model,
-          messages: [
-            {
-              role: 'system',
-              content:
-                buildLeelooUniversalPrompt({ language, mode: 'intent' }) +
-                'INTENT MODE CONTRACT:\n' +
-                '- Output ONLY valid JSON.\n' +
-                '- NEVER output markdown.\n' +
-                '- If data is missing, fill missing_slots and write next_question as ONE clear question.\n',
-            },
-            { role: 'user', content: prompt },
-          ],
-          max_tokens: 256,
-          temperature: 0.2,
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+
+      const llmTimeout = this.llmTimeoutMs();
+
+      try {
+        const res = await axios.post(
+          intentEndpoint,
+          {
+            model,
+            messages: [
+              {
+                role: 'system',
+                content:
+                  buildLeelooUniversalPrompt({ language, mode: 'intent' }) +
+                  'INTENT MODE CONTRACT:\n' +
+                  '- Output ONLY valid JSON.\n' +
+                  '- NEVER output markdown.\n' +
+                  '- If data is missing, fill missing_slots and write next_question as ONE clear question.\n',
+              },
+              { role: 'user', content: prompt },
+            ],
+            max_tokens: 256,
+            temperature: 0.2,
           },
-          timeout: 60000,
-        },
-      );
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+            },
+            timeout: llmTimeout,
+          },
+        );
 
-      const content = res.data?.choices?.[0]?.message?.content;
-      if (!content) {
-        throw new Error('No content from LLM');
-      }
+        const content = res.data?.choices?.[0]?.message?.content;
+        if (!content) {
+          throw new Error('No content from LLM');
+        }
 
-      console.log('[LeelooApi] voice.llm.intent.ok', {
-        traceId,
-        ms: Date.now() - t0,
-      });
-      const parsed = JSON.parse(content);
-      // Ensure confidence is never 0; downstream uses a floor and combined scoring.
-      if (!parsed || typeof parsed !== 'object') return parsed;
-      if (typeof parsed.confidence !== 'number' || !Number.isFinite(parsed.confidence) || parsed.confidence <= 0) {
-        parsed.confidence = 0.65;
+        console.log('[LeelooApi] voice.llm.intent.ok', {
+          traceId,
+          ms: Date.now() - t0,
+        });
+        const parsed = JSON.parse(content);
+        // Ensure confidence is never 0; downstream uses a floor and combined scoring.
+        if (!parsed || typeof parsed !== 'object') return parsed;
+        if (typeof parsed.confidence !== 'number' || !Number.isFinite(parsed.confidence) || parsed.confidence <= 0) {
+          parsed.confidence = 0.65;
+        }
+        return parsed;
+      } catch (err) {
+        console.error('[LeelooApi] voice.llm.intent.error', {
+          ...this.axiosErrorSummary(err),
+        });
+        return {
+          intent: 'system_unavailable',
+          confidence: 0.65,
+          required_slots: [],
+          filled_slots: {},
+          missing_slots: [],
+          next_question: this.buildAiUnavailableMessage(language),
+          priority: 'low',
+        };
       }
-      return parsed;
     } catch (err) {
       console.error('[LeelooApi] voice.llm.intent.error', {
         ...this.axiosErrorSummary(err),
@@ -2196,6 +2221,8 @@ export class VoiceService {
       const traceId = this.createTraceId('llm_resp');
       const t0 = Date.now();
 
+      const llmTimeout = this.llmTimeoutMs();
+
       const send = async (systemExtra: string) => {
         const res = await axios.post(
           chatEndpoint,
@@ -2220,7 +2247,7 @@ export class VoiceService {
               'Content-Type': 'application/json',
               ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
             },
-            timeout: 60000,
+            timeout: llmTimeout,
           },
         );
         const content = res.data?.choices?.[0]?.message?.content;
@@ -2288,7 +2315,7 @@ export class VoiceService {
             'Content-Type': 'application/json',
           },
           responseType: 'arraybuffer',
-          timeout: 60000,
+          timeout: this.llmTimeoutMs(),
         },
       );
 
