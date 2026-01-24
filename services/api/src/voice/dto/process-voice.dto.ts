@@ -24,6 +24,8 @@ export class ProcessVoiceDto {
   user_context?: {
     language?: string;
     faith_mode?: boolean;
+    channel?: 'VOICE' | 'TEXT';
+    role_policy?: 'DEFAULT' | 'COACH' | 'PSYCHOLOGY' | 'TECH' | 'RELIGIOUS';
     role?: string;
     conversation_only?: boolean;
   };

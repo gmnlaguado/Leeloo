@@ -2199,7 +2199,7 @@ export class VoiceService {
     intent: any,
     actionResult: any,
     language: SupportedLanguage,
-    userContext?: { faith_mode?: boolean; role?: string },
+    userContext?: { faith_mode?: boolean; role?: string; channel?: 'VOICE' | 'TEXT'; role_policy?: any },
     memoryContext?: string,
   ): Promise<string> {
     const chatModelLabel =
@@ -2230,6 +2230,18 @@ export class VoiceService {
 
     const roleTone = userContext?.role ? `User role/context: ${userContext.role}.\n` : '';
 
+    const channel: 'VOICE' | 'TEXT' =
+      (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
+
+    const rolePolicyRaw = String((userContext as any)?.role_policy || 'DEFAULT').toUpperCase();
+    const rolePolicy: 'DEFAULT' | 'COACH' | 'PSYCHOLOGY' | 'TECH' | 'RELIGIOUS' =
+      rolePolicyRaw === 'COACH' ||
+      rolePolicyRaw === 'PSYCHOLOGY' ||
+      rolePolicyRaw === 'TECH' ||
+      rolePolicyRaw === 'RELIGIOUS'
+        ? (rolePolicyRaw as any)
+        : 'DEFAULT';
+
     const voiceSystemPrompt =
       'You are Leeloo, a premium voice assistant and executive coach.\n\n' +
       'VOICE RULES (STRICT):\n' +
@@ -2255,6 +2267,42 @@ export class VoiceService {
       '- “As an AI…”\n\n' +
       'LANGUAGE:\n' +
       '- Match the user’s language automatically.\n';
+
+    const rolePolicySystemBlock = (() => {
+      if (rolePolicy === 'COACH') {
+        return (
+          'ROLE POLICY (AUTHORITATIVE): COACH\n' +
+          '- Output must be actionable and direct.\n' +
+          '- Never teach theory or explain concepts unless explicitly asked.\n' +
+          '- Ask at most ONE short question.\n'
+        );
+      }
+      if (rolePolicy === 'PSYCHOLOGY') {
+        return (
+          'ROLE POLICY (AUTHORITATIVE): PSYCHOLOGY\n' +
+          '- Prioritize empathy and clarification.\n' +
+          '- Ask ONE gentle, short question.\n' +
+          '- Avoid long solutions; keep it human and present.\n'
+        );
+      }
+      if (rolePolicy === 'TECH') {
+        return (
+          'ROLE POLICY (AUTHORITATIVE): TECH\n' +
+          '- Be precise and short.\n' +
+          '- Ask ONE question only if needed to proceed.\n' +
+          '- Avoid long explanations; prefer a next step.\n'
+        );
+      }
+      if (rolePolicy === 'RELIGIOUS') {
+        return (
+          'ROLE POLICY (AUTHORITATIVE): RELIGIOUS\n' +
+          '- Be respectful and gentle.\n' +
+          '- Never preach without permission.\n' +
+          '- Keep it short and grounded.\n'
+        );
+      }
+      return 'ROLE POLICY (AUTHORITATIVE): DEFAULT\n';
+    })();
 
     const hardIdentity =
       'HARD IDENTITY RULES:\n' +
@@ -2287,6 +2335,14 @@ export class VoiceService {
       const n = Number(raw);
       return Number.isFinite(n) && n >= 40 && n <= 320 ? Math.floor(n) : 160;
     })();
+
+    const textMaxTokens = (() => {
+      const raw = this.configService.get<string>('LLAMA_TEXT_MAX_TOKENS') || '320';
+      const n = Number(raw);
+      return Number.isFinite(n) && n >= 80 && n <= 800 ? Math.floor(n) : 320;
+    })();
+
+    const maxTokens = channel === 'VOICE' ? voiceMaxTokens : textMaxTokens;
 
     const hardTrimForVoice = (text: string) => {
       let out = String(text || '').trim();
@@ -2342,12 +2398,13 @@ export class VoiceService {
                 content:
                   leelooCore +
                   (userContext?.faith_mode ? '' : 'Avoid religious content.\n') +
-                  voiceSystemPrompt +
+                  (channel === 'VOICE' ? voiceSystemPrompt : '') +
+                  rolePolicySystemBlock +
                   systemExtra,
               },
               { role: 'user', content: prompt },
             ],
-            max_tokens: voiceMaxTokens,
+            max_tokens: maxTokens,
             temperature: 0.6,
             top_p: 0.9,
           },
@@ -2389,7 +2446,7 @@ export class VoiceService {
         language_target: language,
       });
 
-      const finalOut = hardTrimForVoice(out);
+      const finalOut = channel === 'VOICE' ? hardTrimForVoice(out) : (out || '').trim();
       return finalOut || this.buildAiUnavailableMessage(language);
     } catch (err) {
       console.error('[LeelooApi] voice.llm.response.error', {

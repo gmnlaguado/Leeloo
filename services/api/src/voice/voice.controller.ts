@@ -97,11 +97,16 @@ export class VoiceController {
       preferredLanguage = requestedLanguage;
     }
 
+    const inferredChannel = audio ? 'VOICE' : 'TEXT';
+    const explicitChannel = (dto.user_context as any)?.channel;
+    const channel = explicitChannel === 'VOICE' || explicitChannel === 'TEXT' ? explicitChannel : inferredChannel;
+
     const userContext = {
       ...(dto.user_context || {}),
       ...(dto.role ? { role: dto.role } : {}),
       ...(dto.conversation_only === 'true' ? { conversation_only: true } : {}),
       language: preferredLanguage,
+      channel,
     };
 
     const wakeWordOnly = String((dto as any)?.wake_word_only || '').toLowerCase() === 'true';
