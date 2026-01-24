@@ -81,7 +81,7 @@ export class VoiceService {
 
   async transcribeAudio(
     audioBuffer: Buffer,
-    userContext?: { language?: string },
+    userContext?: { language?: string; wake_word_only?: boolean },
   ): Promise<string> {
     if (!audioBuffer || audioBuffer.length === 0) {
       return '';
@@ -106,8 +106,15 @@ export class VoiceService {
 
     const preferOpenAI = String(this.configService.get<string>('STT_PREFER_OPENAI') || 'true').toLowerCase() !== 'false';
 
-    const fallbackOnEmpty =
+    const fallbackOnEmptyGlobal =
       String(this.configService.get<string>('STT_FALLBACK_ON_EMPTY') || 'false').toLowerCase() === 'true';
+
+    const fallbackOnEmptyWake =
+      String(this.configService.get<string>('STT_FALLBACK_ON_EMPTY_WAKE') || 'true').toLowerCase() !== 'false';
+
+    const wakeWordOnly = Boolean((userContext as any)?.wake_word_only);
+
+    const fallbackOnEmpty = fallbackOnEmptyGlobal || (wakeWordOnly && fallbackOnEmptyWake);
 
     const language = (userContext?.language || 'en').toLowerCase();
 
@@ -120,6 +127,7 @@ export class VoiceService {
       hasOpenAI: Boolean(this.openai),
       preferOpenAI,
       fallbackOnEmpty,
+      wake_word_only: wakeWordOnly,
     });
 
     // FAST PATH: Prefer OpenAI Whisper when configured.

@@ -110,6 +110,7 @@ export class VoiceController {
     };
 
     const wakeWordOnly = String((dto as any)?.wake_word_only || '').toLowerCase() === 'true';
+    (userContext as any).wake_word_only = wakeWordOnly;
 
     // If audio file is provided, transcribe it first
     if (audio) {
