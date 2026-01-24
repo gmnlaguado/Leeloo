@@ -697,9 +697,28 @@ export class VoiceService {
         next_question: undefined,
         current_goal: undefined,
       });
-      const responseText = language === 'es' ? 'Estoy aquí. ¿Qué necesitas?' : "I'm here. What do you need?";
+
+      const displayName =
+        typeof (profile as any)?.preferences?.user_identity?.display_name === 'string'
+          ? String((profile as any).preferences.user_identity.display_name).trim()
+          : '';
+      const identityContext = displayName ? `User display name: ${displayName}\n` : '';
+
+      const responseText = await this.generateResponse(
+        {
+          intent: 'greeting',
+          confidence: 1,
+          decision: 'QUESTION',
+          original_text: cleanedText,
+        },
+        { system_on: true, system_event: 'wake' },
+        language,
+        userContext,
+        identityContext,
+      );
+
       const audioUrl = await this.generateTTS(responseText, language);
-      await persistTurn(responseText, { system: 'wake' });
+      await persistTurn(responseText, { system: 'wake', has_name: Boolean(displayName) });
       return {
         transcription: cleanedText,
         intent: { intent: 'system_on', confidence: 1 },
@@ -721,7 +740,26 @@ export class VoiceService {
         last_question: undefined,
         current_goal: undefined,
       });
-      const responseText = language === 'es' ? 'Listo. Me quedo en silencio. Cuando me necesites, di “Leeloo despierta”.' : 'Okay. Going quiet. When you need me, say “Leeloo wake up”.';
+
+      const displayName =
+        typeof (profile as any)?.preferences?.user_identity?.display_name === 'string'
+          ? String((profile as any).preferences.user_identity.display_name).trim()
+          : '';
+      const namePart = displayName ? ` ${displayName}` : '';
+
+      const variantsEn = [
+        `Okay${namePart}. Going quiet. When you need me, say “Leeloo wake up”.`,
+        `All set${namePart}. I’ll be here when you need me. Say “Leeloo wake up”.`,
+        `Got it${namePart}. Talk soon. Say “Leeloo wake up” when you’re ready.`,
+      ];
+      const variantsEs = [
+        `Listo${namePart}. Me quedo en silencio. Cuando me necesites, di “Leeloo despierta”.`,
+        `Hecho${namePart}. Aquí estaré. Cuando me necesites, di “Leeloo despierta”.`,
+        `Perfecto${namePart}. Hasta la próxima. Di “Leeloo despierta” cuando quieras.`,
+      ];
+
+      const pick = (arr: string[]) => arr[Math.abs(Date.now()) % arr.length];
+      const responseText = language === 'es' ? pick(variantsEs) : pick(variantsEn);
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { system: 'sleep' });
       return {
