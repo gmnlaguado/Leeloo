@@ -2230,8 +2230,31 @@ export class VoiceService {
 
     const roleTone = userContext?.role ? `User role/context: ${userContext.role}.\n` : '';
 
-    // Premium: conversation is always the base. Default to warm, human, and complete.
-    const lengthGuidance = 'Be warm, human, and detailed (8-16 sentences). Use short paragraphs. Avoid bullet points.\n';
+    const voiceSystemPrompt =
+      'You are Leeloo, a premium voice assistant and executive coach.\n\n' +
+      'VOICE RULES (STRICT):\n' +
+      '- Speak in short, natural sentences.\n' +
+      '- Max 2–4 sentences per response.\n' +
+      '- Never explain unless explicitly asked.\n' +
+      '- No introductions, no summaries.\n' +
+      '- Be decisive and confident.\n' +
+      '- Sound human, warm, and present — not verbose.\n\n' +
+      'STYLE:\n' +
+      '- Coach-like, calm, supportive.\n' +
+      '- Clear and direct.\n' +
+      '- Emotion through tone, not length.\n\n' +
+      'VOICE UX:\n' +
+      '- If an action is completed, confirm briefly.\n' +
+      '- If information is missing, ask ONE short question.\n' +
+      '- If proposing options, give at most 3.\n\n' +
+      'ABSOLUTELY FORBIDDEN:\n' +
+      '- Long explanations\n' +
+      '- Lists longer than 3 items\n' +
+      '- Repeating user input\n' +
+      '- Over-politeness\n' +
+      '- “As an AI…”\n\n' +
+      'LANGUAGE:\n' +
+      '- Match the user’s language automatically.\n';
 
     const hardIdentity =
       'HARD IDENTITY RULES:\n' +
@@ -2257,8 +2280,40 @@ export class VoiceService {
       'Write the user-facing response.\n' +
       'If Decision=COACH: coach briefly, then ask ONE clarifying question.\n' +
       'If Decision=ACTION: confirm completion clearly and give ONE next step option.\n' +
-      'If Decision=QUESTION: ask ONE crisp question.\n' +
-      lengthGuidance;
+      'If Decision=QUESTION: ask ONE crisp question.\n';
+
+    const voiceMaxTokens = (() => {
+      const raw = this.configService.get<string>('LLAMA_VOICE_MAX_TOKENS') || '160';
+      const n = Number(raw);
+      return Number.isFinite(n) && n >= 40 && n <= 320 ? Math.floor(n) : 160;
+    })();
+
+    const hardTrimForVoice = (text: string) => {
+      let out = String(text || '').trim();
+      if (!out) return '';
+
+      out = out.replace(/\n{2,}/g, '\n').replace(/\s+\n/g, '\n').replace(/\n\s+/g, '\n').trim();
+      out = out.replace(/\n+/g, ' ');
+      out = out.replace(/\s+/g, ' ').trim();
+
+      const bulletLike = /(^|\s)([-*]|\d+\.)\s+/;
+      if (bulletLike.test(out)) {
+        const parts = out.split(/(?:^|\s)(?:[-*]|\d+\.)\s+/).map((p) => p.trim()).filter(Boolean);
+        if (parts.length > 1) {
+          out = parts.slice(0, 3).join(' ');
+        }
+      }
+
+      const sentences = out
+        .split(/(?<=[.!?])\s+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (sentences.length > 4) {
+        out = sentences.slice(0, 4).join(' ');
+      }
+
+      return out;
+    };
 
     const looksLikeSpanish = (s: string) => /\b(el|la|de|que|y|para|hola|gracias|por favor|enviar|correo)\b/i.test(s);
     const looksLikeEnglish = (s: string) => /\b(the|and|to|please|hello|thanks|send|email)\b/i.test(s);
@@ -2287,11 +2342,12 @@ export class VoiceService {
                 content:
                   leelooCore +
                   (userContext?.faith_mode ? '' : 'Avoid religious content.\n') +
+                  voiceSystemPrompt +
                   systemExtra,
               },
               { role: 'user', content: prompt },
             ],
-            max_tokens: 320,
+            max_tokens: voiceMaxTokens,
             temperature: 0.6,
             top_p: 0.9,
           },
@@ -2333,7 +2389,8 @@ export class VoiceService {
         language_target: language,
       });
 
-      return out || this.buildAiUnavailableMessage(language);
+      const finalOut = hardTrimForVoice(out);
+      return finalOut || this.buildAiUnavailableMessage(language);
     } catch (err) {
       console.error('[LeelooApi] voice.llm.response.error', {
         ...this.axiosErrorSummary(err),
