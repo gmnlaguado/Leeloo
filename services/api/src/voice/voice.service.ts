@@ -271,6 +271,10 @@ export class VoiceService {
           if (isRateLimited(err)) {
             return '';
           }
+          if (wakeWordOnly) {
+            // Wake-word loop must never pay extra latency for alternate routes.
+            return '';
+          }
           // Do NOT fall through to /asr. Our deployed STT is /v1/transcribe and /transcribe.
           // Falling through causes slow 404s and destabilizes voice loops.
         }
@@ -1862,6 +1866,12 @@ export class VoiceService {
     if (intent && typeof intent === 'object') {
       const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
 
+      const isValidEmail = (raw: string) => {
+        const s = String(raw || '').trim();
+        if (!s) return false;
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+      };
+
       if (intent.intent === 'send_email') {
         const normalized: any = { ...filled };
         if (!normalized.to && normalized.recipient) normalized.to = normalized.recipient;
@@ -1872,7 +1882,9 @@ export class VoiceService {
         intent.filled_slots = normalized;
 
         const missing: string[] = [];
-        if (!String(normalized.to || '').trim()) missing.push('to');
+        const toCandidate = String(normalized.to || '').trim();
+        if (!toCandidate) missing.push('to');
+        else if (!isValidEmail(toCandidate)) missing.push('to');
         if (!String(normalized.body || normalized.content || '').trim()) missing.push('body');
 
         if (missing.length > 0) {
@@ -2195,7 +2207,9 @@ export class VoiceService {
       const subject = (filled.subject || filled.title || intent.title || 'Message from Leeloo').toString().trim();
       const text = (filled.body || filled.content || filled.email_content || '').toString().trim();
 
-      if (to && text) {
+      const isValidEmail = (raw: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(raw || '').trim());
+
+      if (isValidEmail(to) && text) {
         let sendOk = false;
         let sendResult: any = null;
         let sendError: string | null = null;

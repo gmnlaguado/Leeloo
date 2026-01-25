@@ -109,9 +109,12 @@ export class VoiceController {
     const explicitChannel = (dto.user_context as any)?.channel;
     const channel = explicitChannel === 'VOICE' || explicitChannel === 'TEXT' ? explicitChannel : inferredChannel;
 
+    const roleFromUserContext = (dto.user_context as any)?.role;
+    const resolvedRole = dto.role || (typeof roleFromUserContext === 'string' ? roleFromUserContext : undefined);
+
     const userContext = {
       ...(dto.user_context || {}),
-      ...(dto.role ? { role: dto.role } : {}),
+      ...(resolvedRole ? { role: resolvedRole } : {}),
       ...(dto.conversation_only === 'true' ? { conversation_only: true } : {}),
       language: preferredLanguage,
       channel,
