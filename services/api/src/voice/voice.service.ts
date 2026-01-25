@@ -29,6 +29,17 @@ export class VoiceService {
     return 120000;
   }
 
+  private llmTimeoutMsForChannel(channel: 'VOICE' | 'TEXT') {
+    if (channel === 'VOICE') {
+      const raw = this.configService.get<string>('LLM_TIMEOUT_MS_VOICE');
+      const parsed = raw ? Number(raw) : NaN;
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      return 18000;
+    }
+
+    return this.llmTimeoutMs();
+  }
+
   private createTraceId(prefix: string) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
   }
@@ -116,6 +127,12 @@ export class VoiceService {
 
     const fallbackOnEmpty = fallbackOnEmptyGlobal || (wakeWordOnly && fallbackOnEmptyWake);
 
+    const sttWakeTimeoutMs = (() => {
+      const raw = this.configService.get<string>('STT_WAKE_ENDPOINT_TIMEOUT_MS') || '2500';
+      const n = Number(raw);
+      return Number.isFinite(n) && n >= 250 && n <= 20000 ? Math.floor(n) : 2500;
+    })();
+
     const language = (userContext?.language || 'en').toLowerCase();
 
     console.log('[LeelooApi] voice.stt.start', {
@@ -128,6 +145,7 @@ export class VoiceService {
       preferOpenAI,
       fallbackOnEmpty,
       wake_word_only: wakeWordOnly,
+      stt_wake_timeout_ms: wakeWordOnly ? sttWakeTimeoutMs : null,
     });
 
     // FAST PATH: Prefer OpenAI Whisper when configured.
@@ -197,7 +215,7 @@ export class VoiceService {
           let res;
           try {
             res = await axios.post(url, form, {
-              timeout: 120000,
+              timeout: wakeWordOnly ? sttWakeTimeoutMs : 120000,
               headers: {
                 ...form.getHeaders(),
               },
@@ -211,10 +229,11 @@ export class VoiceService {
                 stt_url: url,
                 ...this.axiosErrorSummary(err),
               });
+              if (wakeWordOnly) return '';
               await sleep(900);
               try {
                 res = await axios.post(url, form, {
-                  timeout: 120000,
+                  timeout: wakeWordOnly ? sttWakeTimeoutMs : 120000,
                   headers: {
                     ...form.getHeaders(),
                   },
@@ -272,7 +291,7 @@ export class VoiceService {
           let res2;
           try {
             res2 = await axios.post(url2, form2, {
-              timeout: 120000,
+              timeout: wakeWordOnly ? sttWakeTimeoutMs : 120000,
               headers: {
                 ...form2.getHeaders(),
               },
@@ -713,20 +732,23 @@ export class VoiceService {
         typeof (profile as any)?.preferences?.user_identity?.display_name === 'string'
           ? String((profile as any).preferences.user_identity.display_name).trim()
           : '';
-      const identityContext = displayName ? `User display name: ${displayName}\n` : '';
 
-      const responseText = await this.generateResponse(
-        {
-          intent: 'greeting',
-          confidence: 1,
-          decision: 'QUESTION',
-          original_text: cleanedText,
-        },
-        { system_on: true, system_event: 'wake' },
-        language,
-        userContext,
-        identityContext,
-      );
+      const namePart = displayName ? ` ${displayName}` : '';
+
+      const variantsEn = [
+        `Hey${namePart}. I'm here. What do you need?`,
+        `Hi${namePart}. I'm ready. What's up?`,
+        `Alright${namePart}. I'm listening.`,
+      ];
+
+      const variantsEs = [
+        `Hola${namePart}. Estoy aquí. ¿Qué necesitas?`,
+        `Hey${namePart}. Lista. ¿Qué hacemos?`,
+        `Dime${namePart}. Te escucho.`,
+      ];
+
+      const pick = (arr: string[]) => arr[Math.abs(Date.now()) % arr.length];
+      const responseText = language === 'es' ? pick(variantsEs) : pick(variantsEn);
 
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { system: 'wake', has_name: Boolean(displayName) });
@@ -783,7 +805,9 @@ export class VoiceService {
     }
 
     if (execDecision.kind === 'SYSTEM_OFF_BLOCK') {
-      const responseText = language === 'es' ? 'Estoy en silencio. Si quieres que vuelva, di “Leeloo despierta”.' : 'I’m quiet right now. If you want me back, say “Leeloo wake up”.';
+      const responseText = language === 'es'
+        ? 'Estoy en silencio. Si quieres que vuelva, di “Leeloo despierta”.'
+        : 'I’m quiet right now. If you want me back, say “Leeloo wake up”.';
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { system: 'off' });
       return {
@@ -833,7 +857,8 @@ export class VoiceService {
           missing_slots: [],
           next_question: undefined,
           last_question: undefined,
-          current_goal: undefined,
+          last_intent: 'query',
+          last_action: undefined,
         } as any);
         const responseText = language === 'es'
           ? 'Ok. ¿Qué quieres hacer ahora?'
@@ -875,7 +900,7 @@ export class VoiceService {
           ? 'Listo. No lo hago. ¿Qué quieres hacer ahora?'
           : "Okay. I won't do it. What do you want to do now?";
         const audioUrl = await this.generateTTS(responseText, language);
-        await persistTurn(responseText, { executive_router: true, intent: pendingName, token, cancel: true });
+        await persistTurn(responseText, { intent: pendingName, cancel: true });
         return {
           transcription: cleanedText,
           intent: { intent: 'cancel', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
@@ -983,10 +1008,10 @@ export class VoiceService {
     if (!cleanedText) {
       const responseText = this.buildSttFailureMessage(language);
       const audioUrl = await this.generateTTS(responseText, language);
-      await persistTurn(responseText, { executive_router: true, reason: 'empty_input', channel });
+
       return {
-        transcription: cleanedText,
-        intent: { intent: 'query', confidence: 0.65, decision: 'QUESTION', original_text: '' } as any,
+        transcription: '',
+        intent: null,
         action_result: null,
         response_text: responseText,
         response_audio_url: audioUrl,
@@ -1073,13 +1098,10 @@ export class VoiceService {
                   : this.buildMissingTaskTitleMessage(language);
 
           const audioUrl = await this.generateTTS(responseText, language);
-          await persistTurn(responseText, { executive_router: true, reason: 'slot_fill', intent: intentName, missing: nextMissing, channel });
-
+          await persistTurn(responseText, { intent: intentName, slot: firstMissing, invalid: true });
           await this.profilesService.setConversationState(clerkUserId, {
             preferred_language: language,
             assistant_name: 'Leeloo',
-            current_goal: intentName,
-            intent_state: 'PENDING',
             pending_intent: nextPending,
             pending_slots: { filled_slots: filled },
             missing_slots: nextMissing,
@@ -1100,8 +1122,7 @@ export class VoiceService {
         // No missing slots anymore -> move to confirmation (deterministic).
         const confirmQ = buildConfirmQuestion(intentName, language);
         const audioUrl = await this.generateTTS(confirmQ, language);
-        await persistTurn(confirmQ, { executive_router: true, reason: 'slot_fill_to_confirmation', intent: intentName, channel });
-
+        await persistTurn(confirmQ, { intent: intentName, awaiting_confirmation: true });
         await this.profilesService.setConversationState(clerkUserId, {
           preferred_language: language,
           assistant_name: 'Leeloo',
@@ -1300,6 +1321,7 @@ export class VoiceService {
         preferred_language: language,
         mode: 'conversation',
       });
+
       const responseText =
         language === 'en'
           ? "Got it. I'll speak English from now on."
@@ -2377,7 +2399,7 @@ export class VoiceService {
     intent: any,
     actionResult: any,
     language: SupportedLanguage,
-    userContext?: { faith_mode?: boolean; role?: string; channel?: 'VOICE' | 'TEXT'; role_policy?: any },
+    userContext?: { faith_mode?: boolean; role?: string },
     memoryContext?: string,
   ): Promise<string> {
     const chatModelLabel =
@@ -2563,7 +2585,7 @@ export class VoiceService {
       const traceId = this.createTraceId('llm_resp');
       const t0 = Date.now();
 
-      const llmTimeout = this.llmTimeoutMs();
+      const llmTimeout = this.llmTimeoutMsForChannel(channel);
 
       const send = async (systemExtra: string) => {
         const res = await axios.post(
@@ -2630,6 +2652,12 @@ export class VoiceService {
       console.error('[LeelooApi] voice.llm.response.error', {
         ...this.axiosErrorSummary(err),
       });
+
+      if (channel === 'VOICE') {
+        return language === 'es'
+          ? 'Estoy tardando más de lo normal. Intenta de nuevo.'
+          : "I'm taking longer than usual. Please try again.";
+      }
       return this.buildAiUnavailableMessage(language);
     }
   }

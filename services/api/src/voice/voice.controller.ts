@@ -71,9 +71,17 @@ export class VoiceController {
             ? claims.primary_email_address
             : undefined;
 
-      if (displayName || email) {
+      const derivedDisplayName = (() => {
+        if (displayName) return displayName;
+        if (!email) return undefined;
+        const local = email.split('@')[0] || '';
+        const cleaned = local.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
+        return cleaned || undefined;
+      })();
+
+      if (derivedDisplayName || email) {
         await this.profilesService.upsertUserIdentity(userId, {
-          ...(displayName ? { display_name: displayName } : {}),
+          ...(derivedDisplayName ? { display_name: derivedDisplayName } : {}),
           ...(email ? { reply_to_email: email } : {}),
         });
       }
