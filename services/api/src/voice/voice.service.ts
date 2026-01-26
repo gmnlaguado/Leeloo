@@ -22,6 +22,7 @@ import { ExecutiveBrain } from './core/executive-brain';
 @Injectable()
 export class VoiceService {
   private readonly openai: OpenAI | null;
+  private llmVoiceCircuitOpenedAtMs: number | null = null;
 
   private llmTimeoutMs() {
     const raw = this.configService.get<string>('LLM_TIMEOUT_MS');
@@ -39,6 +40,25 @@ export class VoiceService {
     }
 
     return this.llmTimeoutMs();
+  }
+
+  private openVoiceLlmCircuit() {
+    this.llmVoiceCircuitOpenedAtMs = Date.now();
+  }
+
+  private isVoiceLlmCircuitOpen() {
+    if (!this.llmVoiceCircuitOpenedAtMs) return false;
+    return Date.now() - this.llmVoiceCircuitOpenedAtMs < 25000;
+  }
+
+  private closeVoiceLlmCircuit() {
+    this.llmVoiceCircuitOpenedAtMs = null;
+  }
+
+  private trimForVoicePrompt(value: string, maxChars: number) {
+    const s = String(value || '');
+    if (s.length <= maxChars) return s;
+    return s.slice(0, maxChars);
   }
 
   private createTraceId(prefix: string) {
@@ -706,6 +726,12 @@ export class VoiceService {
 
     const channel: 'VOICE' | 'TEXT' =
       (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
+
+    if (channel === 'VOICE' && this.isVoiceLlmCircuitOpen()) {
+      return language === 'es'
+        ? 'Estoy tardando más de lo normal. Intenta de nuevo.'
+        : "I'm taking longer than usual. Please try again.";
+    }
 
     const execDecision = supervisor.decide({
       input,
@@ -2292,8 +2318,25 @@ export class VoiceService {
       };
     }
 
+    if (channel === 'VOICE' && this.isVoiceLlmCircuitOpen()) {
+      return {
+        intent: 'system_unavailable',
+        confidence: 0.65,
+        required_slots: [],
+        filled_slots: {},
+        missing_slots: [],
+        next_question: this.buildAiUnavailableMessage(language),
+        priority: 'low',
+      };
+    }
+
+    const trimmedContext =
+      channel === 'VOICE'
+        ? this.trimForVoicePrompt(context, 1400)
+        : context;
+
     const prompt =
-      `Contexto del usuario (NO inventar):\n${context}\n\n` +
+      `Contexto del usuario (NO inventar):\n${trimmedContext}\n\n` +
       `Texto del usuario: "${text}"\n\n` +
       'Devuelve SOLO JSON (sin markdown) con este schema fijo:\n' +
       '{\n' +
@@ -2323,6 +2366,8 @@ export class VoiceService {
       });
 
       const llmTimeout = this.llmTimeoutMsForChannel(channel);
+      const intentMaxTokens = channel === 'VOICE' ? 192 : 256;
+      const intentTimeout = channel === 'VOICE' ? Math.min(llmTimeout, 6000) : llmTimeout;
 
       try {
         const res = await axios.post(
@@ -2341,7 +2386,7 @@ export class VoiceService {
               },
               { role: 'user', content: prompt },
             ],
-            max_tokens: 256,
+            max_tokens: intentMaxTokens,
             temperature: 0.2,
           },
           {
@@ -2349,7 +2394,7 @@ export class VoiceService {
               'Content-Type': 'application/json',
               ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
             },
-            timeout: llmTimeout,
+            timeout: intentTimeout,
           },
         );
 
@@ -2362,6 +2407,9 @@ export class VoiceService {
           traceId,
           ms: Date.now() - t0,
         });
+        if (channel === 'VOICE') {
+          this.closeVoiceLlmCircuit();
+        }
         const parsed = JSON.parse(content);
         // Ensure confidence is never 0; downstream uses a floor and combined scoring.
         if (!parsed || typeof parsed !== 'object') return parsed;
@@ -2373,6 +2421,9 @@ export class VoiceService {
         console.error('[LeelooApi] voice.llm.intent.error', {
           ...this.axiosErrorSummary(err),
         });
+        if (channel === 'VOICE') {
+          this.openVoiceLlmCircuit();
+        }
         return {
           intent: 'system_unavailable',
           confidence: 0.65,
@@ -2529,6 +2580,11 @@ export class VoiceService {
     const lead = intent?.emotion ? emotionLeadSentence(language, intent.emotion) : null;
     const decision = intent?.decision || 'RESPONSE';
 
+    const safeMemoryContext =
+      channel === 'VOICE'
+        ? (memoryContext ? this.trimForVoicePrompt(memoryContext, 1200) : null)
+        : memoryContext;
+
     const prompt =
       `${roleTone}` +
       `Language: ${language}.\n\n` +
@@ -2537,7 +2593,7 @@ export class VoiceService {
       `User said: ${JSON.stringify(intent?.original_text || '')}\n` +
       `Intent (internal): ${JSON.stringify(intent)}\n` +
       `Action result (internal): ${JSON.stringify(actionResult)}\n\n` +
-      (memoryContext ? `AUTHORITATIVE MEMORY CONTEXT (must govern):\n${memoryContext}\n\n` : '') +
+      (safeMemoryContext ? `AUTHORITATIVE MEMORY CONTEXT (must govern):\n${safeMemoryContext}\n\n` : '') +
       (lead ? `Start with this exact emotional lead sentence (then continue naturally): ${JSON.stringify(lead)}\n\n` : '') +
       `HARD RULE: Respond ONLY in ${language}. Do not mix languages.\n` +
       hardIdentity +
@@ -2684,6 +2740,10 @@ export class VoiceService {
       console.error('[LeelooApi] voice.llm.response.error', {
         ...this.axiosErrorSummary(err),
       });
+
+      if (channel === 'VOICE') {
+        this.openVoiceLlmCircuit();
+      }
 
       if (channel === 'VOICE') {
         return language === 'es'
