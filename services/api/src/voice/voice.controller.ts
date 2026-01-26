@@ -44,7 +44,18 @@ export class VoiceController {
     const userId = req.user.id;
     const claims = req.user?.claims || {};
 
-    const requestedLanguage = ((dto?.user_context?.language || dto?.language || '').toString().toLowerCase() as any) || null;
+    const normalizeLanguage = (raw: any) => {
+      const s = String(raw || '').trim().toLowerCase();
+      if (!s) return null;
+      if (s === 'es' || s.startsWith('es-') || s.includes('spanish') || s.includes('espanol') || s.includes('español')) return 'es';
+      if (s === 'en' || s.startsWith('en-') || s.includes('english') || s.includes('ingles') || s.includes('inglés')) return 'en';
+      if (s === 'pt' || s.startsWith('pt-') || s.includes('portuguese') || s.includes('portugues') || s.includes('português')) return 'pt';
+      if (s === 'fr' || s.startsWith('fr-') || s.includes('french') || s.includes('francais') || s.includes('français')) return 'fr';
+      if (s === 'ja' || s.startsWith('ja-') || s.includes('japanese') || s.includes('japon') || s.includes('japonés')) return 'ja';
+      return s;
+    };
+
+    const requestedLanguage = (normalizeLanguage(dto?.user_context?.language || dto?.language) as any) || null;
     const isSupported = (l: any) => l === 'es' || l === 'en' || l === 'pt' || l === 'fr' || l === 'ja';
 
     // Ensure profile exists first.

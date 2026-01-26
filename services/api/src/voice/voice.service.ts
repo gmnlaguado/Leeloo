@@ -2654,6 +2654,12 @@ export class VoiceService {
         );
       }
 
+      if (isWrongLanguage(language, out)) {
+        if (language === 'es') {
+          out = '';
+        }
+      }
+
       console.log('[LeelooApi] voice.llm.response.ok', {
         traceId,
         ms: Date.now() - t0,
@@ -2661,7 +2667,13 @@ export class VoiceService {
       });
 
       const finalOut = channel === 'VOICE' ? hardTrimForVoice(out) : (out || '').trim();
-      return finalOut || this.buildAiUnavailableMessage(language);
+      if (finalOut) return finalOut;
+      if (language === 'es') {
+        return channel === 'VOICE'
+          ? 'Perdón, me fui al inglés. Repite eso una vez más, por favor.'
+          : 'Perdón, me fui al inglés. ¿Puedes repetirlo una vez más?';
+      }
+      return this.buildAiUnavailableMessage(language);
     } catch (err) {
       console.error('[LeelooApi] voice.llm.response.error', {
         ...this.axiosErrorSummary(err),

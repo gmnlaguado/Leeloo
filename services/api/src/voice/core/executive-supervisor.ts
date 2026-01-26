@@ -29,11 +29,25 @@ export class ExecutiveSupervisor {
     const { input, state, system_on } = params;
 
     const lower = input.cleaned.toLowerCase();
+    const hasName =
+      lower.includes('leeloo') ||
+      lower.includes('lilo') ||
+      lower.includes('lilu') ||
+      lower.includes('lelu') ||
+      lower.includes('lelo');
+
+    const hasHey =
+      lower.includes('hey') ||
+      lower.includes('ey') ||
+      lower.includes('oye');
+
     const isWake =
       lower.includes('leeloo despierta') ||
       lower.includes('leeloo, despierta') ||
+      lower.includes('despierta leeloo') ||
       lower.includes('wake up') ||
-      lower.includes('leeloo wake up');
+      lower.includes('leeloo wake up') ||
+      (hasHey && hasName);
 
     const isSleep =
       lower.includes('leeloo apágate') ||
