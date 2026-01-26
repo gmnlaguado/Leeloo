@@ -17,6 +17,7 @@ import { decide } from './core/decision-engine';
 import { InputNormalizer } from './core/input-normalizer';
 import { ExecutiveSupervisor } from './core/executive-supervisor';
 import { FactIngestor } from './core/fact-ingestor';
+import { ExecutiveBrain } from './core/executive-brain';
 
 @Injectable()
 export class VoiceService {
@@ -1205,30 +1206,18 @@ export class VoiceService {
       return null;
     })();
 
-    // Premium safety: if the user greets while a send_email flow is pending,
-    // cancel the pending flow instead of treating the greeting as the email body.
-    if (state?.pending_intent && isGreeting && String(state.pending_intent?.intent || '') === 'send_email') {
+    if (state?.pending_intent && isGreeting) {
       const responseText =
-        language === 'es'
-          ? 'Hola. Estoy aquí contigo. ¿Cómo estás hoy, de verdad?'
-          : "Hey. I’m here with you. How are you—really?";
+        typeof state?.last_question === 'string' && state.last_question.trim()
+          ? state.last_question.trim()
+          : language === 'es'
+            ? 'Ok. Necesito un dato para continuar. ¿Qué falta?'
+            : "Okay. I need one detail to continue. What's missing?";
       const audioUrl = await this.generateTTS(responseText, language);
-      await persistTurn(responseText, { intent: 'send_email', cancel: true, reason: 'greeting_while_pending' });
-      await this.profilesService.setConversationState(clerkUserId, {
-        preferred_language: language,
-        assistant_name: 'Leeloo',
-        current_goal: undefined,
-        intent_state: 'NONE',
-        pending_intent: null,
-        pending_slots: null,
-        missing_slots: [],
-        last_intent: 'query',
-        last_action: undefined,
-        last_question: responseText,
-      });
+      await persistTurn(responseText, { intent: String(state.pending_intent?.intent || ''), reprompt: true, reason: 'greeting_while_pending' });
       return {
         transcription: cleanedText,
-        intent: { intent: 'query', confidence: 0.9, decision: 'COACH', original_text: cleanedText },
+        intent: { ...state.pending_intent, decision: 'QUESTION', original_text: cleanedText } as any,
         action_result: null,
         response_text: responseText,
         response_audio_url: audioUrl,
@@ -2457,6 +2446,18 @@ export class VoiceService {
         ? (rolePolicyRaw as any)
         : 'DEFAULT';
 
+    const executiveBrain = new ExecutiveBrain();
+    const execContext = executiveBrain.assembleContext({
+      source: channel === 'VOICE' ? 'voice' : 'chat',
+      language,
+      pending_intent: null,
+      last_question: null,
+      user_name: null,
+      input_normalized: String(intent?.original_text || ''),
+      role_policy: rolePolicy,
+    });
+    const responsePolicy = executiveBrain.buildResponsePolicy(execContext);
+
     const voiceSystemPrompt =
       'You are Leeloo, a premium voice assistant and executive coach.\n\n' +
       'VOICE RULES (STRICT):\n' +
@@ -2616,6 +2617,7 @@ export class VoiceService {
                   (userContext?.faith_mode ? '' : 'Avoid religious content.\n') +
                   (channel === 'VOICE' ? voiceSystemPrompt : '') +
                   rolePolicySystemBlock +
+                  responsePolicy.system_rules +
                   systemExtra,
               },
               { role: 'user', content: prompt },
@@ -2670,7 +2672,8 @@ export class VoiceService {
       });
 
       const finalOut = channel === 'VOICE' ? hardTrimForVoice(out) : (out || '').trim();
-      if (finalOut) return finalOut;
+      const governed = executiveBrain.postProcess(finalOut, responsePolicy);
+      if (governed) return governed;
       if (language === 'es') {
         return channel === 'VOICE'
           ? 'Perdón, me fui al inglés. Repite eso una vez más, por favor.'

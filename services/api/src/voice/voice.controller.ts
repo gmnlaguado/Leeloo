@@ -99,22 +99,8 @@ export class VoiceController {
     } catch {
       // best effort only
     }
-    // Authoritative language selection:
-    // - If client explicitly provided a supported language, honor it and persist.
-    // - Otherwise fall back to persisted profile language.
-    let preferredLanguage = this.profilesService.getPreferredLanguage(profile) || 'en';
-    if (isSupported(requestedLanguage) && requestedLanguage !== preferredLanguage) {
-      try {
-        await this.profilesService.updateLanguage(userId, requestedLanguage);
-        await this.profilesService.setConversationState(userId, {
-          preferred_language: requestedLanguage,
-        });
-        profile = await this.profilesService.getProfileByClerkUserId(userId);
-      } catch {
-        // best effort only
-      }
-      preferredLanguage = requestedLanguage;
-    }
+    const persistedLanguage = this.profilesService.getPreferredLanguage(profile);
+    const preferredLanguage = (persistedLanguage || (isSupported(requestedLanguage) ? requestedLanguage : null) || 'en') as any;
 
     const inferredChannel = audio ? 'VOICE' : 'TEXT';
     const explicitChannel = (dto.user_context as any)?.channel;
