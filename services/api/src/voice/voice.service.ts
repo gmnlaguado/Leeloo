@@ -1819,7 +1819,8 @@ export class VoiceService {
     const intentContext = memForIntent.context;
 
     // PIPELINE: Intent Detection
-    const intent = conversationalIntent || (await this.extractIntent(cleanedText, intentContext, language));
+    const channelForIntent: 'VOICE' | 'TEXT' = (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
+    const intent = conversationalIntent || (await this.extractIntent(cleanedText, intentContext, language, channelForIntent));
 
     const memForResponse = await memoryGate(namespacesForResponse(String((intent as any)?.intent || '')));
     const responseContext = memForResponse.context;
@@ -2269,7 +2270,7 @@ export class VoiceService {
     }
   }
 
-  private async extractIntent(text: string, context: string, language: SupportedLanguage) {
+  private async extractIntent(text: string, context: string, language: SupportedLanguage, channel: 'VOICE' | 'TEXT') {
     const intentModelLabel =
       this.configService.get<string>('LLM_INTENT_MODEL') ||
       this.configService.get<string>('LLM_MODEL') ||
@@ -2332,7 +2333,7 @@ export class VoiceService {
         language,
       });
 
-      const llmTimeout = this.llmTimeoutMs();
+      const llmTimeout = this.llmTimeoutMsForChannel(channel);
 
       try {
         const res = await axios.post(
@@ -2600,8 +2601,9 @@ export class VoiceService {
       const t0 = Date.now();
 
       const llmTimeout = this.llmTimeoutMsForChannel(channel);
+      const retryTimeout = Math.min(llmTimeout, 6000);
 
-      const send = async (systemExtra: string) => {
+      const send = async (systemExtra: string, overrideTimeoutMs?: number) => {
         const res = await axios.post(
           chatEndpoint,
           {
@@ -2627,7 +2629,7 @@ export class VoiceService {
               'Content-Type': 'application/json',
               ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
             },
-            timeout: llmTimeout,
+            timeout: typeof overrideTimeoutMs === 'number' ? overrideTimeoutMs : llmTimeout,
           },
         );
         const content = res.data?.choices?.[0]?.message?.content;
@@ -2651,6 +2653,7 @@ export class VoiceService {
         });
         out = await send(
           `CRITICAL: You previously violated language or identity. Output ONLY in ${language}. Follow identity rules strictly. If you cannot, output an empty string.\n${hardIdentity}`,
+          retryTimeout,
         );
       }
 
