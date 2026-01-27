@@ -52,6 +52,7 @@ export class CalendarService implements OnModuleInit {
 
       await ensureColumn('start_at', 'timestamptz NULL');
       await ensureColumn('end_at', 'timestamptz NULL');
+      await ensureColumn('remind_offsets_minutes', 'jsonb NULL');
 
       // Best-effort backfill from common legacy column names.
       // This runs only when start_at/end_at were missing.
@@ -75,6 +76,18 @@ export class CalendarService implements OnModuleInit {
             `UPDATE calendar_events
              SET end_at = ${legacyEnd}
              WHERE end_at IS NULL AND ${legacyEnd} IS NOT NULL`,
+          );
+        }
+      }
+
+      if (cols.has('remind_offsets_minutes')) {
+        const legacyOffsetCandidates = ['remind_offset_minutes', 'reminder_offset_minutes', 'reminder_offset'];
+        const legacyOffset = legacyOffsetCandidates.find((c) => cols.has(c));
+        if (legacyOffset) {
+          await this.db.query(
+            `UPDATE calendar_events
+             SET remind_offsets_minutes = to_jsonb(ARRAY[${legacyOffset}])
+             WHERE remind_offsets_minutes IS NULL AND ${legacyOffset} IS NOT NULL`,
           );
         }
       }
