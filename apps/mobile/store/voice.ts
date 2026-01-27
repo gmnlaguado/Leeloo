@@ -1,7 +1,36 @@
 import { create } from 'zustand';
 import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
 import { voiceAPI } from '@/lib/api';
 import { useSettingsStore } from '@/store/settings';
+
+const speakTextAndWait = async (text: string, language?: string) => {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return;
+
+  try {
+    Speech.stop();
+  } catch {
+    // ignore
+  }
+
+  await new Promise<void>((resolve) => {
+    try {
+      Speech.speak(trimmed, {
+        language: language || undefined,
+        rate: 0.95,
+        pitch: 1.0,
+        onDone: () => resolve(),
+        onStopped: () => resolve(),
+        onError: () => resolve(),
+      } as any);
+    } catch {
+      resolve();
+    }
+
+    setTimeout(() => resolve(), 45000);
+  });
+};
 
 const playAudioUrl = async (uri: string) => {
   try {
@@ -143,12 +172,18 @@ export const useVoiceStore = create<VoiceState>((set) => ({
         data.audioUrl ??
         data.tts_url ??
         null;
+      let played = false;
       if (audioUrl && typeof audioUrl === 'string') {
         try {
           await playAudioUrl(audioUrl);
+          played = true;
         } catch (err) {
           console.log('[voice] audio playback failed:', String(err));
         }
+      }
+
+      if (!played) {
+        await speakTextAndWait(response, language);
       }
     } catch (e: any) {
       const status = e?.response?.status;
@@ -175,13 +210,16 @@ export const useVoiceStore = create<VoiceState>((set) => ({
         }
 
         set({ lastError: `HTTP ${status}: ${detail}` });
+        await speakTextAndWait('The voice service is temporarily unavailable. Please try again.', useSettingsStore.getState().language);
       } else if (msg === 'Network Error') {
         set({
           lastError:
             'Network Error (audio upload): puede ser multipart en Expo Go o timeout. Verifica que el backend siga vivo y que el teléfono y PC estén en la misma red. Si sigue pasando, intenta de nuevo: ya cambiamos el upload a fetch para estabilizar.',
         });
+        await speakTextAndWait('Network error. Please try again.', useSettingsStore.getState().language);
       } else {
         set({ lastError: msg });
+        await speakTextAndWait('Something went wrong. Please try again.', useSettingsStore.getState().language);
       }
     } finally {
       set({ isProcessing: false });
@@ -211,12 +249,18 @@ export const useVoiceStore = create<VoiceState>((set) => ({
         data.audioUrl ??
         data.tts_url ??
         null;
+      let played = false;
       if (audioUrl && typeof audioUrl === 'string') {
         try {
           await playAudioUrl(audioUrl);
+          played = true;
         } catch (err) {
           console.log('[voice] audio playback failed:', String(err));
         }
+      }
+
+      if (!played) {
+        await speakTextAndWait(response, language);
       }
     } catch (e: any) {
       const status = e?.response?.status;
@@ -243,13 +287,16 @@ export const useVoiceStore = create<VoiceState>((set) => ({
         }
 
         set({ lastError: `HTTP ${status}: ${detail}` });
+        await speakTextAndWait('The service is temporarily unavailable. Please try again.', useSettingsStore.getState().language);
       } else if (msg === 'Network Error') {
         set({
           lastError:
             'Network Error: revisa EXPO_PUBLIC_API_URL (no uses localhost en el teléfono), que el backend esté corriendo y que el puerto no esté bloqueado por firewall.',
         });
+        await speakTextAndWait('Network error. Please try again.', useSettingsStore.getState().language);
       } else {
         set({ lastError: msg });
+        await speakTextAndWait('Something went wrong. Please try again.', useSettingsStore.getState().language);
       }
     } finally {
       set({ isProcessing: false });
