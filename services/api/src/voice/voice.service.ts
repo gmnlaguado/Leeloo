@@ -768,6 +768,17 @@ export class VoiceService {
       token: (execDecision as any)?.token || null,
     });
 
+    if (execDecision.kind === 'HANDLE_CONFIRMATION') {
+      console.log('[LeelooApi] confirmation.input', {
+        userId: clerkUserId,
+        cleaned: input.cleaned,
+        normalized: input.normalized,
+        decision_token: input.decision_token,
+        pending_intent: state?.pending_intent?.intent || null,
+        intent_state_in: state?.intent_state || null,
+      });
+    }
+
     if (execDecision.kind === 'SYSTEM_WAKE') {
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
@@ -1044,6 +1055,15 @@ export class VoiceService {
         from: fromState,
         to: 'AWAITING_CONFIRMATION',
         reason: 'token_other_reask',
+        intent: pendingName,
+      });
+
+      console.log('[LeelooApi] confirmation.reask', {
+        userId: clerkUserId,
+        token,
+        cleaned: input.cleaned,
+        normalized: input.normalized,
+        decision_token: input.decision_token,
         intent: pendingName,
       });
 

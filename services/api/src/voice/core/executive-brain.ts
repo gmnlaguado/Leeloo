@@ -107,24 +107,48 @@ export class ExecutiveBrain {
       };
     }
 
+    const wantsLanguageChange = hasAny(s, [
+      'cambia a',
+      'cambia el idioma a',
+      'ponlo en',
+      'pon el idioma en',
+      'ponte en',
+      'habla en',
+      'hablame en',
+      'en espanol',
+      'en español',
+      'in english',
+      'in spanish',
+      'speak',
+      'language',
+      'idioma',
+    ]);
+
     const langMatch = s.match(
       /\b(speak|habla|hablame|idioma|language)\s+(english|ingles|inglés|spanish|espanol|español|portuguese|portugues|português|french|frances|francais|français|japanese|japones|japonés|ja)\b/i,
     );
-    if (langMatch && langMatch[2]) {
-      const cand = normalize(langMatch[2]);
+    const langCandidate = (() => {
+      if (langMatch && langMatch[2]) return String(langMatch[2]);
+      const m2 = s.match(/\b(en|in)\s+(english|ingles|inglés|spanish|espanol|español|portuguese|portugues|português|french|frances|francais|français|japanese|japones|japonés)\b/i);
+      if (m2 && m2[2]) return String(m2[2]);
+      return '';
+    })();
+
+    if (wantsLanguageChange || langCandidate) {
+      const cand = normalize(langCandidate || s);
       const lang =
         cand.includes('english') || cand.includes('ingles') ? 'en' :
         cand.includes('spanish') || cand.includes('espanol') ? 'es' :
         cand.includes('portuguese') || cand.includes('portugues') ? 'pt' :
         cand.includes('french') || cand.includes('francais') || cand.includes('frances') ? 'fr' :
-        cand.includes('japanese') || cand.includes('japones') || cand === 'ja' ? 'ja' :
+        cand.includes('japanese') || cand.includes('japones') || cand.includes(' nihongo ') || cand === 'ja' ? 'ja' :
         null;
 
       if (lang) {
         return {
           intent: 'set_language',
           language: lang,
-          confidence: 0.75,
+          confidence: 0.78,
           required_slots: [],
           filled_slots: { language: lang },
           missing_slots: [],

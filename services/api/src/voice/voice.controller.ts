@@ -59,9 +59,14 @@ export class VoiceController {
     const isSupported = (l: any) => l === 'es' || l === 'en' || l === 'pt' || l === 'fr' || l === 'ja';
 
     // Ensure profile exists first.
-    let profile = await this.profilesService.ensureProfileByClerkUserId(userId, {
-      language: (isSupported(requestedLanguage) ? requestedLanguage : 'en') as any,
-    });
+    // PREMIUM INVARIANT: client-provided dto.language must NOT overwrite persisted language.
+    // We only use requestedLanguage to seed locale on first profile creation.
+    let profile = await this.profilesService.getProfileByClerkUserId(userId);
+    if (!profile) {
+      profile = await this.profilesService.ensureProfileByClerkUserId(userId, {
+        language: (isSupported(requestedLanguage) ? requestedLanguage : 'en') as any,
+      });
+    }
 
     // Best-effort identity capture from auth provider (Clerk/Google).
     // We store it as preferences.user_identity so mobile Settings can show/edit defaults.
@@ -101,6 +106,13 @@ export class VoiceController {
     }
     const persistedLanguage = this.profilesService.getPreferredLanguage(profile);
     const preferredLanguage = (persistedLanguage || (isSupported(requestedLanguage) ? requestedLanguage : null) || 'en') as any;
+
+    console.log('[LeelooApi] voice.language_resolve', {
+      userId,
+      requested: requestedLanguage,
+      persisted: persistedLanguage,
+      resolved: preferredLanguage,
+    });
 
     const inferredChannel = audio ? 'VOICE' : 'TEXT';
     const explicitChannel = (dto.user_context as any)?.channel;
