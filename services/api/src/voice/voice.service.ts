@@ -2288,10 +2288,13 @@ export class VoiceService {
     const intentEndpoint = qwenBaseUrl
       ? `${qwenBaseUrl.replace(/\/$/, '')}/chat/completions`
       : this.configService.get<string>('LLM_ENDPOINT') || this.configService.get<string>('LOCAL_LLM_ENDPOINT');
+    const llamaBaseUrl = this.configService.get<string>('LLAMA_BASE_URL');
+    const intentFallbackEndpoint = llamaBaseUrl ? `${llamaBaseUrl.replace(/\/$/, '')}/chat/completions` : null;
     const apiKey =
       this.configService.get<string>('LLM_API_KEY') ||
       this.configService.get<string>('LOCAL_LLM_API_KEY');
     const qwenModel = this.configService.get<string>('QWEN_MODEL');
+    const llamaModel = this.configService.get<string>('LLAMA_MODEL');
     const fallbackModel =
       this.configService.get<string>('LLM_MODEL') ||
       this.configService.get<string>('LOCAL_LLM_MODEL');
@@ -2299,6 +2302,8 @@ export class VoiceService {
       intentModelLabel === 'qwen'
         ? qwenModel || fallbackModel
         : intentModelLabel || fallbackModel;
+
+    const fallbackModelForIntent = (llamaModel || fallbackModel || '').trim();
 
     if (!intentEndpoint || !model) {
       return {
@@ -2363,11 +2368,21 @@ export class VoiceService {
       const intentMaxTokens = channel === 'VOICE' ? 192 : 256;
       const intentTimeout = channel === 'VOICE' ? Math.min(llmTimeout, 6000) : llmTimeout;
 
-      try {
+      const isTransientIntentError = (err: any) => {
+        const code = String(err?.code || '');
+        const msg = String(err?.message || '');
+        const status = err?.response?.status;
+        if (code === 'ECONNABORTED') return true;
+        if (/timeout/i.test(msg)) return true;
+        if (typeof status === 'number' && status >= 500) return true;
+        return false;
+      };
+
+      const sendIntent = async (endpoint: string, modelToUse: string, timeoutMs: number) => {
         const res = await axios.post(
-          intentEndpoint,
+          endpoint,
           {
-            model,
+            model: modelToUse,
             messages: [
               {
                 role: 'system',
@@ -2388,7 +2403,7 @@ export class VoiceService {
               'Content-Type': 'application/json',
               ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
             },
-            timeout: intentTimeout,
+            timeout: timeoutMs,
           },
         );
 
@@ -2396,25 +2411,69 @@ export class VoiceService {
         if (!content) {
           throw new Error('No content from LLM');
         }
-
-        console.log('[LeelooApi] voice.llm.intent.ok', {
-          traceId,
-          ms: Date.now() - t0,
-        });
-        if (channel === 'VOICE') {
-          this.closeVoiceLlmCircuit();
-        }
         const parsed = JSON.parse(content);
-        // Ensure confidence is never 0; downstream uses a floor and combined scoring.
         if (!parsed || typeof parsed !== 'object') return parsed;
         if (typeof parsed.confidence !== 'number' || !Number.isFinite(parsed.confidence) || parsed.confidence <= 0) {
           parsed.confidence = 0.65;
         }
         return parsed;
+      };
+
+      try {
+        const primaryBudgetMs = channel === 'VOICE' ? Math.min(3600, intentTimeout) : intentTimeout;
+        const primary = await sendIntent(intentEndpoint, model, primaryBudgetMs);
+
+        console.log('[LeelooApi] voice.llm.intent.ok', {
+          traceId,
+          ms: Date.now() - t0,
+          used_fallback: false,
+        });
+        if (channel === 'VOICE') {
+          this.closeVoiceLlmCircuit();
+        }
+        return primary;
       } catch (err) {
         console.error('[LeelooApi] voice.llm.intent.error', {
           ...this.axiosErrorSummary(err),
         });
+
+        const canFallback =
+          channel === 'VOICE' &&
+          Boolean(intentFallbackEndpoint) &&
+          Boolean(fallbackModelForIntent) &&
+          intentFallbackEndpoint !== intentEndpoint &&
+          isTransientIntentError(err);
+
+        if (canFallback) {
+          const elapsed = Date.now() - t0;
+          const remaining = Math.max(900, intentTimeout - elapsed);
+          const fallbackBudgetMs = Math.min(3200, remaining);
+
+          console.warn('[LeelooApi] voice.llm.intent.fallback.start', {
+            traceId,
+            from: intentEndpoint,
+            to: intentFallbackEndpoint,
+            remaining_ms: remaining,
+            timeout_ms: fallbackBudgetMs,
+          });
+
+          try {
+            const secondary = await sendIntent(intentFallbackEndpoint as string, fallbackModelForIntent, fallbackBudgetMs);
+            console.log('[LeelooApi] voice.llm.intent.fallback.ok', {
+              traceId,
+              ms: Date.now() - t0,
+            });
+            if (channel === 'VOICE') {
+              this.closeVoiceLlmCircuit();
+            }
+            return secondary;
+          } catch (err2) {
+            console.error('[LeelooApi] voice.llm.intent.fallback.error', {
+              ...this.axiosErrorSummary(err2),
+            });
+          }
+        }
+
         if (channel === 'VOICE') {
           this.openVoiceLlmCircuit();
         }
