@@ -727,22 +727,6 @@ export class VoiceService {
     const channel: 'VOICE' | 'TEXT' =
       (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
 
-    if (channel === 'VOICE' && this.isVoiceLlmCircuitOpen()) {
-      const responseText =
-        language === 'es'
-          ? 'Estoy tardando más de lo normal. Intenta de nuevo.'
-          : "I'm taking longer than usual. Please try again.";
-      const audioUrl = await this.generateTTS(responseText, language);
-      await persistTurn(responseText, { system_unavailable: true, circuit_open: true });
-      return {
-        transcription: cleanedText,
-        intent: { intent: 'system_unavailable', confidence: 1 },
-        action_result: null,
-        response_text: responseText,
-        response_audio_url: audioUrl,
-      };
-    }
-
     const execDecision = supervisor.decide({
       input,
       state,
