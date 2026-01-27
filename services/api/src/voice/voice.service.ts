@@ -23,147 +23,14 @@ import { ExecutiveBrain } from './core/executive-brain';
 export class VoiceService {
   private readonly openai: OpenAI | null;
   private llmVoiceCircuitOpenedAtMs: number | null = null;
+  private voiceIntentLlmDisabledUntilMs: number | null = null;
+  private voiceIntentLlmFailureStreak: number = 0;
 
   private llmTimeoutMs() {
     const raw = this.configService.get<string>('LLM_TIMEOUT_MS');
     const parsed = raw ? Number(raw) : NaN;
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
     return 120000;
-  }
-
-  private heuristicIntentFallback(text: string, language: SupportedLanguage) {
-    const raw = String(text || '').trim();
-    const lower = raw.toLowerCase();
-
-    const normalize = (s: string) =>
-      String(s || '')
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/\p{Diacritic}/gu, '')
-        .replace(/[^a-z0-9\s@._-]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-    const s = normalize(raw);
-
-    const hasAny = (haystack: string, phrases: string[]) => phrases.some((p) => haystack.includes(normalize(p)));
-
-    const isGreeting = hasAny(s, ['hi', 'hello', 'hey', 'buenas', 'hola', 'holi', 'saludos']);
-    if (isGreeting) {
-      return {
-        intent: 'greeting',
-        language: null,
-        confidence: 0.7,
-        required_slots: [],
-        filled_slots: {},
-        missing_slots: [],
-        next_question: '',
-        priority: 'low',
-      };
-    }
-
-    const langMatch = s.match(/\b(speak|habla|hablame|idioma|language)\s+(english|ingles|inglés|spanish|espanol|español|portuguese|portugues|português|french|frances|francais|français|japanese|japones|japonés|ja)\b/i);
-    if (langMatch && langMatch[2]) {
-      const cand = normalize(langMatch[2]);
-      const lang =
-        cand.includes('english') || cand.includes('ingles') ? 'en' :
-        cand.includes('spanish') || cand.includes('espanol') ? 'es' :
-        cand.includes('portuguese') || cand.includes('portugues') ? 'pt' :
-        cand.includes('french') || cand.includes('francais') || cand.includes('frances') ? 'fr' :
-        cand.includes('japanese') || cand.includes('japones') || cand === 'ja' ? 'ja' :
-        null;
-
-      if (lang) {
-        return {
-          intent: 'set_language',
-          language: lang,
-          confidence: 0.75,
-          required_slots: [],
-          filled_slots: { language: lang },
-          missing_slots: [],
-          next_question: '',
-          priority: 'medium',
-        };
-      }
-    }
-
-    const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
-    const email = raw.match(emailRegex)?.[0] || '';
-    const isEmailIntent = hasAny(s, ['send email', 'email', 'correo', 'mandar correo', 'enviar correo', 'mandar un email', 'enviar un email']);
-    if (isEmailIntent) {
-      const filled: any = {};
-      if (email) filled.to = email;
-
-      const body = (() => {
-        const m = raw.match(/(?:that says|saying|que diga|diciendo|mensaje|body)\s*[:\-]?\s*(.+)$/i);
-        if (m && m[1]) return String(m[1]).trim();
-        const m2 = raw.match(/(?:say|di|diga)\s+(.+)$/i);
-        if (m2 && m2[1]) return String(m2[1]).trim();
-        return '';
-      })();
-      if (body) filled.body = body;
-
-      const missing: string[] = [];
-      if (!filled.to) missing.push('to');
-      if (!filled.body) missing.push('body');
-
-      const next_question = (() => {
-        if (missing[0] === 'to') {
-          return language === 'es'
-            ? '¿A qué correo quieres que lo envíe?'
-            : 'What email address should I send it to?';
-        }
-        if (missing[0] === 'body') {
-          return language === 'es'
-            ? '¿Qué quieres que diga el correo? Dímelo tal cual y lo mando.'
-            : "What should the email say? Tell me exactly and I’ll send it.";
-        }
-        return '';
-      })();
-
-      return {
-        intent: 'send_email',
-        language: null,
-        confidence: 0.62,
-        required_slots: ['to', 'body'],
-        filled_slots: filled,
-        missing_slots: missing,
-        next_question,
-        priority: 'high',
-      };
-    }
-
-    const isTaskIntent = hasAny(s, ['create task', 'add task', 'new task', 'tarea', 'crear tarea', 'agrega una tarea', 'recordatorio', 'remind me', 'reminder']);
-    if (isTaskIntent) {
-      const title = (() => {
-        const m = raw.match(/(?:task|tarea|remind me to|recu[eé]rdame)\s*[:\-]?\s*(.+)$/i);
-        if (m && m[1]) return String(m[1]).trim();
-        return '';
-      })();
-
-      const filled: any = {};
-      if (title) filled.title = title;
-
-      const missing: string[] = [];
-      if (!filled.title) missing.push('title');
-
-      const next_question = missing.length
-        ? this.buildMissingTaskTitleMessage(language)
-        : '';
-
-      return {
-        intent: 'create_task',
-        language: null,
-        confidence: 0.62,
-        required_slots: ['title'],
-        filled_slots: filled,
-        missing_slots: missing,
-        next_question,
-        priority: 'high',
-      };
-    }
-
-    return null;
   }
 
   private llmTimeoutMsForChannel(channel: 'VOICE' | 'TEXT') {
@@ -184,6 +51,31 @@ export class VoiceService {
   private isVoiceLlmCircuitOpen() {
     if (!this.llmVoiceCircuitOpenedAtMs) return false;
     return Date.now() - this.llmVoiceCircuitOpenedAtMs < 25000;
+  }
+
+  private isVoiceIntentLlmDisabled() {
+    if (!this.voiceIntentLlmDisabledUntilMs) return false;
+    if (Date.now() >= this.voiceIntentLlmDisabledUntilMs) {
+      this.voiceIntentLlmDisabledUntilMs = null;
+      this.voiceIntentLlmFailureStreak = 0;
+      return false;
+    }
+    return true;
+  }
+
+  private recordVoiceIntentLlmFailure() {
+    this.voiceIntentLlmFailureStreak = Math.min(10, (this.voiceIntentLlmFailureStreak || 0) + 1);
+    if (this.voiceIntentLlmFailureStreak >= 2) {
+      const raw = this.configService.get<string>('VOICE_INTENT_LLM_DISABLE_MS') || '25000';
+      const n = Number(raw);
+      const ms = Number.isFinite(n) && n >= 1000 && n <= 180000 ? Math.floor(n) : 25000;
+      this.voiceIntentLlmDisabledUntilMs = Date.now() + ms;
+    }
+  }
+
+  private recordVoiceIntentLlmSuccess() {
+    this.voiceIntentLlmFailureStreak = 0;
+    this.voiceIntentLlmDisabledUntilMs = null;
   }
 
   private closeVoiceLlmCircuit() {
@@ -2062,6 +1954,7 @@ export class VoiceService {
       userId: clerkUserId,
       intent: intent?.intent,
       confidence: intent?.confidence,
+      intent_source: (intent as any)?.intent_source || null,
       language,
     });
 
@@ -2415,6 +2308,12 @@ export class VoiceService {
   }
 
   private async extractIntent(text: string, context: string, language: SupportedLanguage, channel: 'VOICE' | 'TEXT') {
+    if (channel === 'VOICE') {
+      const executiveBrain = new ExecutiveBrain();
+      const heuristic = executiveBrain.inferVoiceIntentLayer0(text, language);
+      if (heuristic) return heuristic as any;
+    }
+
     const intentModelLabel =
       this.configService.get<string>('LLM_INTENT_MODEL') ||
       this.configService.get<string>('LLM_MODEL') ||
@@ -2452,16 +2351,23 @@ export class VoiceService {
       };
     }
 
-    if (channel === 'VOICE' && this.isVoiceLlmCircuitOpen()) {
+    if (channel === 'VOICE' && (this.isVoiceLlmCircuitOpen() || this.isVoiceIntentLlmDisabled())) {
+      const remaining = this.voiceIntentLlmDisabledUntilMs ? Math.max(0, this.voiceIntentLlmDisabledUntilMs - Date.now()) : null;
+      console.warn('[LeelooApi] voice.llm.intent.disabled', {
+        reason: this.isVoiceLlmCircuitOpen() ? 'circuit_open' : 'health_probe',
+        remaining_ms: remaining,
+      });
       return {
-        intent: 'system_unavailable',
-        confidence: 0.65,
+        intent: 'query',
+        language: null,
+        confidence: 0.55,
         required_slots: [],
         filled_slots: {},
         missing_slots: [],
-        next_question: this.buildAiUnavailableMessage(language),
+        next_question: '',
         priority: 'low',
-      };
+        intent_source: 'fallback',
+      } as any;
     }
 
     const trimmedContext =
@@ -2565,6 +2471,10 @@ export class VoiceService {
         });
         if (channel === 'VOICE') {
           this.closeVoiceLlmCircuit();
+          this.recordVoiceIntentLlmSuccess();
+        }
+        if (primary && typeof primary === 'object') {
+          (primary as any).intent_source = 'llm';
         }
         return primary;
       } catch (err) {
@@ -2600,6 +2510,10 @@ export class VoiceService {
             });
             if (channel === 'VOICE') {
               this.closeVoiceLlmCircuit();
+              this.recordVoiceIntentLlmSuccess();
+            }
+            if (secondary && typeof secondary === 'object') {
+              (secondary as any).intent_source = 'llm';
             }
             return secondary;
           } catch (err2) {
@@ -2611,23 +2525,37 @@ export class VoiceService {
 
         if (channel === 'VOICE') {
           this.openVoiceLlmCircuit();
+          this.recordVoiceIntentLlmFailure();
         }
-        const heuristic = this.heuristicIntentFallback(text, language);
-        if (heuristic) return heuristic;
         return {
-          intent: 'system_unavailable',
-          confidence: 0.65,
+          intent: 'query',
+          language: null,
+          confidence: 0.55,
           required_slots: [],
           filled_slots: {},
           missing_slots: [],
-          next_question: this.buildAiUnavailableMessage(language),
+          next_question: '',
           priority: 'low',
-        };
+          intent_source: 'fallback',
+        } as any;
       }
     } catch (err) {
       console.error('[LeelooApi] voice.llm.intent.error', {
         ...this.axiosErrorSummary(err),
       });
+      if (channel === 'VOICE') {
+        return {
+          intent: 'query',
+          language: null,
+          confidence: 0.55,
+          required_slots: [],
+          filled_slots: {},
+          missing_slots: [],
+          next_question: '',
+          priority: 'low',
+          intent_source: 'fallback',
+        } as any;
+      }
       return {
         intent: 'system_unavailable',
         confidence: 0.65,
