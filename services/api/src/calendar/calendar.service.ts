@@ -34,6 +34,55 @@ export class CalendarService implements OnModuleInit {
       )`,
     );
 
+    // If the table existed before we added start_at/end_at, don't crash on boot.
+    // We keep this logic local (no migrations framework) and safe to run repeatedly.
+    try {
+      const colsRes = await this.db.query<{ column_name: string }>(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'calendar_events'`,
+      );
+      const cols = new Set((colsRes.rows || []).map((r) => String(r.column_name)));
+
+      const ensureColumn = async (name: string, typeSql: string) => {
+        if (cols.has(name)) return;
+        await this.db.query(`ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS ${name} ${typeSql}`);
+        cols.add(name);
+      };
+
+      await ensureColumn('start_at', 'timestamptz NULL');
+      await ensureColumn('end_at', 'timestamptz NULL');
+
+      // Best-effort backfill from common legacy column names.
+      // This runs only when start_at/end_at were missing.
+      if (cols.has('start_at')) {
+        const legacyStartCandidates = ['start_time', 'starts_at', 'start'];
+        const legacyStart = legacyStartCandidates.find((c) => cols.has(c));
+        if (legacyStart) {
+          await this.db.query(
+            `UPDATE calendar_events
+             SET start_at = ${legacyStart}
+             WHERE start_at IS NULL AND ${legacyStart} IS NOT NULL`,
+          );
+        }
+      }
+
+      if (cols.has('end_at')) {
+        const legacyEndCandidates = ['end_time', 'ends_at', 'end'];
+        const legacyEnd = legacyEndCandidates.find((c) => cols.has(c));
+        if (legacyEnd) {
+          await this.db.query(
+            `UPDATE calendar_events
+             SET end_at = ${legacyEnd}
+             WHERE end_at IS NULL AND ${legacyEnd} IS NOT NULL`,
+          );
+        }
+      }
+    } catch {
+      // If information_schema isn't accessible for any reason, don't crash the API.
+      // Worst case: the index creation below may still fail and surface the real error.
+    }
+
     await this.db.query(
       'CREATE INDEX IF NOT EXISTS idx_calendar_events_user_start ON calendar_events (user_id, start_at)',
     );
