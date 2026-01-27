@@ -1858,6 +1858,23 @@ export class VoiceService {
     const channelForIntent: 'VOICE' | 'TEXT' = (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
     const intent = conversationalIntent || (await this.extractIntent(cleanedText, intentContext, language, channelForIntent));
 
+    if (channelForIntent === 'VOICE' && (intent as any)?.intent_source === 'fallback') {
+      const responseText =
+        String((intent as any)?.next_question || '').trim() ||
+        (language === 'es'
+          ? 'Ahora mismo estoy en modo rápido. Dime si quieres crear una tarea o enviar un correo.'
+          : "I'm in fast mode right now. Tell me if you want to create a task or send an email.");
+      const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { intent_source: 'fallback', llm: 'skipped' });
+      return {
+        transcription: cleanedText,
+        intent,
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
     const memForResponse = await memoryGate(namespacesForResponse(String((intent as any)?.intent || '')));
     const responseContext = memForResponse.context;
 
