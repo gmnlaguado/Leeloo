@@ -105,13 +105,38 @@ export class VoiceController {
       // best effort only
     }
     const persistedLanguage = this.profilesService.getPreferredLanguage(profile);
-    const preferredLanguage = (persistedLanguage || (isSupported(requestedLanguage) ? requestedLanguage : null) || 'en') as any;
+    const supportedRequestedLanguage = isSupported(requestedLanguage) ? (requestedLanguage as any) : null;
+
+    // Production invariant:
+    // - Default is English.
+    // - If client explicitly requests a supported language, we persist it so it never "snaps back".
+    // - Persisting language also clears any stale pending intent/state that may force the old language.
+    if (supportedRequestedLanguage && supportedRequestedLanguage !== persistedLanguage) {
+      try {
+        await this.profilesService.ensureProfileByClerkUserId(userId, {
+          language: supportedRequestedLanguage,
+        });
+        await this.profilesService.updateLanguage(userId, supportedRequestedLanguage);
+        await this.profilesService.clearConversationState(userId);
+        await this.profilesService.setConversationState(userId, {
+          preferred_language: supportedRequestedLanguage,
+          mode: 'conversation',
+        });
+      } catch {
+        // best effort only
+      }
+    }
+
+    const profileAfter = await this.profilesService.getProfileByClerkUserId(userId);
+    const persistedLanguageAfter = this.profilesService.getPreferredLanguage(profileAfter);
+    const preferredLanguage = (persistedLanguageAfter || supportedRequestedLanguage || 'en') as any;
 
     console.log('[LeelooApi] voice.language_resolve', {
       userId,
       requested: requestedLanguage,
       persisted: persistedLanguage,
       resolved: preferredLanguage,
+      persisted_after: persistedLanguageAfter,
     });
 
     const inferredChannel = audio ? 'VOICE' : 'TEXT';

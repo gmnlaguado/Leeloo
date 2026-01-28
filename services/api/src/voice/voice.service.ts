@@ -183,6 +183,36 @@ export class VoiceService {
 
     const language = (userContext?.language || 'en').toLowerCase();
 
+    const detectLikelyLanguage = (text: string): 'en' | 'es' | 'unknown' => {
+      const t = String(text || '').toLowerCase();
+      if (!t.trim()) return 'unknown';
+
+      // Lightweight heuristic (no extra deps): sufficient to detect "obvious" Spanish.
+      const esHits = [
+        ' el ', ' la ', ' los ', ' las ', ' un ', ' una ', ' por ', ' para ', ' con ', ' sin ',
+        ' que ', ' como ', ' pero ', ' porque ', ' entonces ', ' ahora ',
+        ' hola', ' gracias', ' por favor', ' necesito', ' quiero', ' puedes',
+      ].reduce((acc, w) => acc + (t.includes(w) ? 1 : 0), 0);
+
+      const enHits = [
+        ' the ', ' a ', ' an ', ' and ', ' or ', ' but ', ' because ', ' so ',
+        ' hello', ' thanks', ' please', ' i need', ' i want', ' can you',
+      ].reduce((acc, w) => acc + (t.includes(w) ? 1 : 0), 0);
+
+      if (esHits >= 3 && esHits > enHits) return 'es';
+      if (enHits >= 2 && enHits >= esHits) return 'en';
+      // Extra hint: Spanish punctuation
+      if (/[¿¡]/.test(text)) return 'es';
+      return 'unknown';
+    };
+
+    const shouldRetryEnglish = (requested: string, transcription: string) => {
+      if (wakeWordOnly) return false;
+      if (requested !== 'en') return false;
+      const detected = detectLikelyLanguage(transcription);
+      return detected === 'es';
+    };
+
     console.log('[LeelooApi] voice.stt.start', {
       traceId,
       bytes: audioBuffer.length,
@@ -220,7 +250,49 @@ export class VoiceService {
           hasText: Boolean(out),
         });
 
-        if (out) return out;
+        if (out) {
+          const detected = detectLikelyLanguage(out);
+          console.log('[LeelooApi] voice.stt.language', {
+            traceId,
+            requested: language,
+            detected,
+            wake_word_only: wakeWordOnly,
+          });
+
+          if (shouldRetryEnglish(language, out)) {
+            try {
+              console.warn('[LeelooApi] voice.stt.retry_language_mismatch', {
+                traceId,
+                requested: language,
+                detected,
+              });
+
+              const res2 = await this.openai.audio.transcriptions.create({
+                file,
+                model,
+                language: 'en',
+              });
+              const text2 = (res2 as any)?.text;
+              const out2 = typeof text2 === 'string' ? text2.trim() : '';
+              const detected2 = detectLikelyLanguage(out2);
+              console.log('[LeelooApi] voice.stt.retry_language_mismatch.ok', {
+                traceId,
+                requested: 'en',
+                detected: detected2,
+                hasText: Boolean(out2),
+                total_ms: Date.now() - startedAt,
+              });
+              if (out2) return out2;
+            } catch (err2) {
+              console.warn('[LeelooApi] voice.stt.retry_language_mismatch.fail', {
+                traceId,
+                ...this.axiosErrorSummary(err2),
+              });
+            }
+          }
+
+          return out;
+        }
 
         // Premium UX: if Whisper returns empty (often silence/very short), do NOT fall back
         // to slow STT services unless explicitly enabled.
