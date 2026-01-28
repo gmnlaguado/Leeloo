@@ -82,6 +82,155 @@ export class VoiceService {
     this.llmVoiceCircuitOpenedAtMs = null;
   }
 
+  private inferDeterministicIntent(
+    text: string,
+    language: SupportedLanguage,
+  ):
+    | {
+        intent: string;
+        language: SupportedLanguage | null;
+        confidence: number;
+        required_slots: string[];
+        filled_slots: Record<string, any>;
+        missing_slots: string[];
+        next_question: string;
+        priority: 'low' | 'medium' | 'high';
+        intent_source?: string;
+      }
+    | null {
+    const raw = String(text || '').trim();
+    if (!raw) return null;
+
+    const lower = raw.toLowerCase();
+
+    const emailMatch = raw.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    const hasEmail = Boolean(emailMatch && emailMatch[0]);
+
+    const wantsEmail =
+      /\b(send|email|mail)\b/i.test(lower) ||
+      /\b(enviar|correo|mail)\b/i.test(lower) ||
+      hasEmail;
+
+    if (wantsEmail) {
+      const filled: Record<string, any> = {};
+      if (hasEmail) filled.to = emailMatch?.[0];
+
+      const bodyCandidate = raw
+        .replace(emailMatch?.[0] || '', '')
+        .replace(/\b(to|a)\b\s*:?/i, '')
+        .replace(/\b(send|email|mail|enviar|correo)\b\s*/i, '')
+        .trim();
+
+      if (bodyCandidate && bodyCandidate.length >= 6) {
+        filled.body = bodyCandidate;
+      }
+
+      const missing: string[] = [];
+      if (!String(filled.to || '').trim()) missing.push('to');
+      if (!String(filled.body || '').trim()) missing.push('body');
+
+      const next_question =
+        missing[0] === 'to'
+          ? language === 'es'
+            ? '¿A qué correo quieres que lo envíe?'
+            : 'What email address should I send it to?'
+          : missing[0] === 'body'
+            ? language === 'es'
+              ? '¿Qué quieres que diga el correo?'
+              : 'What should the email say?'
+            : '';
+
+      return {
+        intent: 'send_email',
+        language: null,
+        confidence: 0.82,
+        required_slots: ['to', 'body'],
+        filled_slots: filled,
+        missing_slots: missing,
+        next_question,
+        priority: 'high',
+        intent_source: 'deterministic',
+      };
+    }
+
+    const wantsTask =
+      /\b(create|add|make)\s+(a\s+)?task\b/i.test(lower) ||
+      /\bnew\s+task\b/i.test(lower) ||
+      /\b(create_task)\b/i.test(lower) ||
+      /\b(crea|crear|agrega|añade)\s+(una\s+)?tarea\b/i.test(lower);
+
+    if (wantsTask) {
+      const title = raw
+        .replace(/\b(create|add|make)\s+(a\s+)?task\b\s*/i, '')
+        .replace(/\bnew\s+task\b\s*/i, '')
+        .replace(/\b(crea|crear|agrega|añade)\s+(una\s+)?tarea\b\s*/i, '')
+        .trim();
+
+      const missing: string[] = [];
+      const filled: Record<string, any> = {};
+      if (title) filled.title = title;
+      if (!String(filled.title || '').trim()) missing.push('title');
+
+      const next_question =
+        missing[0] === 'title'
+          ? this.buildMissingTaskTitleMessage(language)
+          : '';
+
+      return {
+        intent: 'create_task',
+        language: null,
+        confidence: 0.8,
+        required_slots: ['title'],
+        filled_slots: filled,
+        missing_slots: missing,
+        next_question,
+        priority: 'high',
+        intent_source: 'deterministic',
+      };
+    }
+
+    const wantsReminder =
+      /\bremind\s+me\b/i.test(lower) ||
+      /\breminder\b/i.test(lower) ||
+      /\brec(u|ú)erdame\b/i.test(lower) ||
+      /\brecordatorio\b/i.test(lower);
+
+    if (wantsReminder) {
+      const activity = raw
+        .replace(/\bremind\s+me\b\s*/i, '')
+        .replace(/\breminder\b\s*/i, '')
+        .replace(/\brec(u|ú)erdame\b\s*/i, '')
+        .replace(/\brecordatorio\b\s*/i, '')
+        .trim();
+
+      const filled: Record<string, any> = {};
+      if (activity) filled.activity = activity;
+      const missing: string[] = [];
+      if (!String(filled.activity || '').trim()) missing.push('activity');
+
+      const next_question =
+        missing[0] === 'activity'
+          ? language === 'es'
+            ? '¿Qué quieres que te recuerde?'
+            : 'What should I remind you about?'
+          : '';
+
+      return {
+        intent: 'reminder',
+        language: null,
+        confidence: 0.75,
+        required_slots: ['activity'],
+        filled_slots: filled,
+        missing_slots: missing,
+        next_question,
+        priority: 'medium',
+        intent_source: 'deterministic',
+      };
+    }
+
+    return null;
+  }
+
   private trimForVoicePrompt(value: string, maxChars: number) {
     const s = String(value || '');
     if (s.length <= maxChars) return s;
@@ -821,10 +970,153 @@ export class VoiceService {
       }
     }
 
-    const systemOn = this.profilesService.getSystemOn(profile);
-
     const channel: 'VOICE' | 'TEXT' =
       (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
+
+    const systemOn = channel === 'TEXT' ? true : this.profilesService.getSystemOn(profile);
+
+    // EXECUTIVE ROUTER (HARD GATE): when awaiting confirmation, do NOT call LLM or re-run intent detection.
+    // We only accept YES/NO/CANCEL deterministically and execute/cancel the already-persisted pending intent.
+    if ((state as any)?.intent_state === 'AWAITING_CONFIRMATION') {
+      const pendingIntent = (state as any)?.pending_intent || null;
+      const pendingSlots = (state as any)?.pending_slots || {};
+      const pendingName = String(pendingIntent?.intent || '');
+      const token = input.decision_token;
+
+      console.log('[LeelooApi] executive.router.confirmation_gate', {
+        userId: clerkUserId,
+        intent_state_in: (state as any)?.intent_state || null,
+        token,
+        pending_intent: pendingName || null,
+      });
+
+      if (!pendingIntent || !pendingName) {
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          intent_state: 'NONE',
+          pending_intent: null,
+          pending_slots: null,
+          missing_slots: [],
+          next_question: undefined,
+          last_question: undefined,
+          last_intent: 'query',
+          last_action: undefined,
+        } as any);
+
+        const responseText = language === 'es'
+          ? 'Ok. ¿Qué quieres hacer ahora?'
+          : 'Okay. What do you want to do now?';
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { executive_router: true, reason: 'awaiting_confirmation_without_pending_intent' });
+        return {
+          transcription: cleanedText,
+          intent: { intent: 'query', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
+          action_result: null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
+      if (token === 'CANCEL' || token === 'NO') {
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          current_goal: undefined,
+          intent_state: 'NONE',
+          pending_intent: null,
+          pending_slots: null,
+          missing_slots: [],
+          next_question: undefined,
+          last_question: undefined,
+          last_intent: pendingName,
+          last_action: undefined,
+        } as any);
+
+        const responseText = language === 'es'
+          ? 'Listo. No lo hago. ¿Qué quieres hacer ahora?'
+          : "Okay. I won't do it. What do you want to do now?";
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { executive_router: true, intent: pendingName, token, canceled: true });
+        return {
+          transcription: cleanedText,
+          intent: { intent: 'cancel', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
+          action_result: null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
+      if (token === 'YES') {
+        // Mark EXECUTING before executing, then DONE.
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          current_goal: pendingName,
+          intent_state: 'EXECUTING',
+          pending_intent: pendingIntent,
+          pending_slots: pendingSlots,
+          missing_slots: [],
+          next_question: undefined,
+          last_question: undefined,
+          last_intent: pendingName,
+        } as any);
+
+        const actionResult = await this.executeIntent(clerkUserId, pendingIntent, language);
+        const responseText = buildExecutedResponse(pendingName, actionResult, language);
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { executive_router: true, intent: pendingName, token, executed: true });
+
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          current_goal: undefined,
+          intent_state: 'DONE',
+          pending_intent: null,
+          pending_slots: null,
+          missing_slots: [],
+          next_question: undefined,
+          last_question: undefined,
+          last_action: pendingName,
+          last_intent: pendingName,
+        } as any);
+
+        return {
+          transcription: cleanedText,
+          intent: { ...pendingIntent, confidence: 1, decision: 'ACTION', original_text: cleanedText } as any,
+          action_result: actionResult,
+          task_id: (actionResult as any)?.id || null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
+      const confirmQ = buildConfirmQuestion(pendingName, language);
+      const responseText = language === 'es'
+        ? `${confirmQ} (Responde “sí” o “no”.)`
+        : `${confirmQ} (Answer “yes” or “no”.)`;
+      const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { executive_router: true, intent: pendingName, token, awaiting_confirmation: true });
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+        assistant_name: 'Leeloo',
+        current_goal: pendingName,
+        intent_state: 'AWAITING_CONFIRMATION',
+        pending_intent: pendingIntent,
+        pending_slots: pendingSlots,
+        missing_slots: [],
+        next_question: responseText,
+        last_question: responseText,
+        last_intent: pendingName,
+      } as any);
+      return {
+        transcription: cleanedText,
+        intent: { intent: 'awaiting_confirmation', confidence: 1, decision: 'QUESTION', original_text: cleanedText } as any,
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
 
     const execDecision = supervisor.decide({
       input,
@@ -2169,6 +2461,27 @@ export class VoiceService {
     }
 
     if (decision.decision === 'CONVERSATION') {
+      if (channel === 'VOICE' && (this.isVoiceLlmCircuitOpen() || this.isVoiceIntentLlmDisabled())) {
+        const responseText =
+          language === 'es'
+            ? 'Estoy teniendo problemas de conexión. Puedo crear una tarea o enviar un correo si me lo dices directo.'
+            : "I'm having connection trouble. I can still create a task or send an email if you tell me directly.";
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'CONVERSATION', deterministic_fallback: true });
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          assistant_name: 'Leeloo',
+          last_intent: String(intent?.intent || ''),
+          last_question: undefined,
+        });
+        return {
+          transcription: cleanedText,
+          intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'CONVERSATION', original_text: cleanedText },
+          action_result: null,
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
       const responseText = await this.generateResponse(
         {
           ...intent,
@@ -2466,6 +2779,10 @@ export class VoiceService {
         reason: this.isVoiceLlmCircuitOpen() ? 'circuit_open' : 'health_probe',
         remaining_ms: remaining,
       });
+
+      const deterministic = this.inferDeterministicIntent(text, language);
+      if (deterministic) return deterministic as any;
+
       return {
         intent: 'query',
         language: null,
