@@ -1760,11 +1760,10 @@ export class VoiceService {
           changed = true;
         }
         if (firstMissing === 'start_at') {
-          const normalized = String(cleanedText || '').toLowerCase().trim();
-          const parsed =
-            normalized.match(/\b\d{4}-\d{2}-\d{2}\b/) ? this.inferDeterministicIntent(cleanedText, language)?.filled_slots?.start_at : null;
-          filled.start_at = parsed || filled.start_at || '';
-          if (filled.start_at) changed = true;
+          const normalized = String(cleanedText || '').trim();
+          const parsed = this.inferDeterministicIntent(normalized, language)?.filled_slots?.start_at;
+          filled.start_at = String(parsed || '').trim() || filled.start_at || '';
+          if (String(filled.start_at || '').trim()) changed = true;
         }
       }
 
@@ -1774,11 +1773,10 @@ export class VoiceService {
           changed = true;
         }
         if (firstMissing === 'start_at') {
-          const normalized = String(cleanedText || '').toLowerCase().trim();
-          const parsed =
-            normalized.match(/\b\d{4}-\d{2}-\d{2}\b/) ? this.inferDeterministicIntent(cleanedText, language)?.filled_slots?.start_at : null;
-          filled.start_at = parsed || filled.start_at || '';
-          if (filled.start_at) changed = true;
+          const normalized = String(cleanedText || '').trim();
+          const parsed = this.inferDeterministicIntent(normalized, language)?.filled_slots?.start_at;
+          filled.start_at = String(parsed || '').trim() || filled.start_at || '';
+          if (String(filled.start_at || '').trim()) changed = true;
         }
       }
 

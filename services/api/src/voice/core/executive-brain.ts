@@ -107,6 +107,87 @@ export class ExecutiveBrain {
       };
     }
 
+    const isReminderIntent = hasAny(s, [
+      'recordatorio',
+      'recu[eé]rdame',
+      'recuerdame',
+      'remind me',
+      'reminder',
+    ]);
+    if (isReminderIntent) {
+      const activity = (() => {
+        const m = raw.match(/(?:recordatorio|reminder|remind me to|recu[eé]rdame)\s*[:\-]?\s*(.+)$/i);
+        if (m && m[1]) return String(m[1]).trim();
+        return '';
+      })();
+
+      const filled: any = {};
+      if (activity) filled.activity = activity;
+
+      const missing: string[] = [];
+      if (!String(filled.activity || '').trim()) missing.push('activity');
+      missing.push('start_at');
+
+      const next_question = missing[0] === 'activity'
+        ? (language === 'es' ? '¿Qué quieres que te recuerde?' : 'What should I remind you about?')
+        : (language === 'es' ? '¿Para cuándo? (di fecha y hora)' : 'When? (say date and time)');
+
+      return {
+        intent: 'reminder',
+        language: null,
+        confidence: 0.72,
+        required_slots: ['activity', 'start_at'],
+        filled_slots: filled,
+        missing_slots: missing,
+        next_question,
+        priority: 'high',
+        intent_source: 'heuristic',
+      };
+    }
+
+    const isScheduleMeetingIntent = hasAny(s, [
+      'schedule',
+      'meeting',
+      'appointment',
+      'event',
+      'agenda',
+      'calendario',
+      'evento',
+      'cita',
+      'reunion',
+      'reuni[oó]n',
+    ]);
+    if (isScheduleMeetingIntent) {
+      const title = (() => {
+        const m = raw.match(/(?:evento|event|cita|reuni[oó]n|reunion|agenda|calendario|meeting|appointment)\s*[:\-]?\s*(.+)$/i);
+        if (m && m[1]) return String(m[1]).trim();
+        return '';
+      })();
+
+      const filled: any = {};
+      if (title) filled.title = title;
+
+      const missing: string[] = [];
+      if (!String(filled.title || '').trim()) missing.push('title');
+      missing.push('start_at');
+
+      const next_question = missing[0] === 'title'
+        ? (language === 'es' ? '¿Qué título le pongo al evento?' : "What's the event title?")
+        : (language === 'es' ? '¿Para cuándo es? (di fecha y hora)' : 'When is it? (say date and time)');
+
+      return {
+        intent: 'schedule_meeting',
+        language: null,
+        confidence: 0.7,
+        required_slots: ['title', 'start_at'],
+        filled_slots: filled,
+        missing_slots: missing,
+        next_question,
+        priority: 'high',
+        intent_source: 'heuristic',
+      };
+    }
+
     const wantsLanguageChange = hasAny(s, [
       'cambia a',
       'cambia el idioma a',
@@ -221,9 +302,6 @@ export class ExecutiveBrain {
       'tarea',
       'crear tarea',
       'agrega una tarea',
-      'recordatorio',
-      'remind me',
-      'reminder',
     ]);
     if (isTaskIntent) {
       const title = (() => {
