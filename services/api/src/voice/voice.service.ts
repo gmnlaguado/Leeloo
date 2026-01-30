@@ -38,6 +38,8 @@ export class VoiceService {
       'create_reminder',
       'reminder',
       'schedule_meeting',
+      'delete_event',
+      'update_event_time',
       'agenda_today',
       'agenda_tomorrow',
       'set_language',
@@ -228,6 +230,82 @@ export class VoiceService {
     };
 
     const parsedStartAt = parseDateTimeIso(lower) || parseDateTimeSpanishBasic(lower);
+
+    const deleteTrigger =
+      /\b(delete|remove|cancel)\b/.test(lower) ||
+      /\b(elimina|borrar|borra|cancela|cancelar|quita)\b/.test(lower);
+    const hasEventWord = /\b(event|appointment|meeting|calendario|evento|cita|reunion|reuni[oó]n)\b/.test(lower);
+
+    if (deleteTrigger && hasEventWord) {
+      const titleQuery = raw
+        .replace(/\b(delete|remove|cancel)\b\s*/i, '')
+        .replace(/\b(elimina|borrar|borra|cancela|cancelar|quita)\b\s*/i, '')
+        .replace(/\b(event|appointment|meeting|calendario|evento|cita|reunion|reuni[oó]n)\b\s*/i, '')
+        .trim();
+
+      const filled: Record<string, any> = {};
+      if (titleQuery) filled.title_query = titleQuery;
+
+      const missing: string[] = [];
+      if (!String(filled.title_query || '').trim()) missing.push('title_query');
+
+      const next_question = missing[0] === 'title_query'
+        ? (language === 'es' ? '¿Cuál evento quieres eliminar? Dime el título o una parte.' : 'Which event should I delete? Say the title or part of it.')
+        : '';
+
+      return {
+        intent: 'delete_event',
+        language: null,
+        confidence: 0.78,
+        required_slots: ['title_query'],
+        filled_slots: filled,
+        missing_slots: missing,
+        next_question,
+        priority: 'high',
+        intent_source: 'deterministic',
+      };
+    }
+
+    const updateTrigger =
+      /\b(reschedule|move|change|update)\b/.test(lower) ||
+      /\b(cambia|mueve|reprograma|reagenda)\b/.test(lower);
+    const timeWord = /\b(time|hora|para|a\s+las|at)\b/.test(lower);
+
+    if (updateTrigger && hasEventWord && timeWord) {
+      const titleQuery = raw
+        .replace(/\b(reschedule|move|change|update)\b\s*/i, '')
+        .replace(/\b(cambia|mueve|reprograma|reagenda)\b\s*/i, '')
+        .replace(/\b(el|la)\b\s*/i, '')
+        .replace(/\b(event|appointment|meeting|calendario|evento|cita|reunion|reuni[oó]n)\b\s*/i, '')
+        .replace(/\b(to|for|para)\b\s+.+$/i, '')
+        .trim();
+
+      const filled: Record<string, any> = {};
+      if (titleQuery) filled.title_query = titleQuery;
+      if (parsedStartAt) filled.start_at = parsedStartAt;
+
+      const missing: string[] = [];
+      if (!String(filled.title_query || '').trim()) missing.push('title_query');
+      if (!String(filled.start_at || '').trim()) missing.push('start_at');
+
+      const next_question = missing[0] === 'title_query'
+        ? (language === 'es' ? '¿Qué evento quieres cambiar? Dime el título o una parte.' : 'Which event do you want to change? Say the title or part of it.')
+        : missing[0] === 'start_at'
+          ? (language === 'es' ? '¿Para qué fecha y hora?' : 'What date and time?')
+          : '';
+
+      return {
+        intent: 'update_event_time',
+        language: null,
+        confidence: 0.76,
+        required_slots: ['title_query', 'start_at'],
+        filled_slots: filled,
+        missing_slots: missing,
+        next_question,
+        priority: 'high',
+        intent_source: 'deterministic',
+      };
+    }
 
     const meetingTrigger =
       /\b(schedule|meeting|appointment|event)\b/.test(lower) ||
@@ -953,6 +1031,16 @@ export class VoiceService {
           ? 'Ok. ¿Lo agrego al calendario?'
           : 'Okay. Should I add it to your calendar?';
       }
+      if (i === 'delete_event') {
+        return language === 'es'
+          ? 'Ok. ¿Quieres que lo elimine ahora?'
+          : 'Okay. Do you want me to delete it now?';
+      }
+      if (i === 'update_event_time') {
+        return language === 'es'
+          ? 'Ok. ¿Quieres que lo cambie ahora?'
+          : 'Okay. Do you want me to change it now?';
+      }
       return language === 'es'
         ? 'Ok. ¿Quieres que lo haga ahora?'
         : 'Okay. Do you want me to do it now?';
@@ -1071,6 +1159,20 @@ export class VoiceService {
         return language === 'es'
           ? 'Listo. Ya quedó creado.'
           : 'Done. It’s created.';
+      }
+
+      if (i === 'delete_event') {
+        const title = String((actionResult as any)?.title || '').trim();
+        return language === 'es'
+          ? `Listo. Eliminé el evento${title ? `: "${title}"` : ''}.`
+          : `Done. I deleted the event${title ? `: "${title}"` : ''}.`;
+      }
+
+      if (i === 'update_event_time') {
+        const title = String((actionResult as any)?.title || '').trim();
+        return language === 'es'
+          ? `Listo. Actualicé el evento${title ? `: "${title}"` : ''}.`
+          : `Done. I updated the event${title ? `: "${title}"` : ''}.`;
       }
 
       return language === 'es'
@@ -1754,6 +1856,26 @@ export class VoiceService {
         }
       }
 
+      if (intentName === 'delete_event') {
+        if (firstMissing === 'title_query') {
+          filled.title_query = cleanedText.trim();
+          changed = true;
+        }
+      }
+
+      if (intentName === 'update_event_time') {
+        if (firstMissing === 'title_query') {
+          filled.title_query = cleanedText.trim();
+          changed = true;
+        }
+        if (firstMissing === 'start_at') {
+          const normalized = String(cleanedText || '').trim();
+          const parsed = this.inferDeterministicIntent(normalized, language)?.filled_slots?.start_at;
+          filled.start_at = String(parsed || '').trim() || filled.start_at || '';
+          if (String(filled.start_at || '').trim()) changed = true;
+        }
+      }
+
       if (intentName === 'reminder') {
         if (firstMissing === 'activity') {
           filled.activity = cleanedText.trim();
@@ -1795,6 +1917,17 @@ export class VoiceService {
             if (!String(filled.title || '').trim()) m.push('title');
             return m;
           }
+          if (intentName === 'delete_event') {
+            const m: string[] = [];
+            if (!String(filled.title_query || '').trim()) m.push('title_query');
+            return m;
+          }
+          if (intentName === 'update_event_time') {
+            const m: string[] = [];
+            if (!String(filled.title_query || '').trim()) m.push('title_query');
+            if (!String(filled.start_at || '').trim()) m.push('start_at');
+            return m;
+          }
           if (intentName === 'reminder') {
             const m: string[] = [];
             if (!String(filled.activity || '').trim()) m.push('activity');
@@ -1829,6 +1962,12 @@ export class VoiceService {
                         ? (language === 'en' ? "What's the event title?" : '¿Qué título le pongo al evento?')
                         : intentName === 'schedule_meeting' && nextMissing[0] === 'start_at'
                           ? (language === 'en' ? 'When is it? (say date and time)' : '¿Para cuándo es? (di fecha y hora)')
+                          : intentName === 'delete_event' && nextMissing[0] === 'title_query'
+                            ? (language === 'en' ? 'Which event should I delete? Say the title or part of it.' : '¿Cuál evento quieres eliminar? Dime el título o una parte.')
+                            : intentName === 'update_event_time' && nextMissing[0] === 'title_query'
+                              ? (language === 'en' ? 'Which event do you want to change? Say the title or part of it.' : '¿Qué evento quieres cambiar? Dime el título o una parte.')
+                              : intentName === 'update_event_time' && nextMissing[0] === 'start_at'
+                                ? (language === 'en' ? 'What date and time?' : '¿Para qué fecha y hora?')
                           : this.buildMissingTaskTitleMessage(language);
 
           const audioUrl = await this.generateTTS(responseText, language);
@@ -2659,6 +2798,27 @@ export class VoiceService {
         eventId: (actionResult as any)?.id,
         start_at: startAt,
       });
+    }
+
+    if (intent.intent === 'delete_event') {
+      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+      const q = String(filled.title_query || '').trim();
+      if (!q) return null;
+      const event = await this.calendarService.findNextUpcomingEventByTitle(clerkUserId, q);
+      if (!event) return null;
+      actionResult = await this.calendarService.deleteEvent(clerkUserId, String(event.id));
+    }
+
+    if (intent.intent === 'update_event_time') {
+      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+      const q = String(filled.title_query || '').trim();
+      const startAt = String(filled.start_at || '').trim();
+      if (!q || !startAt) return null;
+      const ms = new Date(startAt).getTime();
+      if (!Number.isFinite(ms) || ms < Date.now()) return null;
+      const event = await this.calendarService.findNextUpcomingEventByTitle(clerkUserId, q);
+      if (!event) return null;
+      actionResult = await this.calendarService.updateEvent(clerkUserId, String(event.id), { start_at: startAt });
     }
 
     return actionResult;

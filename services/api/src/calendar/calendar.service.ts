@@ -248,6 +248,43 @@ export class CalendarService implements OnModuleInit {
     return { day, events };
   }
 
+  async findNextUpcomingEventByTitle(clerkUserId: string, titleQuery: string) {
+    const profileId = await this.getProfileId(clerkUserId);
+    const q = String(titleQuery || '').trim();
+    if (!q) return null;
+
+    const nowIso = new Date().toISOString();
+    const result = await this.db.query(
+      `SELECT *
+       FROM calendar_events
+       WHERE user_id = $1
+         AND start_at >= $2
+         AND title ILIKE $3
+       ORDER BY start_at ASC
+       LIMIT 1`,
+      [profileId, nowIso, `%${q}%`],
+    );
+
+    return result.rows?.[0] || null;
+  }
+
+  async deleteEvent(clerkUserId: string, id: string) {
+    const profileId = await this.getProfileId(clerkUserId);
+    const res = await this.db.query(
+      'DELETE FROM calendar_events WHERE id = $1 AND user_id = $2 RETURNING *',
+      [id, profileId],
+    );
+
+    const deleted = res.rows?.[0] || null;
+    if (deleted) {
+      console.log('[LeelooApi] calendar.event.deleted', {
+        userId: clerkUserId,
+        event_id: id,
+      });
+    }
+    return deleted;
+  }
+
   async updateReminderSettings(clerkUserId: string, dto: any) {
     const profileId = await this.getProfileId(clerkUserId);
 

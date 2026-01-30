@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Post,
   Put,
@@ -41,6 +42,15 @@ export class CalendarController {
     @Body() dto: UpdateCalendarEventDto,
   ) {
     return this.calendarService.updateEvent(req.user.id, id, dto);
+  }
+
+  @Delete('events/:id')
+  @ApiOperation({ summary: 'Delete a calendar event' })
+  async deleteEvent(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.calendarService.deleteEvent(req.user.id, id);
   }
 
   @Get('events')
