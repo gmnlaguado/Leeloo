@@ -347,16 +347,27 @@ export class VoiceService {
     const wantsLanguage =
       /\b(set\s+language|change\s+language|language)\b/.test(lower) ||
       /\b(cambia\s+idioma|cambiar\s+idioma|pon\s+idioma|idioma)\b/.test(lower) ||
+      /\b(parle|parler|langue|mets|met)\b/.test(lower) ||
+      /\b(fala|falar|idioma)\b/.test(lower) ||
+      /\b(nihongo|日本語)\b/.test(lower) ||
       /\b(speak|habla|hablame)\b/.test(lower) ||
-      /\b(in|en)\s+(english|ingles|inglés|spanish|espanol|español|portuguese|portugues|portugues|french|frances|francais|japanese|japones|japonés)\b/.test(lower);
+      /\b(in|en)\s+(english|ingles|inglés|spanish|espanol|español|portuguese|portugues|portugues|french|frances|francais|japanese|japones|japonés|japonais|portugais|anglais)\b/.test(lower) ||
+      /\b(en)\s+(francais|français|anglais|espagnol|portugais|japonais)\b/.test(lower);
 
     if (wantsLanguage) {
       const lang = (() => {
         if (/\b(english|ingles|inglés)\b/.test(lower)) return 'en';
         if (/\b(spanish|espanol|español)\b/.test(lower)) return 'es';
         if (/\b(portuguese|portugues|portugues)\b/.test(lower)) return 'pt';
-        if (/\b(french|frances|francais)\b/.test(lower)) return 'fr';
+        if (/\b(french|frances|francais|français|japonais|anglais|espagnol|portugais)\b/.test(lower)) {
+          if (/\b(anglais)\b/.test(lower)) return 'en';
+          if (/\b(espagnol)\b/.test(lower)) return 'es';
+          if (/\b(portugais)\b/.test(lower)) return 'pt';
+          if (/\b(japonais)\b/.test(lower)) return 'ja';
+          return 'fr';
+        }
         if (/\b(japanese|japones|japonés|nihongo)\b/.test(lower)) return 'ja';
+        if (/\b(日本語)\b/.test(lower)) return 'ja';
         return null;
       })();
 
