@@ -2273,7 +2273,50 @@ export class VoiceService {
       };
     }
 
-    // ACTION intent detected, but NEVER execute without explicit confirmation.
+    // ACTION intent detected.
+    // If slots are missing, we must ask for them FIRST (PENDING). Otherwise we can ask for explicit confirmation.
+    if (missingSlots.length > 0) {
+      const responseText = String(intent?.next_question || '').trim() || this.buildMissingTaskTitleMessage(language);
+      const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'QUESTION', missing: missingSlots });
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+        assistant_name: 'Leeloo',
+        current_goal: String(intent?.intent || ''),
+        intent_state: 'PENDING',
+        pending_intent: intent,
+        pending_slots: { filled_slots: intent?.filled_slots || {} },
+        missing_slots: missingSlots,
+        next_question: responseText,
+        last_question: responseText,
+        last_intent: String(intent?.intent || ''),
+        last_action: undefined,
+      });
+
+      console.log('[LeelooApi] intent_state.transition', {
+        userId: clerkUserId,
+        from: state?.intent_state || null,
+        to: 'PENDING',
+        intent: String(intent?.intent || ''),
+        missing_slots: missingSlots,
+        reason: 'missing_slots_before_confirmation',
+      });
+
+      emitMetrics(intent, {
+        intent_source: (intent as any)?.intent_source || 'deterministic',
+        fallback_used: (intent as any)?.intent_source === 'fallback',
+      });
+
+      return {
+        transcription: cleanedText,
+        intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'QUESTION', original_text: cleanedText },
+        action_result: null,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
+    // No missing slots -> explicit confirmation gate.
     const confirmQ = buildConfirmQuestion(String(intent?.intent || ''), language);
     const audioUrl = await this.generateTTS(confirmQ, language);
     await persistTurn(confirmQ, { intent: String(intent?.intent || ''), awaiting_confirmation: true });
@@ -2284,7 +2327,7 @@ export class VoiceService {
       intent_state: 'AWAITING_CONFIRMATION',
       pending_intent: intent,
       pending_slots: { filled_slots: intent?.filled_slots || {} },
-      missing_slots: [],
+      missing_slots: missingSlots,
       next_question: confirmQ,
       last_question: confirmQ,
       last_intent: String(intent?.intent || ''),
