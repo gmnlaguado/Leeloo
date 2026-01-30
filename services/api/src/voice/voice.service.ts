@@ -1515,6 +1515,35 @@ export class VoiceService {
     }
 
     if (execDecision.kind === 'SYSTEM_WAKE') {
+      const hasPendingFlow =
+        Boolean(state?.pending_intent) ||
+        (state?.intent_state && !['NONE', 'DONE'].includes(String(state.intent_state)));
+
+      // Premium reliability: never wipe pending slot-filling/confirmation flows due to a wake phrase.
+      // Mobile can emit wake events while the user is already mid-task; resetting here causes the
+      // assistant to lose context and fall back to unrelated prompts (e.g. "task or email").
+      if (hasPendingFlow) {
+        await this.profilesService.setConversationState(clerkUserId, {
+          preferred_language: language,
+          system_on: true,
+        });
+
+        const responseText =
+          language === 'es'
+            ? 'Ya estoy contigo. Sigamos.'
+            : "I'm here. Let's continue.";
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { system: 'wake', preserved_pending_flow: true });
+        emitMetrics({ intent: 'system_on', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
+        return {
+          transcription: cleanedText,
+          intent: { intent: 'system_on', confidence: 1 },
+          action_result: { system_on: true, preserved_pending_flow: true },
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
         system_on: true,
@@ -1561,6 +1590,29 @@ export class VoiceService {
     }
 
     if (execDecision.kind === 'SYSTEM_SLEEP') {
+      const hasPendingFlow =
+        Boolean(state?.pending_intent) ||
+        (state?.intent_state && !['NONE', 'DONE'].includes(String(state.intent_state)));
+
+      // Premium reliability: do not allow "sleep" to wipe an active flow. It is too destructive
+      // (especially with wake/sleep noise from the client). Keep the assistant on and continue.
+      if (hasPendingFlow) {
+        const responseText =
+          language === 'es'
+            ? 'Estoy en medio de algo contigo. Terminemos esto primero.'
+            : "We're in the middle of something. Let's finish first.";
+        const audioUrl = await this.generateTTS(responseText, language);
+        await persistTurn(responseText, { system: 'sleep', ignored_due_to_pending_flow: true });
+        emitMetrics({ intent: 'system_off', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
+        return {
+          transcription: cleanedText,
+          intent: { intent: 'system_off', confidence: 1 },
+          action_result: { system_on: true, ignored_sleep: true },
+          response_text: responseText,
+          response_audio_url: audioUrl,
+        };
+      }
+
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
         system_on: false,
