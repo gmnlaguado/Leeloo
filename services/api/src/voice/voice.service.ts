@@ -134,10 +134,61 @@ export class VoiceService {
         intent_source?: string;
       }
     | null {
-    const raw = String(text || '').trim();
+    const rawInput = String(text || '').trim();
+    if (!rawInput) return null;
+
+    const normalize = (s: string) =>
+      String(s || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .replace(/[^a-z0-9\s@._-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const stripPrefixes = (s: string) =>
+      s
+        .replace(/^\s*(hey|hi|hola|oye)\s+/i, '')
+        .replace(/^\s*(leeloo|lilo|lilu|lelu|lelo)[,\s]+/i, '')
+        .replace(/^\s*(please|por favor)\s+/i, '')
+        .trim();
+
+    const raw = stripPrefixes(rawInput);
     if (!raw) return null;
 
-    const lower = raw.toLowerCase();
+    const lower = normalize(raw);
+
+    const wantsLanguage =
+      /\b(set\s+language|change\s+language|language)\b/.test(lower) ||
+      /\b(cambia\s+idioma|cambiar\s+idioma|pon\s+idioma|idioma)\b/.test(lower) ||
+      /\b(speak|habla|hablame)\b/.test(lower) ||
+      /\b(in|en)\s+(english|ingles|inglés|spanish|espanol|español|portuguese|portugues|portugues|french|frances|francais|japanese|japones|japonés)\b/.test(lower);
+
+    if (wantsLanguage) {
+      const lang = (() => {
+        if (/\b(english|ingles|inglés)\b/.test(lower)) return 'en';
+        if (/\b(spanish|espanol|español)\b/.test(lower)) return 'es';
+        if (/\b(portuguese|portugues|portugues)\b/.test(lower)) return 'pt';
+        if (/\b(french|frances|francais)\b/.test(lower)) return 'fr';
+        if (/\b(japanese|japones|japonés|nihongo)\b/.test(lower)) return 'ja';
+        return null;
+      })();
+
+      if (lang) {
+        return {
+          intent: 'set_language',
+          language: lang,
+          confidence: 0.82,
+          required_slots: [],
+          filled_slots: { language: lang },
+          missing_slots: [],
+          next_question: '',
+          priority: 'medium',
+          intent_source: 'deterministic',
+        };
+      }
+    }
 
     const emailMatch = raw.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
     const hasEmail = Boolean(emailMatch && emailMatch[0]);
@@ -2394,11 +2445,9 @@ export class VoiceService {
   }
 
   private async extractIntent(text: string, context: string, language: SupportedLanguage, channel: 'VOICE' | 'TEXT') {
-    if (channel === 'VOICE') {
-      const executiveBrain = new ExecutiveBrain();
-      const heuristic = executiveBrain.inferVoiceIntentLayer0(text, language);
-      if (heuristic) return heuristic as any;
-    }
+    const executiveBrain = new ExecutiveBrain();
+    const heuristic = executiveBrain.inferVoiceIntentLayer0(text, language);
+    if (heuristic) return heuristic as any;
 
     const intentModelLabel =
       this.configService.get<string>('LLM_INTENT_MODEL') ||
