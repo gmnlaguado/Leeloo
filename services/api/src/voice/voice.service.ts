@@ -26,6 +26,42 @@ export class VoiceService {
   private voiceIntentLlmDisabledUntilMs: number | null = null;
   private voiceIntentLlmFailureStreak: number = 0;
 
+  private isCoreIntent(intentName: string): boolean {
+    const name = String(intentName || '').trim();
+    if (!name) return false;
+    const core = new Set([
+      'create_task',
+      'list_tasks',
+      'complete_task',
+      'send_email',
+      'create_reminder',
+      'reminder',
+      'agenda_today',
+      'agenda_tomorrow',
+      'set_language',
+      'help',
+    ]);
+    return core.has(name);
+  }
+
+  private logVoiceMetrics(payload: {
+    request_id: string | null;
+    user_id: string;
+    channel: 'VOICE' | 'TEXT';
+    wake_word_only: boolean;
+    intent: string;
+    intent_source: string | null;
+    core_intent_matched: boolean;
+    fallback_used: boolean;
+    router_ms: number;
+    stt_ms: number | null;
+    llm_intent_ms: number | null;
+    llm_response_ms: number | null;
+    total_ms: number;
+  }) {
+    console.log('[LeelooApi] voice.metrics', payload);
+  }
+
   private llmTimeoutMs() {
     const raw = this.configService.get<string>('LLM_TIMEOUT_MS');
     const parsed = raw ? Number(raw) : NaN;
@@ -658,6 +694,56 @@ export class VoiceService {
     text?: string,
     userContext?: { language?: string; faith_mode?: boolean; role?: string; channel?: 'VOICE' | 'TEXT'; role_policy?: any },
   ) {
+    const t0 = Date.now();
+    const requestId = (userContext as any)?.request_id || null;
+    const wakeWordOnly = Boolean((userContext as any)?.wake_word_only);
+    const sttMs = typeof (userContext as any)?.stt_ms === 'number' ? Number((userContext as any).stt_ms) : null;
+    const llmIntentMs: { v: number | null } = { v: null };
+    const llmResponseMs: { v: number | null } = { v: null };
+
+    const hasChatLlmConfigured = Boolean(
+      (this.configService.get<string>('LLM_CHAT_MODEL') ||
+        this.configService.get<string>('LLM_MODEL') ||
+        this.configService.get<string>('LOCAL_LLM_MODEL')) &&
+        (this.configService.get<string>('LLAMA_BASE_URL') ||
+          this.configService.get<string>('LLM_ENDPOINT') ||
+          this.configService.get<string>('LOCAL_LLM_ENDPOINT')),
+    );
+
+    const emitMetrics = (intentObj: any, opts?: { fallback_used?: boolean; intent_source?: string | null }) => {
+      try {
+        const intentName = String((intentObj as any)?.intent || '');
+        const intentSource =
+          typeof opts?.intent_source === 'string'
+            ? opts.intent_source
+            : String((intentObj as any)?.intent_source || '') || null;
+        const coreMatched = this.isCoreIntent(intentName);
+        const fallbackUsed =
+          typeof opts?.fallback_used === 'boolean' ? opts.fallback_used : intentSource === 'fallback';
+        const totalMs = Date.now() - t0;
+        const routerMs = totalMs - (sttMs || 0);
+        this.logVoiceMetrics({
+          request_id: requestId,
+          user_id: clerkUserId,
+          channel,
+          wake_word_only: wakeWordOnly,
+          intent: intentName,
+          intent_source: intentSource,
+          core_intent_matched: coreMatched,
+          fallback_used: fallbackUsed,
+          router_ms: Math.max(0, Math.floor(routerMs)),
+          stt_ms: sttMs !== null ? Math.floor(sttMs) : null,
+          llm_intent_ms: llmIntentMs.v !== null ? Math.floor(llmIntentMs.v) : null,
+          llm_response_ms:
+            hasChatLlmConfigured && llmResponseMs.v !== null ? Math.floor(llmResponseMs.v) : null,
+          total_ms: Math.floor(totalMs),
+        });
+      } catch {
+        // ignore
+      }
+    };
+
+    const channel: 'VOICE' | 'TEXT' = (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
     const normalizer = new InputNormalizer();
     const supervisor = new ExecutiveSupervisor();
     const factIngestor = new FactIngestor();
@@ -970,9 +1056,6 @@ export class VoiceService {
       }
     }
 
-    const channel: 'VOICE' | 'TEXT' =
-      (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
-
     const systemOn = channel === 'TEXT' ? true : this.profilesService.getSystemOn(profile);
 
     // EXECUTIVE ROUTER (HARD GATE): when awaiting confirmation, do NOT call LLM or re-run intent detection.
@@ -1009,6 +1092,7 @@ export class VoiceService {
           : 'Okay. What do you want to do now?';
         const audioUrl = await this.generateTTS(responseText, language);
         await persistTurn(responseText, { executive_router: true, reason: 'awaiting_confirmation_without_pending_intent' });
+        emitMetrics({ intent: 'query', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
         return {
           transcription: cleanedText,
           intent: { intent: 'query', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
@@ -1038,6 +1122,7 @@ export class VoiceService {
           : "Okay. I won't do it. What do you want to do now?";
         const audioUrl = await this.generateTTS(responseText, language);
         await persistTurn(responseText, { executive_router: true, intent: pendingName, token, canceled: true });
+        emitMetrics({ intent: 'cancel', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
         return {
           transcription: cleanedText,
           intent: { intent: 'cancel', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
@@ -1097,6 +1182,7 @@ export class VoiceService {
         : `${confirmQ} (Answer “yes” or “no”.)`;
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { executive_router: true, intent: pendingName, token, awaiting_confirmation: true });
+      emitMetrics({ intent: pendingName, intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
         assistant_name: 'Leeloo',
@@ -1179,6 +1265,7 @@ export class VoiceService {
 
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { system: 'wake', has_name: Boolean(displayName) });
+      emitMetrics({ intent: 'system_on', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
       return {
         transcription: cleanedText,
         intent: { intent: 'system_on', confidence: 1 },
@@ -1222,6 +1309,7 @@ export class VoiceService {
       const responseText = language === 'es' ? pick(variantsEs) : pick(variantsEn);
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { system: 'sleep' });
+      emitMetrics({ intent: 'system_off', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
       return {
         transcription: cleanedText,
         intent: { intent: 'system_off', confidence: 1 },
@@ -1237,6 +1325,7 @@ export class VoiceService {
         : 'I’m quiet right now. If you want me back, say “Leeloo wake up”.';
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { system: 'off' });
+      emitMetrics({ intent: 'system_off', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
       return {
         transcription: cleanedText,
         intent: { intent: 'system_off', confidence: 1 },
@@ -1252,6 +1341,7 @@ export class VoiceService {
         : "Give me a second—I’m finishing something. Do you want me to cancel it?";
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { executive_block: 'EXECUTING' });
+      emitMetrics({ intent: 'executing', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
       return {
         transcription: cleanedText,
         intent: { intent: 'executing', confidence: 1, decision: 'QUESTION', original_text: cleanedText } as any,
@@ -1445,6 +1535,7 @@ export class VoiceService {
       const responseText = this.buildSttFailureMessage(language);
       const audioUrl = await this.generateTTS(responseText, language);
 
+      emitMetrics({ intent: 'stt_failed', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
       return {
         transcription: '',
         intent: null,
@@ -1575,438 +1666,6 @@ export class VoiceService {
         return {
           transcription: cleanedText,
           intent: { ...nextPending, decision: 'QUESTION', original_text: cleanedText } as any,
-          action_result: null,
-          response_text: confirmQ,
-          response_audio_url: audioUrl,
-        };
-      }
-    }
-
-    // ExecutiveBrain v2: goal governor (prevent drift). If a goal is active and the user says something unrelated,
-    // redirect back to the pending question without calling Qwen/Llama.
-    if (state?.current_goal && state?.next_question && (state?.intent_state === 'PENDING' || state?.intent_state === 'AWAITING_CONFIRMATION')) {
-      const goal = String(state.current_goal || '').trim();
-      const q = String(state.next_question || '').trim();
-      if (goal && q) {
-        const responseText = language === 'es'
-          ? `Un segundo: estamos con ${goal}. ${q}`
-          : `One second—we're on ${goal}. ${q}`;
-        const audioUrl = await this.generateTTS(responseText, language);
-        await persistTurn(responseText, { executive_router: true, reason: 'redirect_to_goal', goal, channel });
-        return {
-          transcription: cleanedText,
-          intent: { intent: goal, confidence: 1, decision: 'QUESTION', original_text: cleanedText } as any,
-          action_result: null,
-          response_text: responseText,
-          response_audio_url: audioUrl,
-        };
-      }
-    }
-
-    const t = cleanedText.toLowerCase();
-    const isGreeting =
-      /^\s*(hola|buenas|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|hey|hello|hi|yo)\b/.test(t) ||
-      /^\s*(c[oó]mo\s+est[aá]s|how\s+are\s+you)\b/.test(t);
-
-    const conversationalIntent = (() => {
-      const lower = t;
-      const isEmotional =
-        /\b(estoy\s+(triste|mal|ansioso|ansiosa|estresado|estresada|frustrado|frustrada|enojado|enojada)|me\s+siento\s+(triste|mal|ansioso|ansiosa|estresado|estresada|frustrado|frustrada|enojado|enojada))\b/.test(lower) ||
-        /\b(i\s*(am|'m)\s+(sad|down|anxious|stressed|frustrated|angry)|i\s+feel\s+(sad|down|anxious|stressed|frustrated|angry))\b/.test(lower);
-
-      const isDailyPlanning =
-        /\b(planifica(mi\s+d[ií]a|el\s+d[ií]a)|organiza(mi\s+d[ií]a|el\s+d[ií]a)|agenda|mi\s+agenda|qu[eé]\s+tengo\s+hoy|hoy\s+qu[eé]\s+tengo)\b/.test(lower) ||
-        /\b(plan\s+my\s+day|organize\s+my\s+day|my\s+schedule|what\s+do\s+i\s+have\s+today|today\s+what\s+do\s+i\s+have)\b/.test(lower);
-
-      const isSmallTalk =
-        /^\s*(gracias|thank\s+you)\b/.test(lower) ||
-        /^\s*(qu[eé]\s+tal|todo\s+bien|c[oó]mo\s+vas|what'?s\s+up|how'?s\s+it\s+going)\b/.test(lower);
-
-      if (isGreeting) {
-        return { intent: 'greeting', confidence: 0.95 };
-      }
-      if (isEmotional) {
-        return { intent: 'emotional_expression', confidence: 0.9 };
-      }
-      if (isDailyPlanning) {
-        return { intent: 'daily_planning', confidence: 0.9 };
-      }
-      if (isSmallTalk) {
-        return { intent: 'small_talk', confidence: 0.85 };
-      }
-      return null;
-    })();
-
-    if (state?.pending_intent && isGreeting) {
-      const responseText =
-        typeof state?.last_question === 'string' && state.last_question.trim()
-          ? state.last_question.trim()
-          : language === 'es'
-            ? 'Ok. Necesito un dato para continuar. ¿Qué falta?'
-            : "Okay. I need one detail to continue. What's missing?";
-      const audioUrl = await this.generateTTS(responseText, language);
-      await persistTurn(responseText, { intent: String(state.pending_intent?.intent || ''), reprompt: true, reason: 'greeting_while_pending' });
-      return {
-        transcription: cleanedText,
-        intent: { ...state.pending_intent, decision: 'QUESTION', original_text: cleanedText } as any,
-        action_result: null,
-        response_text: responseText,
-        response_audio_url: audioUrl,
-      };
-    }
-
-    // Normal deterministic greeting gate (prevents intent bias from recent action context).
-    // Only applies when we're NOT in a pending slot-filling flow.
-    if (!state?.pending_intent && isGreeting) {
-      const responseText =
-        language === 'es'
-          ? 'Hola. Qué gusto escucharte. ¿Cómo estás hoy, de verdad?'
-          : "Hey. I’m really glad you’re here. How are you—really?";
-      const audioUrl = await this.generateTTS(responseText, language);
-      await this.profilesService.setConversationState(clerkUserId, {
-        preferred_language: language,
-        last_intent: 'query',
-        last_action: undefined,
-        last_question: responseText,
-      });
-      return {
-        transcription: cleanedText,
-        intent: { intent: 'query', confidence: 0.9, decision: 'COACH', original_text: cleanedText },
-        action_result: null,
-        response_text: responseText,
-        response_audio_url: audioUrl,
-      };
-    }
-
-    const lower = t;
-    let requestedLanguage: SupportedLanguage | null = null;
-    const wantsEnglish =
-      lower.includes('english') ||
-      lower.includes('inglés') ||
-      lower.includes('ingles') ||
-      lower.includes('speak english') ||
-      lower.includes('in english') ||
-      lower.includes('habla en inglés') ||
-      lower.includes('habla en ingles') ||
-      lower.includes('cambia a inglés') ||
-      lower.includes('cambia a ingles');
-    const wantsSpanish =
-      lower.includes('español') ||
-      lower.includes('espanol') ||
-      lower.includes('spanish') ||
-      lower.includes('speak spanish') ||
-      lower.includes('in spanish') ||
-      lower.includes('habla en español') ||
-      lower.includes('habla en espanol') ||
-      lower.includes('cambia a español') ||
-      lower.includes('cambia a espanol');
-    const wantsPortuguese =
-      lower.includes('portugu') ||
-      lower.includes('speak portuguese') ||
-      lower.includes('in portuguese') ||
-      lower.includes('habla en portugu') ||
-      lower.includes('cambia a portugu');
-    const wantsFrench =
-      lower.includes('français') ||
-      lower.includes('francais') ||
-      lower.includes('french') ||
-      lower.includes('speak french') ||
-      lower.includes('in french') ||
-      lower.includes('habla en francés') ||
-      lower.includes('habla en frances') ||
-      lower.includes('cambia a francés') ||
-      lower.includes('cambia a frances');
-
-    if (wantsEnglish) {
-      requestedLanguage = 'en';
-    } else if (wantsSpanish) {
-      requestedLanguage = 'es';
-    } else if (wantsPortuguese) {
-      requestedLanguage = 'pt';
-    } else if (wantsFrench) {
-      requestedLanguage = 'fr';
-    } else if (
-      lower.includes('japanese') ||
-      lower.includes('nihongo') ||
-      lower.includes('日本語') ||
-      lower.includes('japonés') ||
-      lower.includes('japones')
-    ) {
-      requestedLanguage = 'ja';
-    }
-
-    if (requestedLanguage) {
-      language = requestedLanguage;
-      await this.profilesService.ensureProfileByClerkUserId(clerkUserId, { language });
-      await this.profilesService.updateLanguage(clerkUserId, language);
-      // Ensure no stale pending flow keeps forcing prior language/intent context.
-      await this.profilesService.clearConversationState(clerkUserId);
-      await this.profilesService.setConversationState(clerkUserId, {
-        preferred_language: language,
-        mode: 'conversation',
-      });
-
-      const responseText =
-        language === 'en'
-          ? "Got it. I'll speak English from now on."
-          : language === 'es'
-            ? 'Listo. A partir de ahora te hablo en español.'
-            : language === 'pt'
-              ? 'Certo. A partir de agora vou falar em português.'
-              : language === 'fr'
-                ? 'D’accord. Je parlerai français à partir de maintenant.'
-                : 'わかった。これから日本語で話すね。';
-      const audioUrl = await this.generateTTS(responseText, language);
-      return {
-        transcription: cleanedText,
-        intent: { intent: 'set_language', confidence: 1, language },
-        action_result: { preferred_language: language },
-        response_text: responseText,
-        response_audio_url: audioUrl,
-      };
-    }
-
-    if (state?.pending_intent && cleanedText) {
-      const pendingIntent = state.pending_intent;
-      const pendingSlots = state.pending_slots || {};
-
-      const pendingMissing: string[] = Array.isArray((pendingIntent as any)?.missing_slots)
-        ? (pendingIntent as any).missing_slots
-        : Array.isArray((state as any)?.missing_slots)
-          ? ((state as any).missing_slots as any)
-          : [];
-
-      // Executive guarantee: once we reach no-missing-slots, we only ask for confirmation.
-      // The actual YES/NO/CANCEL handling happens ONLY in the executive router gate.
-      if (pendingMissing.length === 0) {
-        const confirmQ = buildConfirmQuestion(String(pendingIntent?.intent || ''), language);
-        const responseText = language === 'es'
-          ? `${confirmQ} (Responde “sí” o “no”.)`
-          : `${confirmQ} (Answer “yes” or “no”.)`;
-        const audioUrl = await this.generateTTS(responseText, language);
-        await persistTurn(responseText, { intent: String(pendingIntent?.intent || ''), awaiting_confirmation: true });
-        await this.profilesService.setConversationState(clerkUserId, {
-          preferred_language: language,
-          assistant_name: 'Leeloo',
-          current_goal: String(pendingIntent?.intent || ''),
-          intent_state: 'AWAITING_CONFIRMATION',
-          pending_intent: pendingIntent,
-          pending_slots: pendingSlots,
-          missing_slots: [],
-          next_question: responseText,
-          last_question: responseText,
-          last_intent: String(pendingIntent?.intent || ''),
-        });
-        console.log('[LeelooApi] intent_state.transition', {
-          userId: clerkUserId,
-          from: state?.intent_state || null,
-          to: 'AWAITING_CONFIRMATION',
-          reason: 'pending_no_missing_slots',
-          intent: String(pendingIntent?.intent || ''),
-        });
-        return {
-          transcription: cleanedText,
-          intent: pendingIntent,
-          action_result: null,
-          response_text: responseText,
-          response_audio_url: audioUrl,
-        };
-      }
-
-      if (isCancel(cleanedText)) {
-        console.log('[LeelooApi] intent_state.transition', {
-          userId: clerkUserId,
-          from: state?.intent_state || null,
-          to: 'NONE',
-          reason: 'cancel',
-          pending_intent: String(pendingIntent?.intent || ''),
-        });
-        await this.profilesService.setConversationState(clerkUserId, {
-          preferred_language: language,
-          assistant_name: 'Leeloo',
-          current_goal: undefined,
-          intent_state: 'NONE',
-          pending_intent: null,
-          pending_slots: null,
-          missing_slots: [],
-          next_question: undefined,
-          last_question: undefined,
-        } as any);
-        const responseText = language === 'es'
-          ? 'Listo. Lo dejamos en pausa. ¿Qué quieres hacer ahora?'
-          : 'Okay. We’ll drop that. What do you want to do now?';
-        const audioUrl = await this.generateTTS(responseText, language);
-        await persistTurn(responseText, { intent: String(pendingIntent?.intent || ''), cancel: true });
-        return {
-          transcription: cleanedText,
-          intent: { intent: 'cancel', confidence: 1, decision: 'COACH', original_text: cleanedText },
-          action_result: null,
-          response_text: responseText,
-          response_audio_url: audioUrl,
-        };
-      }
-
-      const buildSendEmailNextQuestion = (slot: string): string => {
-        if (slot === 'to') {
-          switch (language) {
-            case 'en':
-              return 'What email address should I send it to?';
-            case 'pt':
-              return 'Para qual e-mail você quer que eu envie?';
-            case 'fr':
-              return "À quelle adresse e-mail veux-tu que je l’envoie ?";
-            case 'ja':
-              return 'どのメールアドレスに送ればいい？';
-            case 'es':
-            default:
-              return '¿A qué correo quieres que lo envíe?';
-          }
-        }
-
-        if (slot === 'body') {
-          switch (language) {
-            case 'en':
-              return 'What should the email say? Tell me exactly and I’ll send it.';
-            case 'pt':
-              return 'O que você quer que o e-mail diga? Diga exatamente e eu envio.';
-            case 'fr':
-              return "Que veux-tu que l’e-mail dise ? Dis-le-moi exactement et je l’envoie.";
-            case 'ja':
-              return 'メール本文は何て書く？そのまま言ってくれたら送るよ。';
-            case 'es':
-            default:
-              return '¿Qué quieres que diga el correo? Dímelo tal cual y lo mando.';
-          }
-        }
-
-        switch (language) {
-          case 'en':
-            return "What's missing?";
-          case 'pt':
-            return 'O que está faltando?';
-          case 'fr':
-            return "Qu'est-ce qui manque ?";
-          case 'ja':
-            return '何が足りない？';
-          case 'es':
-          default:
-            return '¿Qué dato te falta?';
-        }
-      };
-
-      const missingSlots: string[] = Array.isArray(pendingIntent?.missing_slots)
-        ? pendingIntent.missing_slots
-        : [];
-      const slotToFill = missingSlots[0] || null;
-
-      if (slotToFill) {
-        const normalizeEmail = (raw: string): string => {
-          const s = String(raw || '').trim().toLowerCase();
-          if (!s) return '';
-          return s
-            .replace(/\s+at\s+/g, '@')
-            .replace(/\s+arroba\s+/g, '@')
-            .replace(/\s+dot\s+/g, '.')
-            .replace(/\s+punto\s+/g, '.')
-            .replace(/\s+/g, '')
-            .replace(/,+/g, '')
-            .replace(/;+/g, '');
-        };
-
-        const value = slotToFill === 'to' ? normalizeEmail(cleanedText) : cleanedText;
-
-        if (slotToFill === 'to') {
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!value || !emailRegex.test(value)) {
-            const responseText =
-              language === 'es'
-                ? 'No alcancé a captar bien el correo. Dímelo de nuevo, o deletrea el usuario y el dominio (por ejemplo: g-n-i-n-o arroba gmail punto com).'
-                : "I didn't catch the email address clearly. Say it again, or spell it (for example: g-n-i-n-o at gmail dot com).";
-            const audioUrl = await this.generateTTS(responseText, language);
-            await this.profilesService.setConversationState(clerkUserId, {
-              preferred_language: language,
-              pending_intent: pendingIntent,
-              pending_slots: { filled_slots: pendingSlots?.filled_slots || {} },
-              next_question: responseText,
-              last_question: responseText,
-              last_intent: String(pendingIntent?.intent || ''),
-            });
-            return {
-              transcription: cleanedText,
-              intent: pendingIntent,
-              action_result: null,
-              response_text: responseText,
-              response_audio_url: audioUrl,
-            };
-          }
-        }
-
-        const filled = {
-          ...(pendingIntent?.filled_slots || {}),
-          ...(pendingSlots?.filled_slots || {}),
-          [slotToFill]: value,
-        };
-
-        const newMissing = missingSlots.slice(1);
-        const updatedIntent = {
-          ...pendingIntent,
-          filled_slots: filled,
-          missing_slots: newMissing,
-        };
-
-        if (newMissing.length > 0) {
-          const responseText =
-            String(updatedIntent?.intent || '') === 'send_email'
-              ? buildSendEmailNextQuestion(String(newMissing[0] || ''))
-              : (pendingIntent?.next_question || this.buildMissingTaskTitleMessage(language));
-          const audioUrl = await this.generateTTS(responseText, language);
-          await persistTurn(responseText, { intent: String(pendingIntent?.intent || ''), slot: slotToFill, invalid: true });
-          await this.profilesService.setConversationState(clerkUserId, {
-            preferred_language: language,
-            pending_intent: updatedIntent,
-            pending_slots: { filled_slots: filled },
-            next_question: responseText,
-            last_question: responseText,
-            last_intent: String(updatedIntent?.intent || ''),
-          });
-
-          return {
-            transcription: cleanedText,
-            intent: updatedIntent,
-            action_result: null,
-            response_text: responseText,
-            response_audio_url: audioUrl,
-          };
-        }
-
-        // No more missing slots: DO NOT execute yet. Ask for explicit confirmation.
-        const confirmQ = buildConfirmQuestion(String(updatedIntent?.intent || ''), language);
-        const audioUrl = await this.generateTTS(confirmQ, language);
-        await persistTurn(confirmQ, { intent: String(updatedIntent?.intent || ''), awaiting_confirmation: true });
-        await this.profilesService.setConversationState(clerkUserId, {
-          preferred_language: language,
-          assistant_name: 'Leeloo',
-          current_goal: String(updatedIntent?.intent || ''),
-          intent_state: 'AWAITING_CONFIRMATION',
-          pending_intent: updatedIntent,
-          pending_slots: { filled_slots: filled },
-          missing_slots: [],
-          next_question: confirmQ,
-          last_question: confirmQ,
-          last_intent: String(updatedIntent?.intent || ''),
-        });
-
-        console.log('[LeelooApi] intent_state.transition', {
-          userId: clerkUserId,
-          from: state?.intent_state || null,
-          to: 'AWAITING_CONFIRMATION',
-          reason: 'slots_complete_awaiting_confirmation',
-          intent: String(updatedIntent?.intent || ''),
-        });
-
-        return {
-          transcription: cleanedText,
-          intent: updatedIntent,
           action_result: null,
           response_text: confirmQ,
           response_audio_url: audioUrl,
@@ -2240,7 +1899,12 @@ export class VoiceService {
 
     // PIPELINE: Intent Detection
     const channelForIntent: 'VOICE' | 'TEXT' = (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
-    const intent = conversationalIntent || (await this.extractIntent(cleanedText, intentContext, language, channelForIntent));
+    const intentT0 = Date.now();
+    const intent = await this.extractIntent(cleanedText, intentContext, language, channelForIntent);
+    const intentT1 = Date.now();
+    if ((intent as any)?.intent_source === 'llm') {
+      llmIntentMs.v = intentT1 - intentT0;
+    }
 
     if (channelForIntent === 'VOICE' && (intent as any)?.intent_source === 'fallback') {
       const responseText =
@@ -2250,6 +1914,7 @@ export class VoiceService {
           : "I'm in fast mode right now. Tell me if you want to create a task or send an email.");
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { intent_source: 'fallback', llm: 'skipped' });
+      emitMetrics(intent, { intent_source: 'fallback', fallback_used: true });
       return {
         transcription: cleanedText,
         intent,
@@ -2437,6 +2102,7 @@ export class VoiceService {
         intent: String(intent?.intent || ''),
         missing_slots: missingSlots,
       });
+      emitMetrics(intent, { intent_source: (intent as any)?.intent_source || 'deterministic', fallback_used: (intent as any)?.intent_source === 'fallback' });
       return {
         transcription: cleanedText,
         intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'QUESTION', original_text: cleanedText },
@@ -2460,6 +2126,7 @@ export class VoiceService {
           last_intent: String(intent?.intent || ''),
           last_question: undefined,
         });
+        emitMetrics(intent, { intent_source: (intent as any)?.intent_source || 'deterministic', fallback_used: (intent as any)?.intent_source === 'fallback' });
         return {
           transcription: cleanedText,
           intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'CONVERSATION', original_text: cleanedText },
@@ -2468,6 +2135,7 @@ export class VoiceService {
           response_audio_url: audioUrl,
         };
       }
+      const respT0 = Date.now();
       const responseText = await this.generateResponse(
         {
           ...intent,
@@ -2481,6 +2149,8 @@ export class VoiceService {
         userContext,
         responseContext,
       );
+      const respT1 = Date.now();
+      llmResponseMs.v = respT1 - respT0;
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'CONVERSATION' });
       await this.profilesService.setConversationState(clerkUserId, {
@@ -2489,6 +2159,7 @@ export class VoiceService {
         last_intent: String(intent?.intent || ''),
         last_question: undefined,
       });
+      emitMetrics(intent, { intent_source: (intent as any)?.intent_source || 'deterministic', fallback_used: (intent as any)?.intent_source === 'fallback' });
       return {
         transcription: cleanedText,
         intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'CONVERSATION', original_text: cleanedText },
@@ -2500,6 +2171,7 @@ export class VoiceService {
 
     // COACH path: mid confidence OR emotion override
     if (decision.decision === 'COACH' || (decision.decision === 'ACTION' && emotionOverridesAction)) {
+      const respT0 = Date.now();
       const responseText = await this.generateResponse(
         {
           ...intent,
@@ -2513,6 +2185,8 @@ export class VoiceService {
         userContext,
         responseContext,
       );
+      const respT1 = Date.now();
+      llmResponseMs.v = respT1 - respT0;
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'COACH' });
       await this.profilesService.setConversationState(clerkUserId, {
@@ -2521,6 +2195,7 @@ export class VoiceService {
         last_intent: String(intent?.intent || ''),
         last_question: undefined,
       });
+      emitMetrics(intent, { intent_source: (intent as any)?.intent_source || 'deterministic', fallback_used: (intent as any)?.intent_source === 'fallback' });
       return {
         transcription: cleanedText,
         intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'COACH', original_text: cleanedText },
@@ -2537,6 +2212,7 @@ export class VoiceService {
         : 'I’ve got it in motion. If you want to change something, tell me exactly what.';
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'IGNORE' });
+      emitMetrics(intent, { intent_source: (intent as any)?.intent_source || 'deterministic', fallback_used: (intent as any)?.intent_source === 'fallback' });
       return {
         transcription: cleanedText,
         intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'IGNORE', original_text: cleanedText },
@@ -2571,6 +2247,8 @@ export class VoiceService {
       intent: String(intent?.intent || ''),
       reason: 'awaiting_confirmation',
     });
+
+    emitMetrics(intent, { intent_source: (intent as any)?.intent_source || 'deterministic', fallback_used: (intent as any)?.intent_source === 'fallback' });
 
     return {
       transcription: cleanedText,

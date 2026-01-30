@@ -44,6 +44,12 @@ export class VoiceController {
     const userId = req.user.id;
     const claims = req.user?.claims || {};
 
+    const requestId =
+      (typeof req?.id === 'string' && req.id) ||
+      (typeof req?.headers?.['x-request-id'] === 'string' && req.headers['x-request-id']) ||
+      (typeof req?.headers?.['x-amzn-trace-id'] === 'string' && req.headers['x-amzn-trace-id']) ||
+      null;
+
     const normalizeLanguage = (raw: any) => {
       const s = String(raw || '').trim().toLowerCase();
       if (!s) return null;
@@ -154,15 +160,17 @@ export class VoiceController {
       channel,
     };
 
+    (userContext as any).request_id = requestId;
+
     const wakeWordOnly = String((dto as any)?.wake_word_only || '').toLowerCase() === 'true';
     (userContext as any).wake_word_only = wakeWordOnly;
 
     // If audio file is provided, transcribe it first
     if (audio) {
-      const transcription = await this.voiceService.transcribeAudio(
-        audio.buffer,
-        userContext,
-      );
+      const sttT0 = Date.now();
+      const transcription = await this.voiceService.transcribeAudio(audio.buffer, userContext);
+      const sttMs = Date.now() - sttT0;
+      (userContext as any).stt_ms = sttMs;
 
       if (wakeWordOnly) {
         return { transcription };
