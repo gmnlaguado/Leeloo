@@ -10,6 +10,7 @@ import { DatabaseService } from '../database/database.service';
 import { ProfilesService, SupportedLanguage } from '../profiles/profiles.service';
 import { R2Service } from '../r2/r2.service';
 import { EmailService } from '../email/email.service';
+import { CalendarService } from '../calendar/calendar.service';
 import { buildLeelooUniversalPrompt } from './core/leeloo-core.prompt';
 import { detectEmotionHeuristic, emotionLeadSentence } from './core/emotion';
 import { computeConfidence, computeSlotConfidence } from './core/confidence';
@@ -36,6 +37,7 @@ export class VoiceService {
       'send_email',
       'create_reminder',
       'reminder',
+      'schedule_meeting',
       'agenda_today',
       'agenda_tomorrow',
       'set_language',
@@ -159,6 +161,111 @@ export class VoiceService {
 
     const lower = normalize(raw);
 
+    const parseDateTimeIso = (s: string): string | null => {
+      try {
+        const mDate = s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+        if (!mDate) return null;
+
+        const year = Number(mDate[1]);
+        const month = Number(mDate[2]);
+        const day = Number(mDate[3]);
+        if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+
+        const mTime = s.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/);
+        if (!mTime) return null;
+
+        let hh = Number(mTime[1]);
+        const mm = mTime[2] ? Number(mTime[2]) : 0;
+        const ampm = (mTime[3] || '').toLowerCase();
+        if (ampm === 'pm' && hh >= 1 && hh <= 11) hh += 12;
+        if (ampm === 'am' && hh === 12) hh = 0;
+        if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+
+        const iso = new Date(Date.UTC(year, month - 1, day, hh, mm, 0)).toISOString();
+        if (Number.isNaN(new Date(iso).getTime())) return null;
+        return iso;
+      } catch {
+        return null;
+      }
+    };
+
+    const parseDateTimeSpanishBasic = (s: string): string | null => {
+      const months: Record<string, number> = {
+        enero: 1,
+        febrero: 2,
+        marzo: 3,
+        abril: 4,
+        mayo: 5,
+        junio: 6,
+        julio: 7,
+        agosto: 8,
+        septiembre: 9,
+        setiembre: 9,
+        octubre: 10,
+        noviembre: 11,
+        diciembre: 12,
+      };
+
+      const m = s.match(/\b(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/);
+      if (!m) return null;
+
+      const day = Number(m[1]);
+      const month = months[String(m[2] || '')] || 0;
+      if (!day || !month) return null;
+
+      const t = s.match(/\b(a\s+las|at)\s+(\d{1,2})(?::(\d{2}))?\b/);
+      if (!t) return null;
+
+      const hh = Number(t[2]);
+      const mm = t[3] ? Number(t[3]) : 0;
+      if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+
+      const now = new Date();
+      const year = now.getUTCFullYear();
+      const iso = new Date(Date.UTC(year, month - 1, day, hh, mm, 0)).toISOString();
+      if (Number.isNaN(new Date(iso).getTime())) return null;
+      return iso;
+    };
+
+    const parsedStartAt = parseDateTimeIso(lower) || parseDateTimeSpanishBasic(lower);
+
+    const meetingTrigger =
+      /\b(schedule|meeting|appointment|event)\b/.test(lower) ||
+      /\b(reunion|reuni[oó]n|cita|evento|calendario)\b/.test(lower);
+
+    if (meetingTrigger) {
+      const title = raw
+        .replace(/\b(schedule|meeting|appointment|event)\b\s*/i, '')
+        .replace(/\b(programa|agenda|reunion|reuni[oó]n|cita|evento|calendario)\b\s*/i, '')
+        .trim();
+
+      const filled: Record<string, any> = {};
+      if (title) filled.title = title;
+      if (parsedStartAt) filled.start_at = parsedStartAt;
+
+      const missing: string[] = [];
+      if (!String(filled.title || '').trim()) missing.push('title');
+      if (!String(filled.start_at || '').trim()) missing.push('start_at');
+
+      const next_question = (() => {
+        if (missing[0] === 'title') return language === 'es' ? '¿Qué título le pongo al evento?' : "What's the event title?";
+        if (missing[0] === 'start_at') return language === 'es' ? '¿Para cuándo es? (di fecha y hora)' : 'When is it? (say date and time)';
+        return '';
+      })();
+
+      return {
+        intent: 'schedule_meeting',
+        language: null,
+        confidence: 0.78,
+        required_slots: ['title', 'start_at'],
+        filled_slots: filled,
+        missing_slots: missing,
+        next_question,
+        priority: 'medium',
+        intent_source: 'deterministic',
+      };
+    }
+
     const wantsLanguage =
       /\b(set\s+language|change\s+language|language)\b/.test(lower) ||
       /\b(cambia\s+idioma|cambiar\s+idioma|pon\s+idioma|idioma)\b/.test(lower) ||
@@ -280,7 +387,8 @@ export class VoiceService {
       /\bremind\s+me\b/i.test(lower) ||
       /\breminder\b/i.test(lower) ||
       /\brec(u|ú)erdame\b/i.test(lower) ||
-      /\brecordatorio\b/i.test(lower);
+      /\brecordatorio\b/i.test(lower) ||
+      /\balexa\s+recordatorio\b/i.test(lower);
 
     if (wantsReminder) {
       const activity = raw
@@ -288,25 +396,32 @@ export class VoiceService {
         .replace(/\breminder\b\s*/i, '')
         .replace(/\brec(u|ú)erdame\b\s*/i, '')
         .replace(/\brecordatorio\b\s*/i, '')
+        .replace(/\balexa\b\s*/i, '')
         .trim();
 
       const filled: Record<string, any> = {};
       if (activity) filled.activity = activity;
+      if (parsedStartAt) filled.start_at = parsedStartAt;
       const missing: string[] = [];
       if (!String(filled.activity || '').trim()) missing.push('activity');
+      if (!String(filled.start_at || '').trim()) missing.push('start_at');
 
       const next_question =
         missing[0] === 'activity'
           ? language === 'es'
             ? '¿Qué quieres que te recuerde?'
             : 'What should I remind you about?'
-          : '';
+          : missing[0] === 'start_at'
+            ? language === 'es'
+              ? '¿Para cuándo? Dime fecha y hora.'
+              : 'When? Tell me date and time.'
+            : '';
 
       return {
         intent: 'reminder',
         language: null,
         confidence: 0.75,
-        required_slots: ['activity'],
+        required_slots: ['activity', 'start_at'],
         filled_slots: filled,
         missing_slots: missing,
         next_question,
@@ -369,6 +484,7 @@ export class VoiceService {
     private profilesService: ProfilesService,
     private r2: R2Service,
     private emailService: EmailService,
+    private calendarService: CalendarService,
   ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     this.openai = apiKey ? new OpenAI({ apiKey }) : null;
@@ -831,6 +947,11 @@ export class VoiceService {
         return language === 'es'
           ? 'Ok. ¿Lo confirmas y lo dejo creado?'
           : 'Okay. Can you confirm and I’ll create it?';
+      }
+      if (i === 'schedule_meeting') {
+        return language === 'es'
+          ? 'Ok. ¿Lo agrego al calendario?'
+          : 'Okay. Should I add it to your calendar?';
       }
       return language === 'es'
         ? 'Ok. ¿Quieres que lo haga ahora?'
@@ -1638,9 +1759,26 @@ export class VoiceService {
           filled.activity = cleanedText.trim();
           changed = true;
         }
-        if (firstMissing === 'time') {
-          filled.time = cleanedText.trim();
+        if (firstMissing === 'start_at') {
+          const normalized = String(cleanedText || '').toLowerCase().trim();
+          const parsed =
+            normalized.match(/\b\d{4}-\d{2}-\d{2}\b/) ? this.inferDeterministicIntent(cleanedText, language)?.filled_slots?.start_at : null;
+          filled.start_at = parsed || filled.start_at || '';
+          if (filled.start_at) changed = true;
+        }
+      }
+
+      if (intentName === 'schedule_meeting') {
+        if (firstMissing === 'title') {
+          filled.title = cleanedText.trim();
           changed = true;
+        }
+        if (firstMissing === 'start_at') {
+          const normalized = String(cleanedText || '').toLowerCase().trim();
+          const parsed =
+            normalized.match(/\b\d{4}-\d{2}-\d{2}\b/) ? this.inferDeterministicIntent(cleanedText, language)?.filled_slots?.start_at : null;
+          filled.start_at = parsed || filled.start_at || '';
+          if (filled.start_at) changed = true;
         }
       }
 
@@ -1659,6 +1797,18 @@ export class VoiceService {
             if (!String(filled.title || '').trim()) m.push('title');
             return m;
           }
+          if (intentName === 'reminder') {
+            const m: string[] = [];
+            if (!String(filled.activity || '').trim()) m.push('activity');
+            if (!String(filled.start_at || '').trim()) m.push('start_at');
+            return m;
+          }
+          if (intentName === 'schedule_meeting') {
+            const m: string[] = [];
+            if (!String(filled.title || '').trim()) m.push('title');
+            if (!String(filled.start_at || '').trim()) m.push('start_at');
+            return m;
+          }
           return missing;
         };
 
@@ -1673,7 +1823,15 @@ export class VoiceService {
                 ? (language === 'en' ? 'What email address should I send it to?' : '¿A qué correo quieres que lo envíe?')
                 : intentName === 'send_email' && nextMissing[0] === 'body'
                   ? (language === 'en' ? 'What should the email say?' : '¿Qué quieres que diga el correo?')
-                  : this.buildMissingTaskTitleMessage(language);
+                  : intentName === 'reminder' && nextMissing[0] === 'activity'
+                    ? (language === 'en' ? 'What should I remind you about?' : '¿Qué quieres que te recuerde?')
+                    : intentName === 'reminder' && nextMissing[0] === 'start_at'
+                      ? (language === 'en' ? 'When should I remind you? (say date and time)' : '¿Para cuándo? (di fecha y hora)')
+                      : intentName === 'schedule_meeting' && nextMissing[0] === 'title'
+                        ? (language === 'en' ? "What's the event title?" : '¿Qué título le pongo al evento?')
+                        : intentName === 'schedule_meeting' && nextMissing[0] === 'start_at'
+                          ? (language === 'en' ? 'When is it? (say date and time)' : '¿Para cuándo es? (di fecha y hora)')
+                          : this.buildMissingTaskTitleMessage(language);
 
           const audioUrl = await this.generateTTS(responseText, language);
           await persistTurn(responseText, { intent: intentName, slot: firstMissing, invalid: true });
@@ -2080,6 +2238,21 @@ export class VoiceService {
 
     // PIPELINE: Confidence Scoring
     const missingSlots: string[] = Array.isArray(intent?.missing_slots) ? intent.missing_slots : [];
+
+    if ((intent as any)?.intent === 'reminder' || (intent as any)?.intent === 'schedule_meeting') {
+      const startAt = String((intent as any)?.filled_slots?.start_at || '').trim();
+      if (startAt) {
+        const ms = new Date(startAt).getTime();
+        if (Number.isFinite(ms) && ms < Date.now()) {
+          (intent as any).filled_slots = { ...((intent as any).filled_slots || {}), start_at: '' };
+          (intent as any).missing_slots = ['start_at'];
+          (intent as any).next_question =
+            language === 'es'
+              ? 'Esa hora ya pasó. ¿Para cuándo lo ponemos? (di fecha y hora)'
+              : 'That time already passed. When should I set it for? (say date and time)';
+        }
+      }
+    }
     const slotConfidence = computeSlotConfidence({
       intentName: String(intent?.intent || ''),
       filled: intent?.filled_slots || {},
@@ -2386,88 +2559,108 @@ export class VoiceService {
       });
     }
 
-    if (intent.intent === 'reminder') {
-      const filled = intent.filled_slots || {};
-      const activity = (filled.activity || filled.title || intent.title || '').toString().trim();
-      const time = (filled.time || filled.time_frame || filled.due_at || '').toString().trim();
-      const email = (filled.contact_email || filled.email || '').toString().trim();
-
-      const title = activity ? `Reminder: ${activity}` : 'Reminder';
-      const descriptionParts = [
-        time ? `When: ${time}` : null,
-        email ? `Notify: ${email}` : null,
-      ].filter(Boolean);
-
-      actionResult = await this.tasksService.createTask({
-        user_id: clerkUserId,
-        title,
-        description: descriptionParts.length ? descriptionParts.join('\n') : null,
-        due_at: null,
-        metadata: {
-          ...(intent.metadata || {}),
-          filled_slots: filled,
-          language,
-          type: 'reminder',
-        },
-        priority: intent.priority || 'medium',
-      });
-
-      console.log('[LeelooApi] action reminder->task', {
-        userId: clerkUserId,
-        taskId: (actionResult as any)?.id,
-        title: (actionResult as any)?.title,
-      });
-    }
-
     if (intent.intent === 'send_email') {
-      const filled = intent.filled_slots || {};
+      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
       const to = (filled.to || filled.email || filled.contact_email || '').toString().trim();
       const subject = (filled.subject || filled.title || intent.title || 'Message from Leeloo').toString().trim();
       const text = (filled.body || filled.content || filled.email_content || '').toString().trim();
 
       const isValidEmail = (raw: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(raw || '').trim());
+      if (!isValidEmail(to) || !text) return null;
 
-      if (isValidEmail(to) && text) {
-        let sendOk = false;
-        let sendResult: any = null;
-        let sendError: string | null = null;
+      let sendOk = false;
+      let sendResult: any = null;
+      let sendError: string | null = null;
 
-        const profile = await this.profilesService.ensureProfileByClerkUserId(clerkUserId);
-        const replyTo = profile?.preferences?.user_identity?.reply_to_email;
+      const profile = await this.profilesService.ensureProfileByClerkUserId(clerkUserId);
+      const replyTo = profile?.preferences?.user_identity?.reply_to_email;
 
-        try {
-          sendResult = await this.emailService.sendEmail({ to, subject, text, replyTo });
-          sendOk = true;
-        } catch (err) {
-          sendError = String(err);
-          console.warn('[LeelooApi] send_email failed', { userId: clerkUserId, to, subject, error: sendError });
-        }
-
-        actionResult = await this.tasksService.createTask({
-          user_id: clerkUserId,
-          title: `Email: ${subject}`,
-          description: `To: ${to}`,
-          due_at: null,
-          metadata: {
-            type: 'email',
-            status: sendOk ? 'sent' : 'failed',
-            provider: sendResult?.provider || 'resend',
-            email_id: sendResult?.id || null,
-            error: sendOk ? null : sendError,
-            filled_slots: filled,
-            language,
-          },
-          priority: intent.priority || 'medium',
-        });
-
-        console.log('[LeelooApi] action send_email->task', {
-          userId: clerkUserId,
-          taskId: (actionResult as any)?.id,
-          status: sendOk ? 'sent' : 'failed',
-          to,
-          subject,
-        });
+      try {
+        sendResult = await this.emailService.sendEmail({ to, subject, text, replyTo });
+        sendOk = true;
+      } catch (err) {
+        sendError = String(err);
+        console.warn('[LeelooApi] send_email failed', { userId: clerkUserId, to, subject, error: sendError });
       }
+
+      actionResult = await this.tasksService.createTask({
+        user_id: clerkUserId,
+        title: `Email: ${subject}`,
+        description: `To: ${to}`,
+        due_at: null,
+        metadata: {
+          type: 'email',
+          status: sendOk ? 'sent' : 'failed',
+          provider: sendResult?.provider || 'resend',
+          email_id: sendResult?.id || null,
+          error: sendOk ? null : sendError,
+          filled_slots: filled,
+          language,
+        },
+        priority: intent.priority || 'medium',
+      });
+
+      console.log('[LeelooApi] action send_email->task', {
+        userId: clerkUserId,
+        taskId: (actionResult as any)?.id,
+        status: sendOk ? 'sent' : 'failed',
+        to,
+        subject,
+      });
+    }
+
+    if (intent.intent === 'reminder') {
+      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+      const activity = (filled.activity || filled.title || intent.title || '').toString().trim();
+      const startAt = String(filled.start_at || '').trim();
+      if (!activity || !startAt) return null;
+      const ms = new Date(startAt).getTime();
+      if (!Number.isFinite(ms) || ms < Date.now()) return null;
+
+      actionResult = await this.calendarService.createEvent(clerkUserId, {
+        title: activity,
+        start_at: startAt,
+        end_at: null,
+        timezone: null,
+        location: null,
+        notes: null,
+        priority: 'P2',
+        category: 'otros',
+        remind_offsets_minutes: [0],
+      });
+
+      console.log('[LeelooApi] action reminder->calendar', {
+        userId: clerkUserId,
+        eventId: (actionResult as any)?.id,
+        start_at: startAt,
+      });
+    }
+
+    if (intent.intent === 'schedule_meeting') {
+      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+      const title = (filled.title || intent.title || '').toString().trim();
+      const startAt = String(filled.start_at || '').trim();
+      if (!title || !startAt) return null;
+      const ms = new Date(startAt).getTime();
+      if (!Number.isFinite(ms) || ms < Date.now()) return null;
+
+      actionResult = await this.calendarService.createEvent(clerkUserId, {
+        title,
+        start_at: startAt,
+        end_at: null,
+        timezone: null,
+        location: null,
+        notes: null,
+        priority: 'P2',
+        category: 'otros',
+        remind_offsets_minutes: [180],
+      });
+
+      console.log('[LeelooApi] action schedule_meeting->calendar', {
+        userId: clerkUserId,
+        eventId: (actionResult as any)?.id,
+        start_at: startAt,
+      });
     }
 
     return actionResult;
