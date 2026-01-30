@@ -2359,20 +2359,6 @@ export class VoiceService {
       language,
     });
 
-    if (intent?.intent === 'system_unavailable') {
-      const responseText = intent?.next_question || this.buildAiUnavailableMessage(language);
-      const audioUrl = await this.generateTTS(responseText, language);
-      await persistTurn(responseText, { system_unavailable: true });
-
-      return {
-        transcription: cleanedText,
-        intent,
-        action_result: null,
-        response_text: responseText,
-        response_audio_url: audioUrl,
-      };
-    }
-
     // PIPELINE: Emotion Detection (separate from intent)
     const emotion = detectEmotionHeuristic(cleanedText);
 
@@ -2762,15 +2748,20 @@ export class VoiceService {
     const fallbackModelForIntent = (llamaModel || fallbackModel || '').trim();
 
     if (!intentEndpoint || !model) {
+      const deterministic = this.inferDeterministicIntent(text, language);
+      if (deterministic) return deterministic as any;
+
       return {
-        intent: 'system_unavailable',
-        confidence: 0.65,
+        intent: 'query',
+        language: null,
+        confidence: 0.55,
         required_slots: [],
         filled_slots: {},
         missing_slots: [],
-        next_question: this.buildAiUnavailableMessage(language),
+        next_question: '',
         priority: 'low',
-      };
+        intent_source: 'fallback',
+      } as any;
     }
 
     if (channel === 'VOICE' && (this.isVoiceLlmCircuitOpen() || this.isVoiceIntentLlmDisabled())) {
@@ -2982,15 +2973,20 @@ export class VoiceService {
           intent_source: 'fallback',
         } as any;
       }
+      const deterministic = this.inferDeterministicIntent(text, language);
+      if (deterministic) return deterministic as any;
+
       return {
-        intent: 'system_unavailable',
-        confidence: 0.65,
+        intent: 'query',
+        language: null,
+        confidence: 0.55,
         required_slots: [],
         filled_slots: {},
         missing_slots: [],
-        next_question: this.buildAiUnavailableMessage(language),
+        next_question: '',
         priority: 'low',
-      };
+        intent_source: 'fallback',
+      } as any;
     }
   }
 
@@ -3346,16 +3342,16 @@ export class VoiceService {
   private buildAiUnavailableMessage(language: SupportedLanguage): string {
     switch (language) {
       case 'es':
-        return 'En este momento no puedo conectarme al servicio de IA. ¿Puedes intentar de nuevo en unos segundos?';
+        return 'Ahora mismo no puedo ayudarte con eso. Puedo crear una tarea, un recordatorio o enviar un correo. ¿Qué necesitas?';
       case 'pt':
-        return 'No momento não consigo acessar o serviço de IA. Você pode tentar novamente em alguns segundos?';
+        return 'Agora mesmo não consigo ajudar com isso. Posso criar uma tarefa, um lembrete ou enviar um e-mail. O que você precisa?';
       case 'fr':
-        return "Je n'arrive pas à me connecter au service d'IA pour le moment. Peux-tu réessayer dans quelques secondes ?";
+        return "Là tout de suite, je ne peux pas t’aider avec ça. Je peux créer une tâche, un rappel, ou envoyer un e-mail. De quoi as-tu besoin ?";
       case 'ja':
-        return '今はAIサービスに接続できません。数秒後にもう一度試してくれる？';
+        return '今はその件を手伝えない。タスク作成、リマインダー、メール送信はできるよ。何をしたい？';
       case 'en':
       default:
-        return "I can't reach the AI service right now. Can you try again in a few seconds?";
+        return "I can't help with that right now. I can create a task, set a reminder, or send an email. What do you need?";
     }
   }
 
