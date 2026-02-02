@@ -138,7 +138,33 @@ export class VoiceService {
         intent_source?: string;
       }
     | null {
-    const rawInput = String(text || '').trim();
+    const normalizeEmailSpeech = (input: string) => {
+      // Normalize common dictated tokens so emails can be captured deterministically.
+      // Examples:
+      // - "gninolaguado arroba gmail punto com" -> "gninolaguado@gmail.com"
+      // - "g n i arroba ..." -> keeps chars but removes spaces around symbols
+      let s = String(input || '');
+
+      s = s
+        .replace(/\b(arroba|aroba|at)\b/gi, '@')
+        .replace(/\b(punto|dot)\b/gi, '.')
+        .replace(/\b(guion\s*bajo|guionbajo|underscore)\b/gi, '_')
+        .replace(/\b(guion|dash|hyphen)\b/gi, '-')
+        .replace(/\s+@\s+/g, '@')
+        .replace(/\s+\.\s+/g, '.')
+        .replace(/\s+_\s+/g, '_')
+        .replace(/\s+-\s+/g, '-')
+        .replace(/\s{2,}/g, ' ');
+
+      // For email-like tokens, strip spaces around them more aggressively.
+      if (/[A-Z0-9._%+-]+\s*@\s*/i.test(s) || s.includes('@')) {
+        s = s.replace(/\s+/g, '');
+      }
+      return s.trim();
+    };
+
+    const cleanedText = normalizeEmailSpeech(String(text || '').trim());
+    const rawInput = String(cleanedText || '').trim();
     if (!rawInput) return null;
 
     const normalize = (s: string) =>
@@ -1003,8 +1029,28 @@ export class VoiceService {
     const normalizer = new InputNormalizer();
     const supervisor = new ExecutiveSupervisor();
     const factIngestor = new FactIngestor();
+    const normalizeEmailSpeech = (input: string) => {
+      let s = String(input || '');
+
+      s = s
+        .replace(/\b(arroba|aroba|at)\b/gi, '@')
+        .replace(/\b(punto|dot)\b/gi, '.')
+        .replace(/\b(guion\s*bajo|guionbajo|underscore)\b/gi, '_')
+        .replace(/\b(guion|dash|hyphen)\b/gi, '-')
+        .replace(/\s+@\s+/g, '@')
+        .replace(/\s+\.\s+/g, '.')
+        .replace(/\s+_\s+/g, '_')
+        .replace(/\s+-\s+/g, '-')
+        .replace(/\s{2,}/g, ' ');
+
+      if (/[A-Z0-9._%+-]+\s*@\s*/i.test(s) || s.includes('@')) {
+        s = s.replace(/\s+/g, '');
+      }
+
+      return s.trim();
+    };
     const input = normalizer.normalize(text || '');
-    const cleanedText = input.cleaned;
+    const cleanedText = normalizeEmailSpeech(input.cleaned);
 
     // Resolve persisted user state (language + pending intent/slots).
     const profile =
@@ -1555,10 +1601,15 @@ export class VoiceService {
         current_goal: undefined,
       });
 
-      const displayName =
+      const nicknameRaw =
+        typeof (profile as any)?.preferences?.user_identity?.nickname === 'string'
+          ? String((profile as any).preferences.user_identity.nickname).trim()
+          : '';
+      const displayNameRaw =
         typeof (profile as any)?.preferences?.user_identity?.display_name === 'string'
           ? String((profile as any).preferences.user_identity.display_name).trim()
           : '';
+      const displayName = nicknameRaw || displayNameRaw;
 
       const namePart = displayName ? ` ${displayName}` : '';
 
@@ -1625,10 +1676,15 @@ export class VoiceService {
         current_goal: undefined,
       });
 
-      const displayName =
+      const nicknameRaw =
+        typeof (profile as any)?.preferences?.user_identity?.nickname === 'string'
+          ? String((profile as any).preferences.user_identity.nickname).trim()
+          : '';
+      const displayNameRaw =
         typeof (profile as any)?.preferences?.user_identity?.display_name === 'string'
           ? String((profile as any).preferences.user_identity.display_name).trim()
           : '';
+      const displayName = nicknameRaw || displayNameRaw;
       const namePart = displayName ? ` ${displayName}` : '';
 
       const variantsEn = [

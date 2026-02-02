@@ -94,7 +94,7 @@ export class ProfilesService {
 
   async upsertUserIdentity(
     clerkUserId: string,
-    identity: { display_name?: string; reply_to_email?: string },
+    identity: { display_name?: string; reply_to_email?: string; nickname?: string },
   ) {
     const existing = await this.ensureProfileByClerkUserId(clerkUserId);
     const current = (existing?.preferences?.user_identity && typeof existing.preferences.user_identity === 'object')
@@ -105,6 +105,7 @@ export class ProfilesService {
       ...current,
       ...(identity.display_name !== undefined ? { display_name: identity.display_name } : {}),
       ...(identity.reply_to_email !== undefined ? { reply_to_email: identity.reply_to_email } : {}),
+      ...(identity.nickname !== undefined ? { nickname: identity.nickname } : {}),
     };
 
     return this.updatePreferences(clerkUserId, { user_identity: next });
