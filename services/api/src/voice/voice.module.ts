@@ -7,9 +7,10 @@ import { ProfilesModule } from '../profiles/profiles.module';
 import { R2Module } from '../r2/r2.module';
 import { EmailModule } from '../email/email.module';
 import { CalendarModule } from '../calendar/calendar.module';
+import { HouseholdModule } from '../household/household.module';
 
 @Module({
-  imports: [TasksModule, MemoriesModule, ProfilesModule, R2Module, EmailModule, CalendarModule],
+  imports: [TasksModule, MemoriesModule, ProfilesModule, R2Module, EmailModule, CalendarModule, HouseholdModule],
   controllers: [VoiceController],
   providers: [VoiceService],
   exports: [VoiceService],

@@ -114,6 +114,37 @@ export class ExecutiveBrain {
       'remind me',
       'reminder',
     ]);
+    const isHouseholdReminder = /\b(envia|enviar|manda|mandar)\s+(un\s+)?recordatorio\s+(a|para)\b/i.test(raw);
+    if (isHouseholdReminder) {
+      const recipientQuery = (() => {
+        const m = raw.match(/\b(?:envia|enviar|manda|mandar)\s+(?:un\s+)?recordatorio\s+(?:a|para)\s+([^,]+)$/i);
+        if (m && m[1]) return String(m[1]).trim();
+        return '';
+      })();
+
+      const filled: any = {};
+      if (recipientQuery) filled.recipient_query = recipientQuery;
+
+      const missing: string[] = [];
+      if (!String(filled.recipient_query || '').trim()) missing.push('recipient_query');
+      missing.push('message');
+
+      const next_question = missing[0] === 'recipient_query'
+        ? (language === 'es' ? '¿A quién se lo envío? Dime el nombre o rol (ej. “mi papá”).' : 'Who should I send it to? Say the name or role.')
+        : (language === 'es' ? '¿Qué mensaje quieres que le envíe?' : 'What message should I send?');
+
+      return {
+        intent: 'send_household_reminder',
+        language: null,
+        confidence: 0.76,
+        required_slots: ['recipient_query', 'message'],
+        filled_slots: filled,
+        missing_slots: missing,
+        next_question,
+        priority: 'high',
+        intent_source: 'heuristic',
+      };
+    }
     if (isReminderIntent) {
       const activity = (() => {
         const m = raw.match(/(?:recordatorio|reminder|remind me to|recu[eé]rdame)\s*[:\-]?\s*(.+)$/i);

@@ -13,6 +13,7 @@ import { R2Module } from './r2/r2.module';
 import { HealthModule } from './health/health.module';
 import { EmailModule } from './email/email.module';
 import { DiagnosticsModule } from './diagnostics/diagnostics.module';
+import { HouseholdModule } from './household/household.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { DiagnosticsModule } from './diagnostics/diagnostics.module';
     MemoriesModule,
     EmailModule,
     DiagnosticsModule,
+    HouseholdModule,
   ],
 })
 export class AppModule {}

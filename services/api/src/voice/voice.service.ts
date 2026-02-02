@@ -11,6 +11,7 @@ import { ProfilesService, SupportedLanguage } from '../profiles/profiles.service
 import { R2Service } from '../r2/r2.service';
 import { EmailService } from '../email/email.service';
 import { CalendarService } from '../calendar/calendar.service';
+import { HouseholdService } from '../household/household.service';
 import { buildLeelooUniversalPrompt } from './core/leeloo-core.prompt';
 import { detectEmotionHeuristic, emotionLeadSentence } from './core/emotion';
 import { computeConfidence, computeSlotConfidence } from './core/confidence';
@@ -35,6 +36,7 @@ export class VoiceService {
       'list_tasks',
       'complete_task',
       'send_email',
+      'send_household_reminder',
       'create_reminder',
       'reminder',
       'schedule_meeting',
@@ -600,6 +602,7 @@ export class VoiceService {
     private r2: R2Service,
     private emailService: EmailService,
     private calendarService: CalendarService,
+    private householdService: HouseholdService,
   ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     this.openai = apiKey ? new OpenAI({ apiKey }) : null;
@@ -1073,6 +1076,11 @@ export class VoiceService {
           ? 'Perfecto. ¿Quieres que lo envíe ahora?'
           : 'Perfect. Do you want me to send it now?';
       }
+      if (i === 'send_household_reminder') {
+        return language === 'es'
+          ? 'Perfecto. ¿Quieres que lo envíe ahora?'
+          : 'Perfect. Do you want me to send it now?';
+      }
       if (i === 'create_task') {
         return language === 'es'
           ? 'Listo. ¿Quieres que la cree ahora?'
@@ -1101,6 +1109,18 @@ export class VoiceService {
       return language === 'es'
         ? 'Ok. ¿Quieres que lo haga ahora?'
         : 'Okay. Do you want me to do it now?';
+    };
+
+    const buildSendEmailConfirmQuestion = (toEmail: string, language: SupportedLanguage): string => {
+      const to = String(toEmail || '').trim();
+      if (language === 'es') {
+        return to
+          ? `Entendí este correo: ${to}. ¿Confirmas que lo envío?`
+          : '¿Confirmas que lo envío?';
+      }
+      return to
+        ? `I got this email: ${to}. Do you confirm I should send it?`
+        : 'Do you confirm I should send it?';
     };
 
     let language =
@@ -1193,6 +1213,18 @@ export class VoiceService {
 
     const buildExecutedResponse = (intentName: string, actionResult: any, language: SupportedLanguage) => {
       const i = String(intentName || '');
+      if (i === 'send_household_reminder') {
+        const meta = (actionResult as any)?.metadata || {};
+        const status = String(meta?.status || '').toLowerCase();
+        if (status === 'sent') {
+          return language === 'es'
+            ? 'Listo. Ya envié el recordatorio.'
+            : 'Done. I sent the reminder.';
+        }
+        return language === 'es'
+          ? 'Intenté enviar el recordatorio, pero falló. ¿Quieres que lo intentemos otra vez?'
+          : 'I tried to send the reminder, but it failed. Want to try again?';
+      }
       if (i === 'send_email') {
         const meta = (actionResult as any)?.metadata || {};
         const status = String(meta?.status || '').toLowerCase();
@@ -2031,6 +2063,12 @@ export class VoiceService {
             if (!String(filled.body || filled.content || '').trim()) m.push('body');
             return m;
           }
+          if (intentName === 'send_household_reminder') {
+            const m: string[] = [];
+            if (!String(filled.recipient_query || '').trim()) m.push('recipient_query');
+            if (!String(filled.message || '').trim()) m.push('message');
+            return m;
+          }
           if (intentName === 'create_task') {
             const m: string[] = [];
             if (!String(filled.title || '').trim()) m.push('title');
@@ -2073,6 +2111,10 @@ export class VoiceService {
                 ? (language === 'en' ? 'What email address should I send it to?' : '¿A qué correo quieres que lo envíe?')
                 : intentName === 'send_email' && nextMissing[0] === 'body'
                   ? (language === 'en' ? 'What should the email say?' : '¿Qué quieres que diga el correo?')
+                  : intentName === 'send_household_reminder' && nextMissing[0] === 'recipient_query'
+                    ? (language === 'en' ? 'Who should I send it to? Say the name or role.' : '¿A quién se lo envío? Dime el nombre o rol (ej. “mi papá”).')
+                    : intentName === 'send_household_reminder' && nextMissing[0] === 'message'
+                      ? (language === 'en' ? 'What message should I send?' : '¿Qué mensaje quieres que le envíe?')
                   : intentName === 'reminder' && nextMissing[0] === 'activity'
                     ? (language === 'en' ? 'What should I remind you about?' : '¿Qué quieres que te recuerde?')
                     : intentName === 'reminder' && nextMissing[0] === 'start_at'
@@ -2112,7 +2154,13 @@ export class VoiceService {
         }
 
         // No missing slots anymore -> move to confirmation (deterministic).
-        const confirmQ = buildConfirmQuestion(intentName, language);
+        const confirmQ = (() => {
+          if (intentName === 'send_email') {
+            const to = String(filled.to || filled.email || filled.contact_email || '').trim();
+            return buildSendEmailConfirmQuestion(to, language);
+          }
+          return buildConfirmQuestion(intentName, language);
+        })();
         const audioUrl = await this.generateTTS(confirmQ, language);
         await persistTurn(confirmQ, { intent: intentName, awaiting_confirmation: true });
         await this.profilesService.setConversationState(clerkUserId, {
@@ -2746,7 +2794,15 @@ export class VoiceService {
     }
 
     // No missing slots -> explicit confirmation gate.
-    const confirmQ = buildConfirmQuestion(String(intent?.intent || ''), language);
+    const confirmQ = (() => {
+      const i = String(intent?.intent || '');
+      if (i === 'send_email') {
+        const filled = (intent?.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+        const to = String(filled.to || filled.email || filled.contact_email || '').trim();
+        return buildSendEmailConfirmQuestion(to, language);
+      }
+      return buildConfirmQuestion(i, language);
+    })();
     const audioUrl = await this.generateTTS(confirmQ, language);
     await persistTurn(confirmQ, { intent: String(intent?.intent || ''), awaiting_confirmation: true });
     await this.profilesService.setConversationState(clerkUserId, {
@@ -2817,7 +2873,15 @@ export class VoiceService {
 
     if (intent.intent === 'send_email') {
       const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
-      const to = (filled.to || filled.email || filled.contact_email || '').toString().trim();
+      let to = (filled.to || filled.email || filled.contact_email || '').toString().trim();
+      const recipientQuery = String(filled.recipient_query || filled.recipient || filled.contact || '').trim();
+      if ((!to || !to.includes('@')) && recipientQuery) {
+        const contact = await this.householdService.findBestContactByNameOrRole(clerkUserId, recipientQuery);
+        const email = String((contact as any)?.email || '').trim();
+        if (email) {
+          to = email;
+        }
+      }
       const subject = (filled.subject || filled.title || intent.title || 'Message from Leeloo').toString().trim();
       const text = (filled.body || filled.content || filled.email_content || '').toString().trim();
 
@@ -2862,6 +2926,59 @@ export class VoiceService {
         status: sendOk ? 'sent' : 'failed',
         to,
         subject,
+      });
+    }
+
+    if (intent.intent === 'send_household_reminder') {
+      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+      const recipientQuery = String(filled.recipient_query || '').trim();
+      const message = String(filled.message || filled.body || '').trim();
+      if (!recipientQuery || !message) return null;
+
+      const contact = await this.householdService.findBestContactByNameOrRole(clerkUserId, recipientQuery);
+      const to = String((contact as any)?.email || '').trim();
+      if (!to) return null;
+
+      const downloadUrl =
+        this.configService.get<string>('APP_DOWNLOAD_URL') ||
+        this.configService.get<string>('LEEL00_APP_DOWNLOAD_URL') ||
+        'https://leeloo.app';
+
+      const subject = language === 'es'
+        ? `Recordatorio para ${String((contact as any)?.name || recipientQuery).trim()}`
+        : `Reminder for ${String((contact as any)?.name || recipientQuery).trim()}`;
+      const text = `${message}\n\n${language === 'es' ? 'Descarga Leeloo aquí:' : 'Download Leeloo here:'} ${downloadUrl}`;
+
+      const profile = await this.profilesService.ensureProfileByClerkUserId(clerkUserId);
+      const replyTo = profile?.preferences?.user_identity?.reply_to_email;
+
+      let sendOk = false;
+      let sendResult: any = null;
+      let sendError: string | null = null;
+
+      try {
+        sendResult = await this.emailService.sendEmail({ to, subject, text, replyTo });
+        sendOk = true;
+      } catch (err) {
+        sendError = String(err);
+        console.warn('[LeelooApi] send_household_reminder failed', { userId: clerkUserId, to, error: sendError });
+      }
+
+      actionResult = await this.tasksService.createTask({
+        user_id: clerkUserId,
+        title: `Reminder: ${String((contact as any)?.name || recipientQuery).trim()}`,
+        description: `To: ${to}`,
+        due_at: null,
+        metadata: {
+          type: 'household_reminder',
+          status: sendOk ? 'sent' : 'failed',
+          provider: sendResult?.provider || 'resend',
+          email_id: sendResult?.id || null,
+          error: sendOk ? null : sendError,
+          filled_slots: filled,
+          language,
+        },
+        priority: intent.priority || 'medium',
       });
     }
 
