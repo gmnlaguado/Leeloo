@@ -426,15 +426,24 @@ export class VoiceService {
       const filled: Record<string, any> = {};
       if (hasEmail) filled.to = emailMatch?.[0];
 
-      const bodyCandidate = raw
+      const afterKeywords = raw
         .replace(emailMatch?.[0] || '', '')
-        .replace(/\b(to|a)\b\s*:?/i, '')
         .replace(/\b(send|email|mail|enviar|correo)\b\s*/i, '')
         .trim();
 
-      if (bodyCandidate && bodyCandidate.length >= 6) {
-        filled.body = bodyCandidate;
+      if (!hasEmail) {
+        const m = afterKeywords.match(/^\s*(?:a|para)\s+(.+)$/i);
+        if (m && m[1]) {
+          const recipientQuery = String(m[1]).trim();
+          if (recipientQuery) filled.recipient_query = recipientQuery;
+        }
       }
+
+      const bodyCandidate = afterKeywords
+        .replace(/^\s*(?:a|para)\s+[^,;:]+\s*/i, '')
+        .trim();
+
+      if (bodyCandidate && bodyCandidate.length >= 6) filled.body = bodyCandidate;
 
       const missing: string[] = [];
       if (!String(filled.to || '').trim()) missing.push('to');
@@ -443,8 +452,8 @@ export class VoiceService {
       const next_question =
         missing[0] === 'to'
           ? language === 'es'
-            ? '¿A qué correo quieres que lo envíe?'
-            : 'What email address should I send it to?'
+            ? '¿A quién se lo envío? Dime el correo o el nombre/rol (por ejemplo “mi esposa”).'
+            : 'Who should I send it to? Tell me the email or the name/role (for example “my wife”).'
           : missing[0] === 'body'
             ? language === 'es'
               ? '¿Qué quieres que diga el correo?'
@@ -1990,7 +1999,7 @@ export class VoiceService {
             filled.to = emailMatch[0];
             changed = true;
           } else {
-            filled.to = cleanedText.trim();
+            filled.recipient_query = cleanedText.trim();
             changed = true;
           }
         }
@@ -2492,8 +2501,22 @@ export class VoiceService {
         const normalized: any = { ...filled };
         if (!normalized.to && normalized.recipient) normalized.to = normalized.recipient;
         if (!normalized.to && normalized.email) normalized.to = normalized.email;
+        if (!normalized.recipient_query && normalized.recipientQuery) normalized.recipient_query = normalized.recipientQuery;
         if (!normalized.body && normalized.email_body) normalized.body = normalized.email_body;
         if (!normalized.body && normalized.email_content) normalized.body = normalized.email_content;
+
+        const candidateRecipientQuery = String(normalized.recipient_query || '').trim();
+        const toCandidateRaw = String(normalized.to || '').trim();
+        if ((!toCandidateRaw || !isValidEmail(toCandidateRaw)) && candidateRecipientQuery) {
+          try {
+            const contact = await this.householdService.findBestContactByNameOrRole(clerkUserId, candidateRecipientQuery);
+            const email = String((contact as any)?.email || '').trim();
+            if (email && isValidEmail(email)) {
+              normalized.to = email;
+            }
+          } catch {
+          }
+        }
 
         intent.filled_slots = normalized;
 
@@ -2508,23 +2531,23 @@ export class VoiceService {
           intent.next_question =
             missing[0] === 'to'
               ? (language === 'en'
-                  ? 'What email address should I send it to?'
+                  ? 'Who should I send it to? Tell me the email or the name/role.'
                   : language === 'pt'
                     ? 'Para qual e-mail você quer que eu envie?'
                     : language === 'fr'
                       ? "À quelle adresse e-mail veux-tu que je l’envoie ?"
-                      : language === 'ja'
-                        ? 'どのメールアドレスに送ればいい？'
-                        : '¿A qué correo quieres que lo envíe?')
+                    : language === 'ja'
+                      ? 'どのメールアドレスに送ればいい？'
+                        : '¿A quién se lo envío? Dime el correo o el nombre/rol.')
               : (language === 'en'
                   ? 'What should the email say? Tell me exactly and I’ll send it.'
                   : language === 'pt'
                     ? 'O que você quer que o e-mail diga? Diga exatamente e eu envio.'
                     : language === 'fr'
                       ? "Que veux-tu que l’e-mail dise ? Dis-le-moi exactement et je l’envoie."
-                      : language === 'ja'
-                        ? 'メール本文は何て書く？そのまま言ってくれたら送るよ。'
-                        : '¿Qué quieres que diga el correo? Dímelo tal cual y lo mando.');
+                    : language === 'ja'
+                      ? 'メール本文は何て書く？そのまま言ってくれたら送るよ。'
+                      : '¿Qué quieres que diga el correo? Dímelo tal cual y lo mando.');
         }
       }
     }
