@@ -473,6 +473,64 @@ export class VoiceService {
       };
     }
 
+    const wantsHouseholdReminder =
+      /\b(recu[eé]rdale|recorda(le|r)|dile|mandale|enviale)\b/i.test(lower) ||
+      /\b(remind)\b/i.test(lower);
+
+    if (wantsHouseholdReminder) {
+      const filled: Record<string, any> = {};
+
+      // Spanish patterns:
+      // - "recuérdale a mi mamá que saque la basura"
+      // - "dile a Juan que llegue temprano"
+      // English patterns:
+      // - "remind my mom to take the trash out"
+      // - "remind John that dinner is at 7"
+
+      const rawNoPrefix = raw.trim();
+
+      const mEs = rawNoPrefix.match(
+        /^\s*(?:recu[eé]rdale|recorda(?:le|r)|dile|mandale|enviale)\s+(?:a\s+)?(.+?)(?:\s+(?:que|de|para)\s+)(.+)$/i,
+      );
+      if (mEs?.[1] && mEs?.[2]) {
+        filled.recipient_query = String(mEs[1]).trim();
+        filled.message = String(mEs[2]).trim();
+      }
+
+      const mEn = rawNoPrefix.match(
+        /^\s*remind\s+(.+?)(?:\s+(?:to|that)\s+)(.+)$/i,
+      );
+      if (!filled.recipient_query && mEn?.[1]) filled.recipient_query = String(mEn[1]).trim();
+      if (!filled.message && mEn?.[2]) filled.message = String(mEn[2]).trim();
+
+      const missing: string[] = [];
+      if (!String(filled.recipient_query || '').trim()) missing.push('recipient_query');
+      if (!String(filled.message || '').trim()) missing.push('message');
+
+      const next_question =
+        missing[0] === 'recipient_query'
+          ? language === 'es'
+            ? '¿A quién se lo envío? Dime el nombre o rol (ej. “mi mamá”).'
+            : 'Who should I send it to? Say the name or role (e.g. “my mom”).'
+          : missing[0] === 'message'
+            ? language === 'es'
+              ? '¿Qué mensaje quieres que le envíe?'
+              : 'What message should I send?'
+            : '';
+
+      return {
+        intent: 'send_household_reminder',
+        language: null,
+        confidence: 0.78,
+        required_slots: ['recipient_query', 'message'],
+        filled_slots: filled,
+        missing_slots: missing,
+        next_question,
+        priority: 'high',
+        intent_source: 'deterministic',
+      };
+    }
+
     const wantsTask =
       /\b(create|add|make)\s+(a\s+)?task\b/i.test(lower) ||
       /\bnew\s+task\b/i.test(lower) ||
@@ -2048,6 +2106,31 @@ export class VoiceService {
         if (firstMissing === 'title') {
           filled.title = cleanedText.trim();
           changed = true;
+        }
+      }
+
+      if (intentName === 'send_household_reminder') {
+        const cleanedTrim = String(cleanedText || '').trim();
+
+        if (firstMissing === 'recipient_query') {
+          // If user answers with a full phrase like "a mi mamá", strip leading prepositions.
+          const m = cleanedTrim.match(/^\s*(?:a|para)\s+(.+)$/i);
+          filled.recipient_query = String(m?.[1] || cleanedTrim).trim();
+          if (String(filled.recipient_query || '').trim()) changed = true;
+        }
+
+        if (firstMissing === 'message') {
+          // If user replies with full command again, try to parse it.
+          const parsed = this.inferDeterministicIntent(cleanedTrim, language);
+          if (parsed?.intent === 'send_household_reminder') {
+            const recip = String(parsed?.filled_slots?.recipient_query || '').trim();
+            const msg = String(parsed?.filled_slots?.message || '').trim();
+            if (recip && !String(filled.recipient_query || '').trim()) filled.recipient_query = recip;
+            if (msg) filled.message = msg;
+          } else {
+            filled.message = cleanedTrim;
+          }
+          if (String(filled.message || '').trim()) changed = true;
         }
       }
 
