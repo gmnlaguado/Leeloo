@@ -257,7 +257,30 @@ export class VoiceService {
       return iso;
     };
 
-    const parsedStartAt = parseDateTimeIso(lower) || parseDateTimeSpanishBasic(lower);
+    const parseRelativeDayTime = (s: string): string | null => {
+      const hasToday = /\b(hoy|today)\b/i.test(s);
+      const hasTomorrow = /\b(ma[nñ]ana|tomorrow)\b/i.test(s);
+      if (!hasToday && !hasTomorrow) return null;
+
+      const t = s.match(/\b(a\s+las|at)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+      if (!t) return null;
+
+      let hh = Number(t[2]);
+      const mm = t[3] ? Number(t[3]) : 0;
+      const ampm = String(t[4] || '').toLowerCase();
+      if (ampm === 'pm' && hh >= 1 && hh <= 11) hh += 12;
+      if (ampm === 'am' && hh === 12) hh = 0;
+      if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+
+      const base = new Date();
+      if (hasTomorrow) base.setDate(base.getDate() + 1);
+      base.setHours(hh, mm, 0, 0);
+      const iso = base.toISOString();
+      if (Number.isNaN(new Date(iso).getTime())) return null;
+      return iso;
+    };
+
+    const parsedStartAt = parseDateTimeIso(lower) || parseDateTimeSpanishBasic(lower) || parseRelativeDayTime(lower);
 
     const deleteTrigger =
       /\b(delete|remove|cancel)\b/.test(lower) ||
@@ -3135,12 +3158,23 @@ export class VoiceService {
       const activity = (filled.activity || filled.title || intent.title || '').toString().trim();
       const startAt = String(filled.start_at || '').trim();
       if (!activity || !startAt) return null;
-      const ms = new Date(startAt).getTime();
-      if (!Number.isFinite(ms) || ms < Date.now()) return null;
+      let ms = new Date(startAt).getTime();
+      if (!Number.isFinite(ms)) return null;
+
+      // If the parsed time lands in the past due to timezone or "today" ambiguity,
+      // bump it forward to the next occurrence (max 7 days) instead of failing silently.
+      const now = Date.now();
+      let guard = 0;
+      while (ms < now && guard < 7) {
+        ms += 24 * 60 * 60 * 1000;
+        guard += 1;
+      }
+      if (ms < now) return null;
+      const normalizedStartAt = new Date(ms).toISOString();
 
       actionResult = await this.calendarService.createEvent(clerkUserId, {
         title: activity,
-        start_at: startAt,
+        start_at: normalizedStartAt,
         end_at: null,
         timezone: null,
         location: null,
@@ -3162,12 +3196,20 @@ export class VoiceService {
       const title = (filled.title || intent.title || '').toString().trim();
       const startAt = String(filled.start_at || '').trim();
       if (!title || !startAt) return null;
-      const ms = new Date(startAt).getTime();
-      if (!Number.isFinite(ms) || ms < Date.now()) return null;
+      let ms = new Date(startAt).getTime();
+      if (!Number.isFinite(ms)) return null;
+      const now = Date.now();
+      let guard = 0;
+      while (ms < now && guard < 7) {
+        ms += 24 * 60 * 60 * 1000;
+        guard += 1;
+      }
+      if (ms < now) return null;
+      const normalizedStartAt = new Date(ms).toISOString();
 
       actionResult = await this.calendarService.createEvent(clerkUserId, {
         title,
-        start_at: startAt,
+        start_at: normalizedStartAt,
         end_at: null,
         timezone: null,
         location: null,
