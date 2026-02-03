@@ -1178,6 +1178,7 @@ export class VoiceService {
     const memoryGate = async (namespaces: string[]) => {
       const sessionSummary = await this.memoriesService.getSessionSummary(clerkUserId);
       const recentTurns = await this.memoriesService.getRecentConversationTurns(clerkUserId, 6);
+      const relevant = await this.memoriesService.getRelevantMemories(clerkUserId, cleanedText, 8);
 
       const turnsContext = recentTurns
         .reverse()
@@ -1200,10 +1201,23 @@ export class VoiceService {
         .filter(Boolean)
         .join('\n');
 
+      const relevantContext = (relevant || [])
+        .map((m: any) => {
+          const cat = String(m?.category || '').trim();
+          const k = String(m?.key || '').trim();
+          const v = m?.value;
+          const line = `${cat}${k ? `:${k}` : ''}`;
+          const val = v === undefined ? '' : JSON.stringify(v);
+          return line && val ? `${line} = ${val}` : '';
+        })
+        .filter(Boolean)
+        .join('\n');
+
       const context = [
         `AUTHORITATIVE IDENTITY (NON-NEGOTIABLE):\n- assistant_name: Leeloo\n- language_lock: ${language}\n`,
         sessionSummary ? `SESSION SUMMARY (authoritative):\n${sessionSummary}` : null,
         factsContext ? `LONG-TERM FACTS (authoritative):\n${factsContext}` : null,
+        relevantContext ? `RELEVANT LONG-TERM MEMORIES (authoritative):\n${relevantContext}` : null,
         turnsContext ? `RECENT TURNS:\n${turnsContext}` : null,
       ]
         .filter(Boolean)
@@ -1213,11 +1227,12 @@ export class VoiceService {
         userId: clerkUserId,
         has_session_summary: Boolean(sessionSummary),
         facts_count: Array.isArray(facts) ? facts.length : 0,
+        relevant_count: Array.isArray(relevant) ? relevant.length : 0,
         turns_count: Array.isArray(recentTurns) ? recentTurns.length : 0,
         namespaces,
       });
 
-      return { context, facts, sessionSummary };
+      return { context, facts, sessionSummary, relevant };
     };
 
     const buildExecutedResponse = (intentName: string, actionResult: any, language: SupportedLanguage) => {

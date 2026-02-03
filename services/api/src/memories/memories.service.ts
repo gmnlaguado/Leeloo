@@ -1,13 +1,53 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 import { ProfilesService } from '../profiles/profiles.service';
 
 @Injectable()
-export class MemoriesService {
+export class MemoriesService implements OnModuleInit {
   constructor(
     private readonly db: DatabaseService,
     private readonly profilesService: ProfilesService,
   ) {}
+
+  async onModuleInit() {
+    await this.ensureSchema();
+  }
+
+  private async ensureSchema() {
+    await this.db.query(
+      `CREATE TABLE IF NOT EXISTS memories (
+        id uuid PRIMARY KEY,
+        user_id uuid NOT NULL,
+        category text NOT NULL,
+        key text NOT NULL,
+        value jsonb NULL,
+        confidence real DEFAULT 1.0,
+        last_used timestamptz DEFAULT NOW(),
+        created_at timestamptz DEFAULT NOW(),
+        updated_at timestamptz DEFAULT NOW()
+      )`,
+    );
+
+    await this.db.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_user_key_unique ON memories (user_id, key)');
+    await this.db.query('CREATE INDEX IF NOT EXISTS idx_memories_user_last_used ON memories (user_id, last_used DESC)');
+    await this.db.query(
+      `CREATE INDEX IF NOT EXISTS idx_memories_fts ON memories
+       USING GIN (to_tsvector('simple', coalesce(key,'') || ' ' || coalesce(category,'') || ' ' || coalesce(value::text,'')))`,
+    );
+  }
+
+  private async touchMemories(ids: string[]) {
+    const safeIds = (ids || []).map((x) => String(x || '').trim()).filter(Boolean);
+    if (safeIds.length === 0) return;
+    try {
+      await this.db.query(
+        `UPDATE memories SET last_used = NOW(), updated_at = NOW() WHERE id = ANY($1::uuid[])`,
+        [safeIds],
+      );
+    } catch {
+    }
+  }
 
   private safeKeyPart(value: string) {
     return String(value || '')
@@ -62,27 +102,76 @@ export class MemoriesService {
   }
 
   async getRelevantMemories(userId: string, query: string, limit = 10) {
-    void query;
     const profileId = await this.getProfileId(userId);
+    const q = String(query || '').trim();
+    if (!q) return [];
+
     const result = await this.db.query(
-      `SELECT *
+      `SELECT *,
+        ts_rank(
+          to_tsvector('simple', coalesce(key,'') || ' ' || coalesce(category,'') || ' ' || coalesce(value::text,'')),
+          plainto_tsquery('simple', $2)
+        ) AS rank
        FROM memories
        WHERE user_id = $1
          AND key NOT LIKE 'turn_%'
+         AND to_tsvector('simple', coalesce(key,'') || ' ' || coalesce(category,'') || ' ' || coalesce(value::text,''))
+             @@ plainto_tsquery('simple', $2)
+       ORDER BY rank DESC, last_used DESC
+       LIMIT $3`,
+      [profileId, q, limit],
+    );
+    const rows = result.rows || [];
+    void this.touchMemories(rows.map((r: any) => String(r?.id || '')).filter(Boolean));
+    return rows;
+  }
+
+  async listMemories(
+    userId: string,
+    opts?: { prefix?: string; category?: string; limit?: number },
+  ) {
+    const profileId = await this.getProfileId(userId);
+    const limit = typeof opts?.limit === 'number' ? Math.max(1, Math.min(200, Math.floor(opts.limit))) : 50;
+    const prefix = typeof opts?.prefix === 'string' ? opts.prefix.trim() : '';
+    const category = typeof opts?.category === 'string' ? opts.category.trim() : '';
+
+    if (prefix) {
+      return this.getMemoriesByKeyPrefix(userId, prefix, limit);
+    }
+
+    if (category) {
+      const safeCategory = category.replace(/%/g, '');
+      const res = await this.db.query(
+        `SELECT *
+         FROM memories
+         WHERE user_id = $1
+           AND category = $2
+         ORDER BY last_used DESC
+         LIMIT $3`,
+        [profileId, safeCategory, limit],
+      );
+      return res.rows || [];
+    }
+
+    const res = await this.db.query(
+      `SELECT *
+       FROM memories
+       WHERE user_id = $1
        ORDER BY last_used DESC
        LIMIT $2`,
       [profileId, limit],
     );
-    return result.rows || [];
+    return res.rows || [];
   }
 
   async createMemory(userId: string, category: string, key: string, value: any) {
     const profileId = await this.getProfileId(userId);
+    const id = randomUUID();
     const res = await this.db.query(
-      `INSERT INTO memories (user_id, category, key, value, confidence, last_used)
-       VALUES ($1, $2, $3, $4, $5, NOW())
+      `INSERT INTO memories (id, user_id, category, key, value, confidence, last_used, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
        RETURNING *`,
-      [profileId, category, key, value, 1.0],
+      [id, profileId, category, key, value, 1.0],
     );
     return res.rows[0];
   }
@@ -175,6 +264,7 @@ export class MemoriesService {
     }
 
     fields.push('last_used = NOW()');
+    fields.push('updated_at = NOW()');
     params.push(id);
 
     const res = await this.db.query(
