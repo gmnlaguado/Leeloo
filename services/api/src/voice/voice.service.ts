@@ -2008,19 +2008,39 @@ export class VoiceService {
       let changed = false;
 
       if (intentName === 'send_email') {
+        const cleanedTrim = String(cleanedText || '').trim();
+        const emailMatchAny = cleanedTrim.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
         if (firstMissing === 'to') {
-          const emailMatch = cleanedText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-          if (emailMatch && emailMatch[0]) {
-            filled.to = emailMatch[0];
+          if (emailMatchAny && emailMatchAny[0]) {
+            filled.to = emailMatchAny[0];
             changed = true;
           } else {
-            filled.recipient_query = cleanedText.trim();
+            filled.recipient_query = cleanedTrim;
             changed = true;
           }
         }
         if (firstMissing === 'body') {
-          filled.body = cleanedText.trim();
+          filled.body = cleanedTrim;
           changed = true;
+        }
+
+        const toCandidateRaw = String(filled.to || '').trim();
+        const recipientQuery = String(filled.recipient_query || '').trim();
+        if ((!toCandidateRaw || !isValidEmail(toCandidateRaw)) && emailMatchAny?.[0]) {
+          filled.to = emailMatchAny[0];
+          changed = true;
+        }
+
+        if ((!String(filled.to || '').trim() || !isValidEmail(String(filled.to || '').trim())) && recipientQuery) {
+          try {
+            const contact = await this.householdService.findBestContactByNameOrRole(clerkUserId, recipientQuery);
+            const email = String((contact as any)?.email || '').trim();
+            if (email && isValidEmail(email)) {
+              filled.to = email;
+              changed = true;
+            }
+          } catch {
+          }
         }
       }
 
