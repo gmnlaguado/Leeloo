@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 import { ProfilesService } from '../profiles/profiles.service';
@@ -185,31 +185,67 @@ export class CalendarService implements OnModuleInit {
   async createEvent(clerkUserId: string, dto: any) {
     const profileId = await this.getProfileId(clerkUserId);
 
+    const title = String(dto?.title || '').trim();
+    if (!title) {
+      throw new BadRequestException('title is required');
+    }
+
+    const startAt = String(dto?.start_at || '').trim();
+    if (!startAt) {
+      throw new BadRequestException('start_at is required');
+    }
+    const startMs = new Date(startAt).getTime();
+    if (!Number.isFinite(startMs)) {
+      throw new BadRequestException('start_at must be ISO8601');
+    }
+
+    const endAtRaw = dto?.end_at;
+    const endAt = endAtRaw === null || endAtRaw === undefined ? null : String(endAtRaw).trim();
+    if (endAt) {
+      const endMs = new Date(endAt).getTime();
+      if (!Number.isFinite(endMs)) {
+        throw new BadRequestException('end_at must be ISO8601');
+      }
+    }
+
     const eventId = randomUUID();
 
     const remindOffsets = Array.isArray(dto?.remind_offsets_minutes) && dto.remind_offsets_minutes.length
       ? dto.remind_offsets_minutes
       : [180];
 
-    const result = await this.db.query(
-      `INSERT INTO calendar_events (
-        id, user_id, title, start_at, end_at, timezone, location, notes, priority, category, remind_offsets_minutes
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
-      RETURNING *`,
-      [
-        eventId,
+    let result;
+    try {
+      result = await this.db.query(
+        `INSERT INTO calendar_events (
+          id, user_id, title, start_at, end_at, timezone, location, notes, priority, category, remind_offsets_minutes
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
+        RETURNING *`,
+        [
+          eventId,
+          profileId,
+          title,
+          startAt,
+          endAt || null,
+          dto.timezone || null,
+          dto.location || null,
+          dto.notes || null,
+          dto.priority || null,
+          dto.category || null,
+          JSON.stringify(remindOffsets),
+        ],
+      );
+    } catch (e: any) {
+      console.error('[LeelooApi] calendar.event.create.failed', {
+        userId: clerkUserId,
         profileId,
-        dto.title,
-        dto.start_at,
-        dto.end_at || null,
-        dto.timezone || null,
-        dto.location || null,
-        dto.notes || null,
-        dto.priority || null,
-        dto.category || null,
-        JSON.stringify(remindOffsets),
-      ],
-    );
+        title,
+        start_at: startAt,
+        end_at: endAt,
+        error: String(e?.message || e),
+      });
+      throw new BadRequestException(String(e?.message || 'Failed to create event'));
+    }
 
     let created = result.rows[0];
 
