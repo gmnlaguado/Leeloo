@@ -66,6 +66,12 @@ export class CalendarController {
     return this.calendarService.getAgendaToday(req.user.id);
   }
 
+  @Get('agenda')
+  @ApiOperation({ summary: 'Get unified agenda (events + tasks) for a given day' })
+  async getUnifiedAgendaForDay(@Req() req: AuthedRequest, @Query('day') day: string) {
+    return this.calendarService.getUnifiedAgendaForDay(req.user.id, day);
+  }
+
   @Put('reminder-settings')
   @ApiOperation({ summary: 'Update reminder settings (including Expo push token)' })
   async updateReminderSettings(@Req() req: AuthedRequest, @Body() dto: UpdateReminderSettingsDto) {

@@ -4,6 +4,7 @@ import { DatabaseService } from '../database/database.service';
 import { ProfilesService } from '../profiles/profiles.service';
 import { IntegrationsService } from '../integrations/integrations.service';
 import { GoogleCalendarService } from '../integrations/google-calendar.service';
+import { TasksService } from '../tasks/tasks.service';
 
 @Injectable()
 export class CalendarService implements OnModuleInit {
@@ -12,6 +13,7 @@ export class CalendarService implements OnModuleInit {
     private readonly profilesService: ProfilesService,
     private readonly integrationsService: IntegrationsService,
     private readonly googleCalendarService: GoogleCalendarService,
+    private readonly tasksService: TasksService,
   ) {}
 
   async onModuleInit() {
@@ -333,6 +335,63 @@ export class CalendarService implements OnModuleInit {
     const now = new Date();
     const day = this.formatDayInTimezone(now, timezone);
     return this.getEventsForDay(clerkUserId, day);
+  }
+
+  async getUnifiedAgendaForDay(clerkUserId: string, day: string) {
+    const timezone = await this.getUserTimezone(clerkUserId);
+
+    const [eventsRes, tasksRes] = await Promise.all([
+      this.getEventsForDay(clerkUserId, day),
+      this.tasksService.getTasksForDay(clerkUserId, day),
+    ]);
+
+    const items: any[] = [];
+
+    for (const ev of eventsRes?.events || []) {
+      items.push({
+        kind: 'event',
+        id: ev.id,
+        title: ev.title,
+        start_at: ev.start_at,
+        end_at: ev.end_at || null,
+        location: ev.location || null,
+        notes: ev.notes || null,
+        raw: ev,
+      });
+    }
+
+    for (const t of tasksRes?.tasks || []) {
+      items.push({
+        kind: 'task',
+        id: t.id,
+        title: t.title,
+        due_at: t.due_at,
+        status: t.status,
+        priority: t.priority || null,
+        raw: t,
+      });
+    }
+
+    const timeKey = (it: any) => {
+      const v = it.kind === 'event' ? it.start_at : it.due_at;
+      const ms = v ? new Date(String(v)).getTime() : Number.POSITIVE_INFINITY;
+      return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
+    };
+
+    items.sort((a, b) => {
+      const ta = timeKey(a);
+      const tb = timeKey(b);
+      if (ta !== tb) return ta - tb;
+      return String(a.kind).localeCompare(String(b.kind));
+    });
+
+    return {
+      day,
+      timezone,
+      events: eventsRes?.events || [],
+      tasks: tasksRes?.tasks || [],
+      items,
+    };
   }
 
   async findNextUpcomingEventByTitle(clerkUserId: string, titleQuery: string) {
