@@ -31,6 +31,7 @@ export class ProfilesController {
       display_name?: string;
       nickname?: string;
       reply_to_email?: string;
+      timezone?: string;
       personality?: string[];
       preferences?: Record<string, any>;
       profile_basics?: Record<string, any>;
@@ -58,6 +59,13 @@ export class ProfilesController {
         ...(patch.user_identity || {}),
         reply_to_email: body.reply_to_email,
       };
+    }
+
+    if (typeof body.timezone === 'string') {
+      const tz = String(body.timezone || '').trim();
+      if (tz) {
+        patch.timezone = tz;
+      }
     }
 
     if (Array.isArray(body.personality)) {

@@ -56,7 +56,8 @@ export class CalendarController {
   @Get('events')
   @ApiOperation({ summary: 'Get events for a given day' })
   async getEventsForDay(@Req() req: AuthedRequest, @Query('day') day: string) {
-    return this.calendarService.getEventsForDay(req.user.id, day);
+    const events = await this.calendarService.getEventsForDay(req.user.id, day);
+    return events;
   }
 
   @Get('agenda/today')

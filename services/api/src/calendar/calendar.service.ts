@@ -133,6 +133,31 @@ export class CalendarService implements OnModuleInit {
     return profile.id;
   }
 
+  private async getUserTimezone(clerkUserId: string): Promise<string> {
+    const profile = await this.profilesService.ensureProfileByClerkUserId(clerkUserId);
+    const tz = profile?.preferences?.timezone;
+    if (typeof tz === 'string' && tz.trim()) return tz.trim();
+    return 'UTC';
+  }
+
+  private formatDayInTimezone(date: Date, timezone: string): string {
+    try {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(date);
+
+      const y = parts.find((p) => p.type === 'year')?.value;
+      const m = parts.find((p) => p.type === 'month')?.value;
+      const d = parts.find((p) => p.type === 'day')?.value;
+      if (y && m && d) return `${y}-${m}-${d}`;
+    } catch {
+    }
+    return date.toISOString().slice(0, 10);
+  }
+
   async createEvent(clerkUserId: string, dto: any) {
     const profileId = await this.getProfileId(clerkUserId);
 
@@ -225,27 +250,27 @@ export class CalendarService implements OnModuleInit {
 
   async getEventsForDay(clerkUserId: string, day: string) {
     const profileId = await this.getProfileId(clerkUserId);
-    // Interpret "day" as YYYY-MM-DD in UTC to keep MVP deterministic.
-    const start = `${day}T00:00:00.000Z`;
-    const end = `${day}T23:59:59.999Z`;
+    const timezone = await this.getUserTimezone(clerkUserId);
+    const startLocal = `${day} 00:00:00`;
+    const endLocal = `${day} 23:59:59.999`;
 
     const result = await this.db.query(
       `SELECT *
        FROM calendar_events
        WHERE user_id = $1
-         AND start_at >= $2
-         AND start_at <= $3
+         AND (start_at AT TIME ZONE $2) >= $3::timestamp
+         AND (start_at AT TIME ZONE $2) <= $4::timestamp
        ORDER BY start_at ASC`,
-      [profileId, start, end],
+      [profileId, timezone, startLocal, endLocal],
     );
-    return result.rows || [];
+    return { day, timezone, events: result.rows || [] };
   }
 
   async getAgendaToday(clerkUserId: string) {
+    const timezone = await this.getUserTimezone(clerkUserId);
     const now = new Date();
-    const day = now.toISOString().slice(0, 10);
-    const events = await this.getEventsForDay(clerkUserId, day);
-    return { day, events };
+    const day = this.formatDayInTimezone(now, timezone);
+    return this.getEventsForDay(clerkUserId, day);
   }
 
   async findNextUpcomingEventByTitle(clerkUserId: string, titleQuery: string) {
