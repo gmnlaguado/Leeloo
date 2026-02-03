@@ -154,11 +154,41 @@ export class HouseholdService implements OnModuleInit {
       .trim();
   }
 
+  private canonicalizeRelationshipTerms(s: string) {
+    let x = this.normalizeKey(s);
+    if (!x) return x;
+
+    x = x
+      .replace(/\b(my|mi)\b/g, '')
+      .replace(/\b(the|la|el|los|las|un|una)\b/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const rules: Array<[RegExp, string]> = [
+      [/\b(esposa|wife|spouse)\b/g, 'wife'],
+      [/\b(esposo|husband)\b/g, 'husband'],
+      [/\b(mama|madre|mom|mother)\b/g, 'mother'],
+      [/\b(papa|padre|dad|father)\b/g, 'father'],
+      [/\b(hijo|son)\b/g, 'son'],
+      [/\b(hija|daughter)\b/g, 'daughter'],
+      [/\b(hermano|brother)\b/g, 'brother'],
+      [/\b(hermana|sister)\b/g, 'sister'],
+      [/\b(abuela|grandma|grandmother)\b/g, 'grandmother'],
+      [/\b(abuelo|grandpa|grandfather)\b/g, 'grandfather'],
+    ];
+
+    for (const [re, repl] of rules) {
+      x = x.replace(re, repl);
+    }
+
+    return x.replace(/\s+/g, ' ').trim();
+  }
+
   async findBestContactByNameOrRole(
     clerkUserId: string,
     query: string,
   ): Promise<HouseholdContact | null> {
-    const q = this.normalizeKey(query);
+    const q = this.canonicalizeRelationshipTerms(query);
     if (!q) return null;
 
     const contacts = await this.listContacts(clerkUserId);
@@ -166,8 +196,8 @@ export class HouseholdService implements OnModuleInit {
 
     const scored = contacts
       .map((c) => {
-        const name = this.normalizeKey(c.name || '');
-        const role = this.normalizeKey(c.role || '');
+        const name = this.canonicalizeRelationshipTerms(c.name || '');
+        const role = this.canonicalizeRelationshipTerms(c.role || '');
         const hay = `${role} ${name}`.trim();
         const exact = hay === q;
         const contains = hay.includes(q) || q.includes(hay);

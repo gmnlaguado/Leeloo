@@ -28,11 +28,16 @@ export class IntegrationsService implements OnModuleInit {
         scope text NULL,
         token_type text NULL,
         expires_at timestamptz NULL,
+        last_sync_at timestamptz NULL,
+        metadata jsonb NULL,
         created_at timestamptz DEFAULT NOW(),
         updated_at timestamptz DEFAULT NOW(),
         UNIQUE (user_id, provider)
       )`,
     );
+
+    await this.db.query('ALTER TABLE user_integrations ADD COLUMN IF NOT EXISTS last_sync_at timestamptz NULL');
+    await this.db.query('ALTER TABLE user_integrations ADD COLUMN IF NOT EXISTS metadata jsonb NULL');
 
     await this.db.query(
       'CREATE INDEX IF NOT EXISTS idx_user_integrations_user_provider ON user_integrations (user_id, provider)',
@@ -129,10 +134,28 @@ export class IntegrationsService implements OnModuleInit {
     return res.rows?.[0] || null;
   }
 
+  async getValidAccessToken(userId: string, provider: 'google' | 'microsoft') {
+    const profileId = await this.getProfileId(userId);
+    const { token, refreshed } = await this.ensureValidAccessToken(profileId, provider);
+    return { token, refreshed, profileId };
+  }
+
+  async markSynced(profileId: string, provider: 'google' | 'microsoft', metadata?: Record<string, any>) {
+    await this.db.query(
+      `UPDATE user_integrations
+       SET last_sync_at = NOW(),
+           metadata = COALESCE($3::jsonb, metadata),
+           updated_at = NOW()
+       WHERE user_id = $1 AND provider = $2`,
+      [profileId, provider, metadata ? JSON.stringify(metadata) : null],
+    );
+  }
+
   async getIntegrations(userId: string) {
     const profileId = await this.getProfileId(userId);
     const res = await this.db.query(
       `SELECT provider, expires_at, created_at, updated_at,
+              last_sync_at, metadata,
               (access_token IS NOT NULL AND access_token <> '') AS has_access_token,
               (refresh_token IS NOT NULL AND refresh_token <> '') AS has_refresh_token
        FROM user_integrations

@@ -4,11 +4,12 @@ import { DatabaseModule } from '../database/database.module';
 import { AuthModule } from '../auth/auth.module';
 import { IntegrationsController } from './integrations.controller';
 import { IntegrationsService } from './integrations.service';
+import { GoogleCalendarService } from './google-calendar.service';
 
 @Module({
   imports: [DatabaseModule, ProfilesModule, AuthModule],
   controllers: [IntegrationsController],
-  providers: [IntegrationsService],
+  providers: [IntegrationsService, GoogleCalendarService],
   exports: [IntegrationsService],
 })
 export class IntegrationsModule {}

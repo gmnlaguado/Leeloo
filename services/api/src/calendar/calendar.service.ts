@@ -29,6 +29,8 @@ export class CalendarService implements OnModuleInit {
         priority text NULL,
         category text NULL,
         remind_offsets_minutes jsonb NULL,
+        external_provider text NULL,
+        external_id text NULL,
         created_at timestamptz DEFAULT NOW(),
         updated_at timestamptz DEFAULT NOW()
       )`,
@@ -53,6 +55,8 @@ export class CalendarService implements OnModuleInit {
       await ensureColumn('start_at', 'timestamptz NULL');
       await ensureColumn('end_at', 'timestamptz NULL');
       await ensureColumn('remind_offsets_minutes', 'jsonb NULL');
+      await ensureColumn('external_provider', 'text NULL');
+      await ensureColumn('external_id', 'text NULL');
 
       // Best-effort backfill from common legacy column names.
       // This runs only when start_at/end_at were missing.
@@ -98,6 +102,16 @@ export class CalendarService implements OnModuleInit {
 
     await this.db.query(
       'CREATE INDEX IF NOT EXISTS idx_calendar_events_user_start ON calendar_events (user_id, start_at)',
+    );
+
+    await this.db.query(
+      'CREATE INDEX IF NOT EXISTS idx_calendar_events_external ON calendar_events (user_id, external_provider, external_id)',
+    );
+
+    await this.db.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS uniq_calendar_events_external
+       ON calendar_events (user_id, external_provider, external_id)
+       WHERE external_provider IS NOT NULL AND external_id IS NOT NULL`,
     );
 
     await this.db.query(
