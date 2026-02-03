@@ -35,6 +35,8 @@ export class CalendarService implements OnModuleInit {
         remind_offsets_minutes jsonb NULL,
         external_provider text NULL,
         external_id text NULL,
+        external_updated_at timestamptz NULL,
+        external_etag text NULL,
         created_at timestamptz DEFAULT NOW(),
         updated_at timestamptz DEFAULT NOW()
       )`,
@@ -61,6 +63,8 @@ export class CalendarService implements OnModuleInit {
       await ensureColumn('remind_offsets_minutes', 'jsonb NULL');
       await ensureColumn('external_provider', 'text NULL');
       await ensureColumn('external_id', 'text NULL');
+      await ensureColumn('external_updated_at', 'timestamptz NULL');
+      await ensureColumn('external_etag', 'text NULL');
 
       // Best-effort backfill from common legacy column names.
       // This runs only when start_at/end_at were missing.

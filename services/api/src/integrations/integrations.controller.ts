@@ -68,8 +68,23 @@ export class IntegrationsController {
     const { token, profileId } = await this.integrationsService.getValidAccessToken(req.user.id, 'google');
     if (!token) return { ok: false, provider: 'google', message: 'No valid access token' };
 
-    const result = await this.googleCalendarService.syncPrimaryCalendar(profileId, token);
-    await this.integrationsService.markSynced(profileId, 'google', { ...result });
+    const metaRes = await this.integrationsService.getIntegrationMetadata(req.user.id, 'google');
+    const currentToken = (metaRes.metadata as any)?.google?.sync_token || null;
+
+    const result = await this.googleCalendarService.syncPrimaryCalendarIncremental({
+      profileId,
+      accessToken: token,
+      syncToken: typeof currentToken === 'string' && currentToken.trim() ? currentToken.trim() : null,
+    });
+
+    const nextToken = typeof (result as any)?.next_sync_token === 'string' ? (result as any).next_sync_token : null;
+    if (nextToken) {
+      await this.integrationsService.patchIntegrationMetadata(profileId, 'google', {
+        google: { sync_token: nextToken },
+      });
+    }
+
+    await this.integrationsService.markSynced(profileId, 'google', { google: { last_result: result } });
     return { ok: true, provider: 'google', ...result };
   }
 }

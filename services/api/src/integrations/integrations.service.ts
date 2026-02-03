@@ -144,10 +144,27 @@ export class IntegrationsService implements OnModuleInit {
     await this.db.query(
       `UPDATE user_integrations
        SET last_sync_at = NOW(),
-           metadata = COALESCE($3::jsonb, metadata),
+           metadata = COALESCE(metadata, '{}'::jsonb) || COALESCE($3::jsonb, '{}'::jsonb),
            updated_at = NOW()
        WHERE user_id = $1 AND provider = $2`,
       [profileId, provider, metadata ? JSON.stringify(metadata) : null],
+    );
+  }
+
+  async getIntegrationMetadata(userId: string, provider: 'google' | 'microsoft') {
+    const profileId = await this.getProfileId(userId);
+    const row = await this.getIntegration(profileId, provider);
+    const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    return { profileId, metadata };
+  }
+
+  async patchIntegrationMetadata(profileId: string, provider: 'google' | 'microsoft', patch: Record<string, any>) {
+    await this.db.query(
+      `UPDATE user_integrations
+       SET metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
+           updated_at = NOW()
+       WHERE user_id = $1 AND provider = $2`,
+      [profileId, provider, JSON.stringify(patch || {})],
     );
   }
 
