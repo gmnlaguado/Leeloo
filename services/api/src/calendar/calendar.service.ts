@@ -2,12 +2,16 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 import { ProfilesService } from '../profiles/profiles.service';
+import { IntegrationsService } from '../integrations/integrations.service';
+import { GoogleCalendarService } from '../integrations/google-calendar.service';
 
 @Injectable()
 export class CalendarService implements OnModuleInit {
   constructor(
     private readonly db: DatabaseService,
     private readonly profilesService: ProfilesService,
+    private readonly integrationsService: IntegrationsService,
+    private readonly googleCalendarService: GoogleCalendarService,
   ) {}
 
   async onModuleInit() {
@@ -201,13 +205,39 @@ export class CalendarService implements OnModuleInit {
       ],
     );
 
+    let created = result.rows[0];
+
+    // Push to Google if connected and this is not already a Google-origin event.
+    try {
+      const hasExternal = created?.external_provider && created?.external_id;
+      if (!hasExternal) {
+        const { token } = await this.integrationsService.getValidAccessToken(clerkUserId, 'google');
+        if (token) {
+          const google = await this.googleCalendarService.createGoogleEvent(token, created);
+          const googleId = String(google?.id || '').trim();
+          if (googleId) {
+            const updated = await this.db.query(
+              `UPDATE calendar_events
+               SET external_provider = 'google', external_id = $1, updated_at = NOW()
+               WHERE id = $2 AND user_id = $3
+               RETURNING *`,
+              [googleId, created.id, profileId],
+            );
+            created = updated.rows?.[0] || created;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[LeelooApi] calendar.google_push.create.failed', { userId: clerkUserId, error: String(e) });
+    }
+
     console.log('[LeelooApi] calendar.event.created', {
       userId: clerkUserId,
-      event_id: result.rows?.[0]?.id,
+      event_id: created?.id,
       start_at: dto.start_at,
     });
 
-    return result.rows[0];
+    return created;
   }
 
   async updateEvent(clerkUserId: string, id: string, dto: any) {
@@ -253,13 +283,27 @@ export class CalendarService implements OnModuleInit {
     const query = `UPDATE calendar_events SET ${fields.join(', ')} WHERE id = $$${params.length - 1} AND user_id = $${params.length} RETURNING *`;
     const result = await this.db.query(query, params);
 
+    let updatedRow = result.rows[0] || null;
+
+    // Push updates to Google if this event is linked.
+    try {
+      if (updatedRow?.external_provider === 'google' && updatedRow?.external_id) {
+        const { token } = await this.integrationsService.getValidAccessToken(clerkUserId, 'google');
+        if (token) {
+          await this.googleCalendarService.updateGoogleEvent(token, String(updatedRow.external_id), updatedRow);
+        }
+      }
+    } catch (e) {
+      console.warn('[LeelooApi] calendar.google_push.update.failed', { userId: clerkUserId, event_id: id, error: String(e) });
+    }
+
     console.log('[LeelooApi] calendar.event.updated', {
       userId: clerkUserId,
       event_id: id,
       updated: fields.map((f) => f.split('=')[0].trim()).filter((f) => f !== 'updated_at'),
     });
 
-    return result.rows[0] || null;
+    return updatedRow;
   }
 
   async getEventsForDay(clerkUserId: string, day: string) {
@@ -316,6 +360,18 @@ export class CalendarService implements OnModuleInit {
 
     const deleted = res.rows?.[0] || null;
     if (deleted) {
+      // Best-effort delete from Google if linked.
+      try {
+        if (deleted?.external_provider === 'google' && deleted?.external_id) {
+          const { token } = await this.integrationsService.getValidAccessToken(clerkUserId, 'google');
+          if (token) {
+            await this.googleCalendarService.deleteGoogleEvent(token, String(deleted.external_id));
+          }
+        }
+      } catch (e) {
+        console.warn('[LeelooApi] calendar.google_push.delete.failed', { userId: clerkUserId, event_id: id, error: String(e) });
+      }
+
       console.log('[LeelooApi] calendar.event.deleted', {
         userId: clerkUserId,
         event_id: id,

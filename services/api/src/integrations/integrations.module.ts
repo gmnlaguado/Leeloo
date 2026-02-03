@@ -10,6 +10,6 @@ import { GoogleCalendarService } from './google-calendar.service';
   imports: [DatabaseModule, ProfilesModule, AuthModule],
   controllers: [IntegrationsController],
   providers: [IntegrationsService, GoogleCalendarService],
-  exports: [IntegrationsService],
+  exports: [IntegrationsService, GoogleCalendarService],
 })
 export class IntegrationsModule {}

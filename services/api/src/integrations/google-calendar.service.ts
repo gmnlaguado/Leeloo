@@ -7,6 +7,61 @@ import { DatabaseService } from '../database/database.service';
 export class GoogleCalendarService {
   constructor(private readonly db: DatabaseService) {}
 
+  private mapLocalToGoogleEvent(local: any) {
+    const start = local?.start_at ? new Date(String(local.start_at)) : null;
+    const end = local?.end_at ? new Date(String(local.end_at)) : null;
+    if (!start || Number.isNaN(start.getTime())) {
+      throw new Error('Invalid local start_at');
+    }
+
+    return {
+      summary: String(local?.title || 'Busy'),
+      location: local?.location ? String(local.location) : undefined,
+      description: local?.notes ? String(local.notes) : undefined,
+      start: {
+        dateTime: start.toISOString(),
+      },
+      end: {
+        dateTime: (end && !Number.isNaN(end.getTime())) ? end.toISOString() : new Date(start.getTime() + 30 * 60_000).toISOString(),
+      },
+    };
+  }
+
+  async createGoogleEvent(accessToken: string, localEvent: any) {
+    const calendarId = 'primary';
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
+    const payload = this.mapLocalToGoogleEvent(localEvent);
+    const res = await axios.post(url, payload, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      timeout: 30000,
+    });
+    return res.data;
+  }
+
+  async updateGoogleEvent(accessToken: string, googleEventId: string, localEvent: any) {
+    const calendarId = 'primary';
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(googleEventId)}`;
+    const payload = this.mapLocalToGoogleEvent(localEvent);
+    const res = await axios.put(url, payload, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      timeout: 30000,
+    });
+    return res.data;
+  }
+
+  async deleteGoogleEvent(accessToken: string, googleEventId: string) {
+    const calendarId = 'primary';
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(googleEventId)}`;
+    const res = await axios.delete(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      timeout: 30000,
+      validateStatus: () => true,
+    });
+    if (res.status === 404) return { ok: true, status: 404 };
+    if (res.status >= 200 && res.status < 300) return { ok: true, status: res.status };
+    throw new Error(`Google delete failed (HTTP ${res.status})`);
+  }
+
   async syncPrimaryCalendar(profileId: string, accessToken: string) {
     const calendarId = 'primary';
 
