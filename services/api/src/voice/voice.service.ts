@@ -1122,10 +1122,17 @@ export class VoiceService {
     const input = normalizer.normalize(text || '');
     const cleanedText = normalizeEmailSpeech(input.cleaned);
 
+    const isValidEmail = (value: string) => {
+      const s = String(value || '').trim();
+      if (!s) return false;
+      // Intentionally simple + fast; avoids external deps during build.
+      return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s);
+    };
+
     // Resolve persisted user state (language + pending intent/slots).
     const profile =
-      (await this.profilesService.getProfileByClerkUserId(clerkUserId)) ||
-      (await this.profilesService.ensureProfileByClerkUserId(clerkUserId));
+      (await this.profilesService.getProfileByClerkUserId(clerkUserId).catch(() => null)) ||
+      (await this.profilesService.ensureProfileByClerkUserId(clerkUserId).catch(() => null));
     const state = this.profilesService.getConversationState(profile);
 
     const conversationMode: 'conversation' | 'action' =
