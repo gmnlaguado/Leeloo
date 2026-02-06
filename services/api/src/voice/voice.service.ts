@@ -466,7 +466,18 @@ export class VoiceService {
         .replace(/^\s*(?:a|para)\s+[^,;:]+\s*/i, '')
         .trim();
 
-      if (bodyCandidate && bodyCandidate.length >= 6) filled.body = bodyCandidate;
+      // Premium rule: don't accidentally treat the recipient name/role as the email body.
+      // Only fill body when it clearly contains message content.
+      if (bodyCandidate) {
+        const looksLikeMessage = (() => {
+          const lc = bodyCandidate.toLowerCase();
+          if (/[.!?\n]/.test(bodyCandidate)) return true;
+          if (/\b(que|diciendo|mensaje|that|saying|message)\b/i.test(lc)) return true;
+          const wordCount = bodyCandidate.split(/\s+/).filter(Boolean).length;
+          return bodyCandidate.length >= 14 && wordCount >= 3;
+        })();
+        if (looksLikeMessage) filled.body = bodyCandidate;
+      }
 
       const missing: string[] = [];
       if (!String(filled.to || '').trim()) missing.push('to');
@@ -2652,6 +2663,21 @@ export class VoiceService {
         if (!normalized.recipient_query && normalized.recipientQuery) normalized.recipient_query = normalized.recipientQuery;
         if (!normalized.body && normalized.email_body) normalized.body = normalized.email_body;
         if (!normalized.body && normalized.email_content) normalized.body = normalized.email_content;
+
+        // Guard: some models/users provide only a name/role ("Gabriela", "mi esposa") which must
+        // be treated as the recipient, not the message body.
+        const maybeBody = String(normalized.body || '').trim();
+        if (maybeBody) {
+          const bodyTokens = maybeBody.split(/\s+/).filter(Boolean);
+          const looksLikeNameOrRoleOnly =
+            maybeBody.length <= 28 &&
+            bodyTokens.length <= 4 &&
+            !/[.!?\n]/.test(maybeBody) &&
+            !/\b(que|diciendo|mensaje|that|saying|message|por favor|please)\b/i.test(maybeBody);
+          if (looksLikeNameOrRoleOnly) {
+            normalized.body = '';
+          }
+        }
 
         const candidateRecipientQuery = String(normalized.recipient_query || '').trim();
         const toCandidateRaw = String(normalized.to || '').trim();
