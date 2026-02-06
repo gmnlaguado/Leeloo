@@ -60,6 +60,11 @@ export class CalendarService implements OnModuleInit {
         cols.add(name);
       };
 
+      await ensureColumn('timezone', 'text NULL');
+      await ensureColumn('location', 'text NULL');
+      await ensureColumn('notes', 'text NULL');
+      await ensureColumn('priority', 'text NULL');
+      await ensureColumn('category', 'text NULL');
       await ensureColumn('start_at', 'timestamptz NULL');
       await ensureColumn('end_at', 'timestamptz NULL');
       await ensureColumn('remind_offsets_minutes', 'jsonb NULL');
