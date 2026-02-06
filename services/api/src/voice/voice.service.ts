@@ -2744,7 +2744,14 @@ export class VoiceService {
       const startAt = String((intent as any)?.filled_slots?.start_at || '').trim();
       if (startAt) {
         const ms = new Date(startAt).getTime();
-        if (Number.isFinite(ms) && ms < Date.now()) {
+        if (!Number.isFinite(ms)) {
+          (intent as any).filled_slots = { ...((intent as any).filled_slots || {}), start_at: '' };
+          (intent as any).missing_slots = ['start_at'];
+          (intent as any).next_question =
+            language === 'es'
+              ? 'No entendí la fecha/hora. ¿Para cuándo lo ponemos? (di fecha y hora)'
+              : "I didn't catch the date/time. When should I set it for? (say date and time)";
+        } else if (ms < Date.now()) {
           (intent as any).filled_slots = { ...((intent as any).filled_slots || {}), start_at: '' };
           (intent as any).missing_slots = ['start_at'];
           (intent as any).next_question =
@@ -3198,23 +3205,34 @@ export class VoiceService {
       if (ms < now) return null;
       const normalizedStartAt = new Date(ms).toISOString();
 
-      actionResult = await this.calendarService.createEvent(clerkUserId, {
-        title: activity,
-        start_at: normalizedStartAt,
-        end_at: null,
-        timezone: null,
-        location: null,
-        notes: null,
-        priority: 'P2',
-        category: 'otros',
-        remind_offsets_minutes: [0],
-      });
+      try {
+        actionResult = await this.calendarService.createEvent(clerkUserId, {
+          title: activity,
+          start_at: normalizedStartAt,
+          end_at: null,
+          timezone: null,
+          location: null,
+          notes: null,
+          priority: 'P2',
+          category: 'otros',
+          remind_offsets_minutes: [0],
+        });
 
-      console.log('[LeelooApi] action reminder->calendar', {
-        userId: clerkUserId,
-        eventId: (actionResult as any)?.id,
-        start_at: startAt,
-      });
+        console.log('[LeelooApi] action reminder->calendar', {
+          userId: clerkUserId,
+          eventId: (actionResult as any)?.id,
+          start_at: startAt,
+        });
+      } catch (e: any) {
+        console.warn('[LeelooApi] action reminder->calendar failed', {
+          userId: clerkUserId,
+          activity,
+          start_at: startAt,
+          normalized_start_at: normalizedStartAt,
+          error: String(e?.message || e),
+        });
+        return null;
+      }
     }
 
     if (intent.intent === 'schedule_meeting') {
