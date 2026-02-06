@@ -170,21 +170,51 @@ export class CalendarService implements OnModuleInit {
   }
 
   private formatDayInTimezone(date: Date, timezone: string): string {
-    try {
-      const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: timezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).formatToParts(date);
+    const dt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date);
 
-      const y = parts.find((p) => p.type === 'year')?.value;
-      const m = parts.find((p) => p.type === 'month')?.value;
-      const d = parts.find((p) => p.type === 'day')?.value;
-      if (y && m && d) return `${y}-${m}-${d}`;
-    } catch {
+    // en-CA returns YYYY-MM-DD already.
+    return dt;
+  }
+
+  private async bestEffortGoogleSync(clerkUserId: string) {
+    try {
+      const { token, profileId } = await this.integrationsService.getValidAccessToken(clerkUserId, 'google');
+      if (!token) return;
+
+      const metaRes = await this.integrationsService.getIntegrationMetadata(clerkUserId, 'google');
+      const meta = (metaRes.metadata as any) || {};
+      const g = (meta as any)?.google || {};
+      const lastAuto = String(g?.last_auto_sync_at || '').trim();
+      if (lastAuto) {
+        const lastMs = new Date(lastAuto).getTime();
+        if (Number.isFinite(lastMs) && Date.now() - lastMs < 60_000) return;
+      }
+
+      const currentToken = typeof g?.sync_token === 'string' && g.sync_token.trim() ? g.sync_token.trim() : null;
+      const result = await this.googleCalendarService.syncPrimaryCalendarIncremental({
+        profileId,
+        accessToken: token,
+        syncToken: currentToken,
+      });
+
+      const nextToken = typeof (result as any)?.next_sync_token === 'string' ? (result as any).next_sync_token : null;
+      await this.integrationsService.patchIntegrationMetadata(profileId, 'google', {
+        google: {
+          ...(nextToken ? { sync_token: nextToken } : {}),
+          last_auto_sync_at: new Date().toISOString(),
+          last_result: result,
+        },
+      });
+
+      await this.integrationsService.markSynced(profileId, 'google', { google: { last_result: result } });
+    } catch (e) {
+      console.warn('[LeelooApi] google auto-sync skipped/failed', { userId: clerkUserId, error: String((e as any)?.message || e) });
     }
-    return date.toISOString().slice(0, 10);
   }
 
   async createEvent(clerkUserId: string, dto: any) {
@@ -372,6 +402,7 @@ export class CalendarService implements OnModuleInit {
   }
 
   async getAgendaToday(clerkUserId: string) {
+    await this.bestEffortGoogleSync(clerkUserId);
     const timezone = await this.getUserTimezone(clerkUserId);
     const now = new Date();
     const day = this.formatDayInTimezone(now, timezone);
