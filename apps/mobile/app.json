@@ -11,23 +11,15 @@
       "resizeMode": "contain",
       "backgroundColor": "#8B5CF6"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.leeloo.app",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Leeloo needs access to your microphone to listen to voice commands.",
-        "NSCalendarsUsageDescription": "Leeloo needs access to your calendar to schedule events.",
-        "NSContactsUsageDescription": "Leeloo needs access to your contacts to send messages.",
-        "NSRemindersUsageDescription": "Leeloo needs access to reminders to create tasks.",
-        "NSSpeechRecognitionUsageDescription": "Leeloo uses speech recognition to understand your voice commands.",
-        "UIBackgroundModes": [
-          "audio",
-          "fetch",
-          "processing"
-        ]
+        "NSMicrophoneUsageDescription": "Leeloo necesita el micrófono para escuchar tus comandos de voz.",
+        "NSCalendarsUsageDescription": "Leeloo necesita acceso a tu calendario para programar eventos.",
+        "NSSpeechRecognitionUsageDescription": "Leeloo usa reconocimiento de voz para entender tus comandos.",
+        "UIBackgroundModes": ["audio", "fetch", "processing"]
       },
       "config": {
         "usesNonExemptEncryption": false
@@ -43,15 +35,11 @@
         "RECORD_AUDIO",
         "READ_CALENDAR",
         "WRITE_CALENDAR",
-        "READ_CONTACTS",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
-        "FOREGROUND_SERVICE"
+        "FOREGROUND_SERVICE",
+        "WAKE_LOCK"
       ]
-    },
-    "web": {
-      "favicon": "./assets/icon.png",
-      "bundler": "metro"
     },
     "plugins": [
       "expo-router",
@@ -83,8 +71,7 @@
       "eas": {
         "projectId": "your-project-id-here"
       },
-      "EXPO_PUBLIC_LOG_AUTH_TOKEN": "true"
-      
+      "EXPO_PUBLIC_LOG_AUTH_TOKEN": "false"
     },
     "owner": "leeloo"
   }

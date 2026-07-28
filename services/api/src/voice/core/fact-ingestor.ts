@@ -42,8 +42,12 @@ export class FactIngestor {
       return Array.from(new Set(parts)).slice(0, 50);
     };
 
-    const groceryMatchEs = base.match(/\b(tengo|tenemos|hay|en mi cocina tengo|en casa tengo)\b\s+(.+)/i);
-    const groceryMatchEn = base.match(/\b(i have|we have|there is|there are|in my kitchen i have|at home i have)\b\s+(.+)/i);
+    const groceryMatchEs = base.match(
+      /\b(tengo|tenemos|hay|en mi cocina tengo|en casa tengo)\b\s+(.+)/i,
+    );
+    const groceryMatchEn = base.match(
+      /\b(i have|we have|there is|there are|in my kitchen i have|at home i have)\b\s+(.+)/i,
+    );
     const groceryMatch = groceryMatchEs || groceryMatchEn;
     if (groceryMatch && groceryMatch[2]) {
       const items = extractList(groceryMatch[2]);
@@ -67,7 +71,9 @@ export class FactIngestor {
     }
 
     const dislikeEs = raw.match(/\bno (me gusta|como|quiero)\s+([^.;!?]{2,80})/i);
-    const dislikeEn = raw.match(/\b(i don't like|i do not like|i don't eat|i do not eat)\s+([^.;!?]{2,80})/i);
+    const dislikeEn = raw.match(
+      /\b(i don't like|i do not like|i don't eat|i do not eat)\s+([^.;!?]{2,80})/i,
+    );
     const dislike = (dislikeEs && dislikeEs[2]) || (dislikeEn && dislikeEn[2]) || null;
     if (dislike) {
       const items = extractList(dislike);
@@ -82,23 +88,40 @@ export class FactIngestor {
       if (items.length > 0) pushUnique({ namespace: 'preferences', key: 'likes', value: items });
     }
 
-    const wakeTimeEs = raw.match(/\b(me levanto|me despierto)\s+a\s+las\s+([0-9]{1,2}(:[0-9]{2})?\s*(am|pm)?)/i);
-    const wakeTimeEn = raw.match(/\b(i wake up|i get up)\s+at\s+([0-9]{1,2}(:[0-9]{2})?\s*(am|pm)?)/i);
+    const wakeTimeEs = raw.match(
+      /\b(me levanto|me despierto)\s+a\s+las\s+([0-9]{1,2}(:[0-9]{2})?\s*(am|pm)?)/i,
+    );
+    const wakeTimeEn = raw.match(
+      /\b(i wake up|i get up)\s+at\s+([0-9]{1,2}(:[0-9]{2})?\s*(am|pm)?)/i,
+    );
     const wakeTime = (wakeTimeEs && wakeTimeEs[2]) || (wakeTimeEn && wakeTimeEn[2]) || null;
     if (wakeTime) {
       pushUnique({ namespace: 'routine', key: 'wake_time', value: String(wakeTime).trim() });
     }
 
-    const contactEs = raw.match(/\b(mi|mis)\s+(mam[aá]|pap[aá]|espos[aá]|novi[oa]|pareja|amig[oa])\s+se llama\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ'\- ]{2,40})/i);
-    const contactEn = raw.match(/\b(my)\s+(mom|mother|dad|father|wife|husband|girlfriend|boyfriend|partner|friend)\s+(is|is called|named)\s+([A-Za-z'\- ]{2,40})/i);
+    const contactEs = raw.match(
+      /\b(mi|mis)\s+(mam[aá]|pap[aá]|espos[aá]|novi[oa]|pareja|amig[oa])\s+se llama\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ'\- ]{2,40})/i,
+    );
+    const contactEn = raw.match(
+      /\b(my)\s+(mom|mother|dad|father|wife|husband|girlfriend|boyfriend|partner|friend)\s+(is|is called|named)\s+([A-Za-z'\- ]{2,40})/i,
+    );
 
     if (contactEs && contactEs[2] && contactEs[3]) {
-      pushUnique({ namespace: 'relationships', key: `contact_${this.normalizer.normalizeBase(contactEs[2])}`, value: { name: String(contactEs[3]).trim() } });
+      pushUnique({
+        namespace: 'relationships',
+        key: `contact_${this.normalizer.normalizeBase(contactEs[2])}`,
+        value: { name: String(contactEs[3]).trim() },
+      });
     } else if (contactEn && contactEn[2] && contactEn[4]) {
-      pushUnique({ namespace: 'relationships', key: `contact_${this.normalizer.normalizeBase(contactEn[2])}`, value: { name: String(contactEn[4]).trim() } });
+      pushUnique({
+        namespace: 'relationships',
+        key: `contact_${this.normalizer.normalizeBase(contactEn[2])}`,
+        value: { name: String(contactEn[4]).trim() },
+      });
     }
 
-    const langExplicitEs = base.includes('mi idioma es espanol') || base.includes('mi idioma es español');
+    const langExplicitEs =
+      base.includes('mi idioma es espanol') || base.includes('mi idioma es español');
     const langExplicitEn = base.includes('my language is english');
     if (langExplicitEs) pushUnique({ namespace: 'identity', key: 'language', value: 'es' });
     if (langExplicitEn) pushUnique({ namespace: 'identity', key: 'language', value: 'en' });

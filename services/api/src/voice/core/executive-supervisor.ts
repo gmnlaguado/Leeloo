@@ -36,10 +36,7 @@ export class ExecutiveSupervisor {
       lower.includes('lelu') ||
       lower.includes('lelo');
 
-    const hasHey =
-      lower.includes('hey') ||
-      lower.includes('ey') ||
-      lower.includes('oye');
+    const hasHey = lower.includes('hey') || lower.includes('ey') || lower.includes('oye');
 
     const isWake =
       lower.includes('leeloo despierta') ||

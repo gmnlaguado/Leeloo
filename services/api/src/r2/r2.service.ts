@@ -42,8 +42,7 @@ export class R2Service {
     key: string;
     body: Buffer;
     contentType: string;
-  }): Promise<{ url: string }>
-  {
+  }): Promise<{ url: string }> {
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,

@@ -65,13 +65,9 @@ export function TaskList({ limit }: TaskListProps) {
             <Text style={[styles.taskTitle, item.status === 'done' && styles.taskTitleDone]}>
               {item.title}
             </Text>
-            {item.description && (
-              <Text style={styles.taskDescription}>{item.description}</Text>
-            )}
+            {item.description && <Text style={styles.taskDescription}>{item.description}</Text>}
             {item.due_at && (
-              <Text style={styles.taskDue}>
-                Due: {new Date(item.due_at).toLocaleDateString()}
-              </Text>
+              <Text style={styles.taskDue}>Due: {new Date(item.due_at).toLocaleDateString()}</Text>
             )}
           </View>
         </TouchableOpacity>

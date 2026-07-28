@@ -16,7 +16,9 @@ export class RemindersScheduler implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    const enabled = String(this.configService.get<string>('REMINDERS_ENABLED') || 'true').toLowerCase() !== 'false';
+    const enabled =
+      String(this.configService.get<string>('REMINDERS_ENABLED') || 'true').toLowerCase() !==
+      'false';
     if (!enabled) {
       console.log('[LeelooApi] reminders.disabled');
       return;
@@ -39,11 +41,7 @@ export class RemindersScheduler implements OnModuleInit {
     console.log('[LeelooApi] reminders.scheduler.started', { interval_ms: intervalMs });
   }
 
-  private isWithinQuietHours(params: {
-    now: Date;
-    quietHours: any;
-    timezone: string;
-  }): boolean {
+  private isWithinQuietHours(params: { now: Date; quietHours: any; timezone: string }): boolean {
     try {
       const qh = params.quietHours;
       if (!qh || typeof qh !== 'object') return false;
@@ -52,7 +50,7 @@ export class RemindersScheduler implements OnModuleInit {
       const endStr = typeof qh.end === 'string' ? qh.end.trim() : '';
       if (!startStr || !endStr) return false;
 
-      const tz = (typeof qh.tz === 'string' && qh.tz.trim()) ? qh.tz.trim() : params.timezone;
+      const tz = typeof qh.tz === 'string' && qh.tz.trim() ? qh.tz.trim() : params.timezone;
       const fmt = new Intl.DateTimeFormat('en-CA', {
         timeZone: tz,
         hour: '2-digit',
@@ -69,7 +67,8 @@ export class RemindersScheduler implements OnModuleInit {
         if (!m) return null;
         const h = Number(m[1]);
         const mi = Number(m[2]);
-        if (!Number.isFinite(h) || !Number.isFinite(mi) || h < 0 || h > 23 || mi < 0 || mi > 59) return null;
+        if (!Number.isFinite(h) || !Number.isFinite(mi) || h < 0 || h > 23 || mi < 0 || mi > 59)
+          return null;
         return h * 60 + mi;
       };
 
@@ -101,7 +100,8 @@ export class RemindersScheduler implements OnModuleInit {
       const prefs = res.rows?.[0]?.preferences;
       const tz = prefs?.timezone;
       if (typeof tz === 'string' && tz.trim()) return tz.trim();
-    } catch {
+    } catch (err) {
+      console.warn('[RemindersScheduler] getUserTimezone failed', { userId, error: String(err) });
     }
     return 'UTC';
   }
@@ -196,7 +196,9 @@ export class RemindersScheduler implements OnModuleInit {
                 }
               })()
             : offsetsRaw && typeof offsetsRaw === 'object'
-              ? (Array.isArray((offsetsRaw as any)) ? (offsetsRaw as any) : [])
+              ? Array.isArray(offsetsRaw as any)
+                ? (offsetsRaw as any)
+                : []
               : [];
 
         const defaultOffset = Number(r.default_offset);
@@ -272,7 +274,8 @@ export class RemindersScheduler implements OnModuleInit {
 
         const dueAt = new Date(r.due_at);
         const defaultOffset = Number(r.default_offset);
-        const effectiveOffsets = Number.isFinite(defaultOffset) && defaultOffset >= 0 ? [defaultOffset] : [180];
+        const effectiveOffsets =
+          Number.isFinite(defaultOffset) && defaultOffset >= 0 ? [defaultOffset] : [180];
 
         for (const offMin of effectiveOffsets) {
           const off = Number(offMin);

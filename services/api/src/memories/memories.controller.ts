@@ -32,11 +32,7 @@ export class MemoriesController {
 
   @Get('search')
   @ApiOperation({ summary: 'Search memories by relevance (full-text)' })
-  async search(
-    @Req() req: AuthedRequest,
-    @Query('q') q?: string,
-    @Query('limit') limit?: string,
-  ) {
+  async search(@Req() req: AuthedRequest, @Query('q') q?: string, @Query('limit') limit?: string) {
     const n = limit ? Number(limit) : undefined;
     return this.memoriesService.getRelevantMemories(
       req.user.id,
@@ -55,5 +51,14 @@ export class MemoriesController {
     const key = String(body?.key || '').trim();
     const value = (body as any)?.value;
     return this.memoriesService.createMemory(req.user.id, category, key, value);
+  }
+
+  @Post('save')
+  @ApiOperation({ summary: 'Save memory (stub convenience endpoint)' })
+  async save(@Req() req: AuthedRequest, @Body() body: { content: string; category: string }) {
+    const category = String(body?.category || '').trim() || 'general';
+    const content = String(body?.content || '').trim();
+    const key = `note_${Date.now()}`;
+    return this.memoriesService.createMemory(req.user.id, category, key, { content });
   }
 }

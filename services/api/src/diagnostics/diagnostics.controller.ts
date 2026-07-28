@@ -168,6 +168,8 @@ export class DiagnosticsController {
   }
 
   @Get('llm')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Diagnostics: LLM endpoint reachability' })
   async llm() {
     const endpoint =
@@ -221,6 +223,8 @@ export class DiagnosticsController {
   }
 
   @Get('llm-intent')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Diagnostics: LLM intent engine reachability (Qwen split)' })
   async llmIntent() {
     const intentModelLabel =
@@ -230,7 +234,8 @@ export class DiagnosticsController {
     const qwenBaseUrl = this.configService.get<string>('QWEN_BASE_URL');
     const endpoint = qwenBaseUrl
       ? `${qwenBaseUrl.replace(/\/$/, '')}/chat/completions`
-      : this.configService.get<string>('LLM_ENDPOINT') || this.configService.get<string>('LOCAL_LLM_ENDPOINT');
+      : this.configService.get<string>('LLM_ENDPOINT') ||
+        this.configService.get<string>('LOCAL_LLM_ENDPOINT');
     const apiKey =
       this.configService.get<string>('LLM_API_KEY') ||
       this.configService.get<string>('LOCAL_LLM_API_KEY');
@@ -238,7 +243,8 @@ export class DiagnosticsController {
     const fallbackModel =
       this.configService.get<string>('LLM_MODEL') ||
       this.configService.get<string>('LOCAL_LLM_MODEL');
-    const model = intentModelLabel === 'qwen' ? qwenModel || fallbackModel : intentModelLabel || fallbackModel;
+    const model =
+      intentModelLabel === 'qwen' ? qwenModel || fallbackModel : intentModelLabel || fallbackModel;
 
     return this.probeChatCompletion({
       label: 'intent',
@@ -249,6 +255,8 @@ export class DiagnosticsController {
   }
 
   @Get('llm-chat')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Diagnostics: LLM chat engine reachability (Llama split)' })
   async llmChat() {
     const chatModelLabel =
@@ -258,7 +266,8 @@ export class DiagnosticsController {
     const llamaBaseUrl = this.configService.get<string>('LLAMA_BASE_URL');
     const endpoint = llamaBaseUrl
       ? `${llamaBaseUrl.replace(/\/$/, '')}/chat/completions`
-      : this.configService.get<string>('LLM_ENDPOINT') || this.configService.get<string>('LOCAL_LLM_ENDPOINT');
+      : this.configService.get<string>('LLM_ENDPOINT') ||
+        this.configService.get<string>('LOCAL_LLM_ENDPOINT');
     const apiKey =
       this.configService.get<string>('LLM_API_KEY') ||
       this.configService.get<string>('LOCAL_LLM_API_KEY');
@@ -266,7 +275,8 @@ export class DiagnosticsController {
     const fallbackModel =
       this.configService.get<string>('LLM_MODEL') ||
       this.configService.get<string>('LOCAL_LLM_MODEL');
-    const model = chatModelLabel === 'llama' ? llamaModel || fallbackModel : chatModelLabel || fallbackModel;
+    const model =
+      chatModelLabel === 'llama' ? llamaModel || fallbackModel : chatModelLabel || fallbackModel;
 
     return this.probeChatCompletion({
       label: 'chat',

@@ -46,14 +46,20 @@ export function detectEmotionHeuristic(text: string): EmotionSignal {
   const score = Math.min(1, 0.35 + evidence.length * 0.15);
 
   if (evidence.some((e) => e.includes('sad'))) return { label: 'sad', intensity: score, evidence };
-  if (evidence.some((e) => e.includes('anxious') || e.includes('overwhelmed'))) return { label: 'anxious', intensity: score, evidence };
-  if (evidence.some((e) => e.includes('confused'))) return { label: 'confused', intensity: score, evidence };
-  if (evidence.some((e) => e.includes('frustrated'))) return { label: 'frustrated', intensity: score, evidence };
+  if (evidence.some((e) => e.includes('anxious') || e.includes('overwhelmed')))
+    return { label: 'anxious', intensity: score, evidence };
+  if (evidence.some((e) => e.includes('confused')))
+    return { label: 'confused', intensity: score, evidence };
+  if (evidence.some((e) => e.includes('frustrated')))
+    return { label: 'frustrated', intensity: score, evidence };
 
   return { label: 'stressed', intensity: score, evidence };
 }
 
-export function emotionLeadSentence(language: SupportedLanguage, emotion: EmotionSignal): string | null {
+export function emotionLeadSentence(
+  language: SupportedLanguage,
+  emotion: EmotionSignal,
+): string | null {
   if (!emotion || emotion.label === 'calm' || emotion.intensity < 0.35) return null;
 
   if (language === 'es') {

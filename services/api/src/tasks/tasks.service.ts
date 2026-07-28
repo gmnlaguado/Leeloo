@@ -32,7 +32,9 @@ export class TasksService implements OnModuleInit {
     );
 
     await this.db.query('CREATE INDEX IF NOT EXISTS idx_tasks_user_due ON tasks (user_id, due_at)');
-    await this.db.query('CREATE INDEX IF NOT EXISTS idx_tasks_user_status ON tasks (user_id, status)');
+    await this.db.query(
+      'CREATE INDEX IF NOT EXISTS idx_tasks_user_status ON tasks (user_id, status)',
+    );
   }
 
   private async getProfileId(clerkUserId: string): Promise<string> {
@@ -58,9 +60,7 @@ export class TasksService implements OnModuleInit {
       params.push(filters.status);
     }
 
-    let query = `SELECT * FROM tasks WHERE ${conditions.join(
-      ' AND ',
-    )} ORDER BY created_at DESC`;
+    let query = `SELECT * FROM tasks WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`;
 
     if (filters?.limit) {
       query += ` LIMIT $${params.length + 1}`;
@@ -129,10 +129,10 @@ export class TasksService implements OnModuleInit {
     fields.push(`updated_at = NOW()`);
 
     if (fields.length === 0) {
-      const current = await this.db.query(
-        'SELECT * FROM tasks WHERE id = $1 AND user_id = $2',
-        [id, profileId],
-      );
+      const current = await this.db.query('SELECT * FROM tasks WHERE id = $1 AND user_id = $2', [
+        id,
+        profileId,
+      ]);
       return current.rows[0] || null;
     }
 
@@ -140,9 +140,7 @@ export class TasksService implements OnModuleInit {
     params.push(profileId);
     const query = `UPDATE tasks SET ${fields.join(
       ', ',
-    )} WHERE id = $${params.length - 1} AND user_id = $${
-      params.length
-    } RETURNING *`;
+    )} WHERE id = $${params.length - 1} AND user_id = $${params.length} RETURNING *`;
 
     const result = await this.db.query(query, params);
     return result.rows[0] || null;

@@ -21,7 +21,9 @@ export default function SettingsScreen() {
 
   const handleSignOut = async () => {
     await signOut();
-    router.replace('/(auth)/login');
+    // There is no dedicated auth/login route in this app — `/` (app/index.tsx)
+    // is the real unauthenticated entry point in the file-based router.
+    router.replace('/');
   };
 
   return (
@@ -39,7 +41,9 @@ export default function SettingsScreen() {
                 style={[styles.languageChip, selected && styles.languageChipSelected]}
                 onPress={() => setLanguage(lang)}
               >
-                <Text style={[styles.languageChipText, selected && styles.languageChipTextSelected]}>
+                <Text
+                  style={[styles.languageChipText, selected && styles.languageChipTextSelected]}
+                >
                   {lang.toUpperCase()}
                 </Text>
               </TouchableOpacity>

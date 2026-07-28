@@ -1,11 +1,15 @@
 import base64
+import hmac
 import os
 import re
 import subprocess
 import tempfile
-from typing import Optional
+import threading
+import time
+from collections import defaultdict, deque
+from typing import Dict, Deque, Optional
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Header, Request
 from pydantic import BaseModel
 
 
@@ -16,6 +20,72 @@ class TranscribeRequest(BaseModel):
 
 
 app = FastAPI()
+
+
+# --------------------------------------------------------------------------
+# Auth: shared-secret bearer token.
+#
+# This service is only meant to be called by trusted internal backends
+# (e.g. services/ai-orchestrator, services/api) and is internet-reachable
+# in production, so every route that does real work must require a
+# bearer token matching STT_SHARED_SECRET, checked in constant time.
+# --------------------------------------------------------------------------
+
+STT_SHARED_SECRET = os.environ.get("STT_SHARED_SECRET", "")
+
+
+def _require_auth(authorization: Optional[str]) -> None:
+    if not STT_SHARED_SECRET:
+        # Fail closed: if no secret is configured, refuse rather than
+        # silently accepting unauthenticated traffic.
+        raise HTTPException(status_code=503, detail="Service not configured")
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Missing or invalid Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = authorization[len("Bearer "):].strip()
+
+    if not hmac.compare_digest(token, STT_SHARED_SECRET):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+# --------------------------------------------------------------------------
+# Rate limiting: minimal in-memory sliding window, keyed by client IP.
+#
+# This is a single-instance service with no Redis wired in, so a simple
+# in-process limiter is enough to blunt cheap DoS / cost-abuse against the
+# expensive ffmpeg + whisper-cli pipeline (up to ~120s CPU per request).
+# --------------------------------------------------------------------------
+
+STT_RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("STT_RATE_LIMIT_MAX_REQUESTS", "10"))
+STT_RATE_LIMIT_WINDOW_SECONDS = float(os.environ.get("STT_RATE_LIMIT_WINDOW_SECONDS", "60"))
+
+_rate_limit_lock = threading.Lock()
+_rate_limit_hits: Dict[str, Deque[float]] = defaultdict(deque)
+
+
+def _check_rate_limit(client_ip: str) -> None:
+    now = time.monotonic()
+    cutoff = now - STT_RATE_LIMIT_WINDOW_SECONDS
+
+    with _rate_limit_lock:
+        hits = _rate_limit_hits[client_ip]
+
+        while hits and hits[0] < cutoff:
+            hits.popleft()
+
+        if len(hits) >= STT_RATE_LIMIT_MAX_REQUESTS:
+            raise HTTPException(status_code=429, detail="Too many requests")
+
+        hits.append(now)
 
 
 def _safe_language(lang: Optional[str]) -> Optional[str]:
@@ -29,9 +99,16 @@ def _safe_language(lang: Optional[str]) -> Optional[str]:
 
 @app.post("/v1/transcribe")
 def transcribe(
+    request: Request,
     file: UploadFile = File(...),
     language: Optional[str] = Form(None),
+    authorization: Optional[str] = Header(None),
 ):
+    _require_auth(authorization)
+
+    client_ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(client_ip)
+
     if not file:
         raise HTTPException(status_code=400, detail="Missing file")
 

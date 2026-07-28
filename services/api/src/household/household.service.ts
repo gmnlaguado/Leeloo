@@ -140,7 +140,10 @@ export class HouseholdService implements OnModuleInit {
 
   async deleteContact(clerkUserId: string, id: string): Promise<{ ok: boolean }> {
     const profileId = await this.getProfileId(clerkUserId);
-    await this.db.query('DELETE FROM household_contacts WHERE id = $1 AND user_id = $2', [id, profileId]);
+    await this.db.query('DELETE FROM household_contacts WHERE id = $1 AND user_id = $2', [
+      id,
+      profileId,
+    ]);
     return { ok: true };
   }
 

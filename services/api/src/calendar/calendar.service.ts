@@ -56,7 +56,9 @@ export class CalendarService implements OnModuleInit {
 
       const ensureColumn = async (name: string, typeSql: string) => {
         if (cols.has(name)) return;
-        await this.db.query(`ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS ${name} ${typeSql}`);
+        await this.db.query(
+          `ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS ${name} ${typeSql}`,
+        );
         cols.add(name);
       };
 
@@ -100,7 +102,11 @@ export class CalendarService implements OnModuleInit {
       }
 
       if (cols.has('remind_offsets_minutes')) {
-        const legacyOffsetCandidates = ['remind_offset_minutes', 'reminder_offset_minutes', 'reminder_offset'];
+        const legacyOffsetCandidates = [
+          'remind_offset_minutes',
+          'reminder_offset_minutes',
+          'reminder_offset',
+        ];
         const legacyOffset = legacyOffsetCandidates.find((c) => cols.has(c));
         if (legacyOffset) {
           await this.db.query(
@@ -183,7 +189,10 @@ export class CalendarService implements OnModuleInit {
 
   private async bestEffortGoogleSync(clerkUserId: string) {
     try {
-      const { token, profileId } = await this.integrationsService.getValidAccessToken(clerkUserId, 'google');
+      const { token, profileId } = await this.integrationsService.getValidAccessToken(
+        clerkUserId,
+        'google',
+      );
       if (!token) return;
 
       const metaRes = await this.integrationsService.getIntegrationMetadata(clerkUserId, 'google');
@@ -195,14 +204,18 @@ export class CalendarService implements OnModuleInit {
         if (Number.isFinite(lastMs) && Date.now() - lastMs < 60_000) return;
       }
 
-      const currentToken = typeof g?.sync_token === 'string' && g.sync_token.trim() ? g.sync_token.trim() : null;
+      const currentToken =
+        typeof g?.sync_token === 'string' && g.sync_token.trim() ? g.sync_token.trim() : null;
       const result = await this.googleCalendarService.syncPrimaryCalendarIncremental({
         profileId,
         accessToken: token,
         syncToken: currentToken,
       });
 
-      const nextToken = typeof (result as any)?.next_sync_token === 'string' ? (result as any).next_sync_token : null;
+      const nextToken =
+        typeof (result as any)?.next_sync_token === 'string'
+          ? (result as any).next_sync_token
+          : null;
       await this.integrationsService.patchIntegrationMetadata(profileId, 'google', {
         google: {
           ...(nextToken ? { sync_token: nextToken } : {}),
@@ -211,9 +224,14 @@ export class CalendarService implements OnModuleInit {
         },
       });
 
-      await this.integrationsService.markSynced(profileId, 'google', { google: { last_result: result } });
+      await this.integrationsService.markSynced(profileId, 'google', {
+        google: { last_result: result },
+      });
     } catch (e) {
-      console.warn('[LeelooApi] google auto-sync skipped/failed', { userId: clerkUserId, error: String((e as any)?.message || e) });
+      console.warn('[LeelooApi] google auto-sync skipped/failed', {
+        userId: clerkUserId,
+        error: String((e as any)?.message || e),
+      });
     }
   }
 
@@ -245,9 +263,10 @@ export class CalendarService implements OnModuleInit {
 
     const eventId = randomUUID();
 
-    const remindOffsets = Array.isArray(dto?.remind_offsets_minutes) && dto.remind_offsets_minutes.length
-      ? dto.remind_offsets_minutes
-      : [180];
+    const remindOffsets =
+      Array.isArray(dto?.remind_offsets_minutes) && dto.remind_offsets_minutes.length
+        ? dto.remind_offsets_minutes
+        : [180];
 
     let result;
     try {
@@ -305,7 +324,10 @@ export class CalendarService implements OnModuleInit {
         }
       }
     } catch (e) {
-      console.warn('[LeelooApi] calendar.google_push.create.failed', { userId: clerkUserId, error: String(e) });
+      console.warn('[LeelooApi] calendar.google_push.create.failed', {
+        userId: clerkUserId,
+        error: String(e),
+      });
     }
 
     console.log('[LeelooApi] calendar.event.created', {
@@ -337,9 +359,10 @@ export class CalendarService implements OnModuleInit {
     if (dto.priority !== undefined) setField('priority', dto.priority || null);
     if (dto.category !== undefined) setField('category', dto.category || null);
     if (dto.remind_offsets_minutes !== undefined) {
-      const remindOffsets = Array.isArray(dto.remind_offsets_minutes) && dto.remind_offsets_minutes.length
-        ? dto.remind_offsets_minutes
-        : [180];
+      const remindOffsets =
+        Array.isArray(dto.remind_offsets_minutes) && dto.remind_offsets_minutes.length
+          ? dto.remind_offsets_minutes
+          : [180];
       fields.push(`remind_offsets_minutes = $${params.length + 1}::jsonb`);
       params.push(JSON.stringify(remindOffsets));
     }
@@ -360,18 +383,26 @@ export class CalendarService implements OnModuleInit {
     const query = `UPDATE calendar_events SET ${fields.join(', ')} WHERE id = $$${params.length - 1} AND user_id = $${params.length} RETURNING *`;
     const result = await this.db.query(query, params);
 
-    let updatedRow = result.rows[0] || null;
+    const updatedRow = result.rows[0] || null;
 
     // Push updates to Google if this event is linked.
     try {
       if (updatedRow?.external_provider === 'google' && updatedRow?.external_id) {
         const { token } = await this.integrationsService.getValidAccessToken(clerkUserId, 'google');
         if (token) {
-          await this.googleCalendarService.updateGoogleEvent(token, String(updatedRow.external_id), updatedRow);
+          await this.googleCalendarService.updateGoogleEvent(
+            token,
+            String(updatedRow.external_id),
+            updatedRow,
+          );
         }
       }
     } catch (e) {
-      console.warn('[LeelooApi] calendar.google_push.update.failed', { userId: clerkUserId, event_id: id, error: String(e) });
+      console.warn('[LeelooApi] calendar.google_push.update.failed', {
+        userId: clerkUserId,
+        event_id: id,
+        error: String(e),
+      });
     }
 
     console.log('[LeelooApi] calendar.event.updated', {
@@ -498,13 +529,20 @@ export class CalendarService implements OnModuleInit {
       // Best-effort delete from Google if linked.
       try {
         if (deleted?.external_provider === 'google' && deleted?.external_id) {
-          const { token } = await this.integrationsService.getValidAccessToken(clerkUserId, 'google');
+          const { token } = await this.integrationsService.getValidAccessToken(
+            clerkUserId,
+            'google',
+          );
           if (token) {
             await this.googleCalendarService.deleteGoogleEvent(token, String(deleted.external_id));
           }
         }
       } catch (e) {
-        console.warn('[LeelooApi] calendar.google_push.delete.failed', { userId: clerkUserId, event_id: id, error: String(e) });
+        console.warn('[LeelooApi] calendar.google_push.delete.failed', {
+          userId: clerkUserId,
+          event_id: id,
+          error: String(e),
+        });
       }
 
       console.log('[LeelooApi] calendar.event.deleted', {
@@ -527,7 +565,8 @@ export class CalendarService implements OnModuleInit {
     const quietHours = dto?.quiet_hours !== undefined ? dto.quiet_hours : null;
     const language = dto?.language !== undefined ? String(dto.language || '') : null;
     const tone = dto?.tone !== undefined ? String(dto.tone || '') : null;
-    const expoPushToken = dto?.expo_push_token !== undefined ? String(dto.expo_push_token || '') : null;
+    const expoPushToken =
+      dto?.expo_push_token !== undefined ? String(dto.expo_push_token || '') : null;
 
     const res = await this.db.query(
       `INSERT INTO reminder_settings (

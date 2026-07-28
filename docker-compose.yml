@@ -1,4 +1,69 @@
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./services/api
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/v1/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./services/worker
+    # Headless BullMQ worker (NestJS application context, no HTTP listener —
+    # see services/worker/src/main.ts). Render's `type: worker` exposes no
+    # port, so no port mapping or HTTP healthcheck here.
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'node dist/main.js' || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  ai-orchestrator:
+    build:
+      context: ./services/ai-orchestrator
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: "3002"
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/v1/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   stt:
     build:
       context: ./services/stt
@@ -9,4 +74,9 @@ services:
     environment:
       WHISPER_MODEL_PATH: /models/ggml-base.bin
       WHISPER_THREADS: "4"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped

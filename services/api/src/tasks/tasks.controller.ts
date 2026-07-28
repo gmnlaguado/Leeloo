@@ -45,13 +45,21 @@ export class TasksController {
     });
   }
 
+  @Post('complete')
+  @ApiOperation({ summary: 'Complete a task by id or title (stub)' })
+  async completeTask(@Body() body: { task_id?: string; task_title?: string }) {
+    return {
+      ok: true,
+      mock: true,
+      completed: true,
+      task_id: body.task_id,
+      task_title: body.task_title,
+    };
+  }
+
   @Patch(':id')
   @ApiOperation({ summary: 'Update a task' })
-  async updateTask(
-    @Req() req: AuthedRequest,
-    @Param('id') id: string,
-    @Body() dto: UpdateTaskDto,
-  ) {
+  async updateTask(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: UpdateTaskDto) {
     return this.tasksService.updateTask(req.user.id, id, dto);
   }
 

@@ -29,9 +29,10 @@ export class GoogleCalendarService {
         dateTime: start.toISOString(),
       },
       end: {
-        dateTime: (end && !Number.isNaN(end.getTime()))
-          ? end.toISOString()
-          : new Date(start.getTime() + 30 * 60_000).toISOString(),
+        dateTime:
+          end && !Number.isNaN(end.getTime())
+            ? end.toISOString()
+            : new Date(start.getTime() + 30 * 60_000).toISOString(),
       },
     };
   }
@@ -306,7 +307,16 @@ export class GoogleCalendarService {
           location = EXCLUDED.location,
           notes = EXCLUDED.notes,
           updated_at = NOW()`,
-        [rowId, profileId, title, startAt.toISOString(), endAt ? endAt.toISOString() : null, location, notes, externalId],
+        [
+          rowId,
+          profileId,
+          title,
+          startAt.toISOString(),
+          endAt ? endAt.toISOString() : null,
+          location,
+          notes,
+          externalId,
+        ],
       );
 
       upserted += 1;

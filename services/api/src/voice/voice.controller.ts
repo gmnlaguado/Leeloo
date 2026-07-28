@@ -51,18 +51,57 @@ export class VoiceController {
       null;
 
     const normalizeLanguage = (raw: any) => {
-      const s = String(raw || '').trim().toLowerCase();
+      const s = String(raw || '')
+        .trim()
+        .toLowerCase();
       if (!s) return null;
-      if (s === 'es' || s.startsWith('es-') || s.includes('spanish') || s.includes('espanol') || s.includes('español')) return 'es';
-      if (s === 'en' || s.startsWith('en-') || s.includes('english') || s.includes('ingles') || s.includes('inglés')) return 'en';
-      if (s === 'pt' || s.startsWith('pt-') || s.includes('portuguese') || s.includes('portugues') || s.includes('português')) return 'pt';
-      if (s === 'fr' || s.startsWith('fr-') || s.includes('french') || s.includes('francais') || s.includes('français')) return 'fr';
-      if (s === 'ja' || s.startsWith('ja-') || s.includes('japanese') || s.includes('japon') || s.includes('japonés')) return 'ja';
+      if (
+        s === 'es' ||
+        s.startsWith('es-') ||
+        s.includes('spanish') ||
+        s.includes('espanol') ||
+        s.includes('español')
+      )
+        return 'es';
+      if (
+        s === 'en' ||
+        s.startsWith('en-') ||
+        s.includes('english') ||
+        s.includes('ingles') ||
+        s.includes('inglés')
+      )
+        return 'en';
+      if (
+        s === 'pt' ||
+        s.startsWith('pt-') ||
+        s.includes('portuguese') ||
+        s.includes('portugues') ||
+        s.includes('português')
+      )
+        return 'pt';
+      if (
+        s === 'fr' ||
+        s.startsWith('fr-') ||
+        s.includes('french') ||
+        s.includes('francais') ||
+        s.includes('français')
+      )
+        return 'fr';
+      if (
+        s === 'ja' ||
+        s.startsWith('ja-') ||
+        s.includes('japanese') ||
+        s.includes('japon') ||
+        s.includes('japonés')
+      )
+        return 'ja';
       return s;
     };
 
-    const requestedLanguage = (normalizeLanguage(dto?.user_context?.language || dto?.language) as any) || null;
-    const isSupported = (l: any) => l === 'es' || l === 'en' || l === 'pt' || l === 'fr' || l === 'ja';
+    const requestedLanguage =
+      (normalizeLanguage(dto?.user_context?.language || dto?.language) as any) || null;
+    const isSupported = (l: any) =>
+      l === 'es' || l === 'en' || l === 'pt' || l === 'fr' || l === 'ja';
 
     // Ensure profile exists first.
     // PREMIUM INVARIANT: client-provided dto.language must NOT overwrite persisted language.
@@ -97,7 +136,10 @@ export class VoiceController {
         if (displayName) return displayName;
         if (!email) return undefined;
         const local = email.split('@')[0] || '';
-        const cleaned = local.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
+        const cleaned = local
+          .replace(/[._-]+/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
         return cleaned || undefined;
       })();
 
@@ -111,7 +153,9 @@ export class VoiceController {
       // best effort only
     }
     const persistedLanguage = this.profilesService.getPreferredLanguage(profile);
-    const supportedRequestedLanguage = isSupported(requestedLanguage) ? (requestedLanguage as any) : null;
+    const supportedRequestedLanguage = isSupported(requestedLanguage)
+      ? (requestedLanguage as any)
+      : null;
 
     // Production invariant:
     // - Default is English.
@@ -147,10 +191,12 @@ export class VoiceController {
 
     const inferredChannel = audio ? 'VOICE' : 'TEXT';
     const explicitChannel = (dto.user_context as any)?.channel;
-    const channel = explicitChannel === 'VOICE' || explicitChannel === 'TEXT' ? explicitChannel : inferredChannel;
+    const channel =
+      explicitChannel === 'VOICE' || explicitChannel === 'TEXT' ? explicitChannel : inferredChannel;
 
     const roleFromUserContext = (dto.user_context as any)?.role;
-    const resolvedRole = dto.role || (typeof roleFromUserContext === 'string' ? roleFromUserContext : undefined);
+    const resolvedRole =
+      dto.role || (typeof roleFromUserContext === 'string' ? roleFromUserContext : undefined);
 
     const userContext = {
       ...(dto.user_context || {}),

@@ -24,7 +24,8 @@ export function computeSlotConfidence(params: {
   if (missing && missing.length > 0) return 0.4;
 
   // Minimal heuristics for critical slots.
-  const hasNonEmpty = (v: any) => typeof v === 'string' ? v.trim().length > 0 : v !== null && v !== undefined;
+  const hasNonEmpty = (v: any) =>
+    typeof v === 'string' ? v.trim().length > 0 : v !== null && v !== undefined;
 
   // For send_email, critical: to + body
   if (intentName === 'send_email') {

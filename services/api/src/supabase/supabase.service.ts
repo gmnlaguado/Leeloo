@@ -8,10 +8,24 @@ export class SupabaseService {
 
   constructor(private configService: ConfigService) {
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
-    const supabaseKey = this.configService.get<string>('SUPABASE_SERVICE_KEY');
+    const supabaseKey =
+      this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY') ||
+      // Back-compat: accept the old name for one release; warn loudly.
+      this.configService.get<string>('SUPABASE_SERVICE_KEY');
 
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Supabase configuration missing');
+      throw new Error(
+        'Supabase configuration missing (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY required)',
+      );
+    }
+
+    if (
+      !this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY') &&
+      this.configService.get<string>('SUPABASE_SERVICE_KEY')
+    ) {
+      console.warn(
+        '[SupabaseService] SUPABASE_SERVICE_KEY is deprecated. Rename it to SUPABASE_SERVICE_ROLE_KEY.',
+      );
     }
 
     this.supabase = createClient(supabaseUrl, supabaseKey);

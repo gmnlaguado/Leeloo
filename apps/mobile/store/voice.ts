@@ -1,8 +1,45 @@
 import { create } from 'zustand';
 import { Audio } from 'expo-av';
+import type { AVPlaybackStatus } from 'expo-av';
+import type { AudioMode } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { voiceAPI } from '@/lib/api';
 import { useSettingsStore } from '@/store/settings';
+
+type VoiceStatus = 'idle' | 'recording' | 'processing' | 'speaking' | 'awaiting_confirmation';
+
+type MemoryItem = {
+  id: string;
+  content: string;
+  category: string;
+  created_at: string;
+};
+
+type VoiceResponse = {
+  ok: boolean;
+  status?: 'awaiting_confirmation' | 'completed' | 'error';
+  assistant_text?: string;
+  tts_audio?: string | null;
+  intent?: string;
+  slots?: Record<string, string>;
+};
+
+type RawVoiceApiResponse = VoiceResponse & {
+  transcription?: string;
+  text?: string;
+  input_text?: string;
+  response?: string;
+  response_text?: string;
+  reply?: string;
+  message?: string;
+  tts?: { audio_base64?: string };
+  response_audio_url?: string;
+  audio_url?: string;
+  audioUrl?: string;
+  tts_url?: string;
+};
+
+export type { VoiceStatus, MemoryItem, VoiceResponse };
 
 const speakTextAndWait = async (text: string, language?: string) => {
   const trimmed = (text || '').trim();
@@ -23,7 +60,7 @@ const speakTextAndWait = async (text: string, language?: string) => {
         onDone: () => resolve(),
         onStopped: () => resolve(),
         onError: () => resolve(),
-      } as any);
+      });
     } catch {
       resolve();
     }
@@ -39,7 +76,7 @@ const playAudioUrl = async (uri: string) => {
       playsInSilentModeIOS: true,
       staysActiveInBackground: false,
       shouldDuckAndroid: true,
-    } as any);
+    } as AudioMode);
   } catch {
     // ignore
   }
@@ -58,11 +95,16 @@ const playAudioUrl = async (uri: string) => {
 
       sound.setOnPlaybackStatusUpdate((status) => {
         if (!status.isLoaded) {
-          settleOnce(() => reject(new Error((status as any).error || 'Audio not loaded')));
+          const s = status as AVPlaybackStatus;
+          const errMsg =
+            'error' in s && typeof (s as unknown as { error?: unknown }).error === 'string'
+              ? String((s as unknown as { error?: string }).error)
+              : 'Audio not loaded';
+          settleOnce(() => reject(new Error(errMsg)));
           return;
         }
 
-        if ((status as any).didJustFinish) {
+        if ('didJustFinish' in status && status.didJustFinish) {
           settleOnce(() => resolve());
         }
       });
@@ -84,12 +126,19 @@ const playAudioUrl = async (uri: string) => {
 interface VoiceState {
   isListening: boolean;
   isProcessing: boolean;
+  isSpeaking: boolean;
+  status: VoiceStatus;
   transcription: string;
   response: string;
   lastError: string | null;
+  awaitingConfirmation: boolean;
+  pendingConfirmationText: string;
+  pendingOriginalText: string;
   startListening: () => Promise<void>;
   stopListening: () => Promise<void>;
   sendText: (text: string) => Promise<void>;
+  confirm: () => Promise<void>;
+  cancel: () => Promise<void>;
   setProcessing: (value: boolean) => void;
   setTranscription: (text: string) => void;
   setResponse: (text: string) => void;
@@ -100,9 +149,14 @@ interface VoiceState {
 export const useVoiceStore = create<VoiceState>((set) => ({
   isListening: false,
   isProcessing: false,
+  isSpeaking: false,
+  status: 'idle',
   transcription: '',
   response: '',
   lastError: null,
+  awaitingConfirmation: false,
+  pendingConfirmationText: '',
+  pendingOriginalText: '',
   _recording: null,
 
   startListening: async () => {
@@ -118,15 +172,16 @@ export const useVoiceStore = create<VoiceState>((set) => ({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
         staysActiveInBackground: false,
-      } as any);
+      } as AudioMode);
 
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       await recording.startAsync();
 
-      set({ isListening: true, _recording: recording });
-    } catch (e: any) {
-      set({ lastError: e?.message || 'Failed to start recording.' });
+      set({ isListening: true, status: 'recording', _recording: recording });
+    } catch (e: unknown) {
+      const msg = (e as { message?: unknown } | null)?.message;
+      set({ lastError: typeof msg === 'string' ? msg : 'Failed to start recording.' });
     }
   },
 
@@ -134,8 +189,8 @@ export const useVoiceStore = create<VoiceState>((set) => ({
     let uri: string | null = null;
 
     try {
-      const recording = (useVoiceStore.getState() as any)._recording as Audio.Recording | null;
-      set({ isListening: false, _recording: null, lastError: null });
+      const recording = useVoiceStore.getState()._recording;
+      set({ isListening: false, status: 'processing', _recording: null, lastError: null });
 
       if (!recording) return;
 
@@ -149,30 +204,45 @@ export const useVoiceStore = create<VoiceState>((set) => ({
       set({ isProcessing: true });
       const language = useSettingsStore.getState().language;
       const res = await voiceAPI.processVoice(uri, { language });
-      const data = res?.data ?? {};
+      const data = (res?.data ?? {}) as RawVoiceApiResponse;
 
-      const transcription =
-        data.transcription ??
-        data.text ??
-        data.input_text ??
-        '';
+      const transcription = data.transcription ?? data.text ?? data.input_text ?? '';
+      const assistantText =
+        data.assistant_text ?? data.response ?? data.reply ?? data.message ?? '';
+      const status = data.status ?? 'ok';
 
-      const response =
-        data.response ??
-        data.response_text ??
-        data.reply ??
-        data.message ??
-        '';
+      if (status === 'awaiting_confirmation') {
+        set({
+          transcription,
+          response: assistantText,
+          awaitingConfirmation: true,
+          pendingConfirmationText: assistantText,
+          status: 'awaiting_confirmation',
+        });
+      } else {
+        set({
+          transcription,
+          response: assistantText,
+          awaitingConfirmation: false,
+          status: 'idle',
+        });
+      }
 
-      set({ transcription, response });
-
+      const audioBase64 = data?.tts?.audio_base64 || null;
       const audioUrl =
-        data.response_audio_url ??
-        data.audio_url ??
-        data.audioUrl ??
-        data.tts_url ??
-        null;
+        data.response_audio_url ?? data.audio_url ?? data.audioUrl ?? data.tts_url ?? null;
       let played = false;
+
+      if (audioBase64 && typeof audioBase64 === 'string') {
+        try {
+          const uri = `data:audio/mpeg;base64,${audioBase64}`;
+          await playAudioUrl(uri);
+          played = true;
+        } catch (err) {
+          console.log('[voice] audio(base64) playback failed:', String(err));
+        }
+      }
+
       if (audioUrl && typeof audioUrl === 'string') {
         try {
           await playAudioUrl(audioUrl);
@@ -183,22 +253,41 @@ export const useVoiceStore = create<VoiceState>((set) => ({
       }
 
       if (!played) {
-        await speakTextAndWait(response, language);
+        set({ isSpeaking: true, status: 'speaking' });
+        await speakTextAndWait(assistantText, language);
+        set({ isSpeaking: false, status: 'idle' });
       }
-    } catch (e: any) {
-      const status = e?.response?.status;
-      const data = e?.response?.data;
-      const msg = e?.message || 'Voice request failed.';
+    } catch (e: unknown) {
+      const err = e as {
+        response?: { status?: unknown; data?: unknown };
+        message?: unknown;
+      };
+      const status = err?.response?.status;
+      const data = err?.response?.data;
+      const msg = typeof err?.message === 'string' ? err.message : 'Voice request failed.';
 
       if (typeof status === 'number') {
-        let detail =
-          typeof data === 'string'
-            ? data
-            : data?.message || data?.error || JSON.stringify(data);
+        const asObj = (val: unknown): { message?: unknown; error?: unknown } | null => {
+          if (!val || typeof val !== 'object') return null;
+          return val as { message?: unknown; error?: unknown };
+        };
+
+        let detail = typeof data === 'string' ? data : '';
+        if (!detail) {
+          const o = asObj(data);
+          const msg = o?.message;
+          const errMsg = o?.error;
+          detail =
+            (typeof msg === 'string' && msg) ||
+            (typeof errMsg === 'string' && errMsg) ||
+            JSON.stringify(data);
+        }
 
         const isHtml =
           typeof detail === 'string' &&
-          (detail.includes('<!DOCTYPE html') || detail.includes('<html') || detail.includes('<head>'));
+          (detail.includes('<!DOCTYPE html') ||
+            detail.includes('<html') ||
+            detail.includes('<head>'));
 
         if (isHtml) {
           detail =
@@ -210,19 +299,31 @@ export const useVoiceStore = create<VoiceState>((set) => ({
         }
 
         set({ lastError: `HTTP ${status}: ${detail}` });
-        await speakTextAndWait('The voice service is temporarily unavailable. Please try again.', useSettingsStore.getState().language);
+        await speakTextAndWait(
+          'The voice service is temporarily unavailable. Please try again.',
+          useSettingsStore.getState().language,
+        );
       } else if (msg === 'Network Error') {
         set({
           lastError:
             'Network Error (audio upload): puede ser multipart en Expo Go o timeout. Verifica que el backend siga vivo y que el teléfono y PC estén en la misma red. Si sigue pasando, intenta de nuevo: ya cambiamos el upload a fetch para estabilizar.',
         });
-        await speakTextAndWait('Network error. Please try again.', useSettingsStore.getState().language);
+        await speakTextAndWait(
+          'Network error. Please try again.',
+          useSettingsStore.getState().language,
+        );
       } else {
         set({ lastError: msg });
-        await speakTextAndWait('Something went wrong. Please try again.', useSettingsStore.getState().language);
+        await speakTextAndWait(
+          'Something went wrong. Please try again.',
+          useSettingsStore.getState().language,
+        );
       }
     } finally {
       set({ isProcessing: false });
+      if (useVoiceStore.getState().status !== 'awaiting_confirmation') {
+        set({ status: 'idle' });
+      }
     }
   },
 
@@ -231,25 +332,46 @@ export const useVoiceStore = create<VoiceState>((set) => ({
     if (!trimmed) return;
 
     try {
-      set({ isProcessing: true, lastError: null, transcription: trimmed });
+      set({
+        isProcessing: true,
+        status: 'processing',
+        lastError: null,
+        transcription: trimmed,
+        pendingOriginalText: trimmed,
+      });
       const language = useSettingsStore.getState().language;
       const res = await voiceAPI.processText(trimmed, { language });
-      const data = res?.data ?? {};
-      const response =
-        data.response ??
-        data.response_text ??
-        data.reply ??
-        data.message ??
-        '';
-      set({ response });
+      const data = (res?.data ?? {}) as RawVoiceApiResponse;
 
+      const assistantText =
+        data.assistant_text ?? data.response ?? data.reply ?? data.message ?? '';
+      const status = data.status ?? 'ok';
+
+      if (status === 'awaiting_confirmation') {
+        set({
+          response: assistantText,
+          awaitingConfirmation: true,
+          pendingConfirmationText: assistantText,
+          status: 'awaiting_confirmation',
+        });
+      } else {
+        set({ response: assistantText, awaitingConfirmation: false, status: 'idle' });
+      }
+
+      const audioBase64 = data?.tts?.audio_base64 || null;
       const audioUrl =
-        data.response_audio_url ??
-        data.audio_url ??
-        data.audioUrl ??
-        data.tts_url ??
-        null;
+        data.response_audio_url ?? data.audio_url ?? data.audioUrl ?? data.tts_url ?? null;
       let played = false;
+
+      if (audioBase64 && typeof audioBase64 === 'string') {
+        try {
+          const uri = `data:audio/mpeg;base64,${audioBase64}`;
+          await playAudioUrl(uri);
+          played = true;
+        } catch (err) {
+          console.log('[voice] audio(base64) playback failed:', String(err));
+        }
+      }
       if (audioUrl && typeof audioUrl === 'string') {
         try {
           await playAudioUrl(audioUrl);
@@ -260,22 +382,41 @@ export const useVoiceStore = create<VoiceState>((set) => ({
       }
 
       if (!played) {
-        await speakTextAndWait(response, language);
+        set({ isSpeaking: true, status: 'speaking' });
+        await speakTextAndWait(assistantText, language);
+        set({ isSpeaking: false, status: 'idle' });
       }
-    } catch (e: any) {
-      const status = e?.response?.status;
-      const data = e?.response?.data;
-      const msg = e?.message || 'Text request failed.';
+    } catch (e: unknown) {
+      const err = e as {
+        response?: { status?: unknown; data?: unknown };
+        message?: unknown;
+      };
+      const status = err?.response?.status;
+      const data = err?.response?.data;
+      const msg = typeof err?.message === 'string' ? err.message : 'Text request failed.';
 
       if (typeof status === 'number') {
-        let detail =
-          typeof data === 'string'
-            ? data
-            : data?.message || data?.error || JSON.stringify(data);
+        const asObj = (val: unknown): { message?: unknown; error?: unknown } | null => {
+          if (!val || typeof val !== 'object') return null;
+          return val as { message?: unknown; error?: unknown };
+        };
+
+        let detail = typeof data === 'string' ? data : '';
+        if (!detail) {
+          const o = asObj(data);
+          const msg = o?.message;
+          const errMsg = o?.error;
+          detail =
+            (typeof msg === 'string' && msg) ||
+            (typeof errMsg === 'string' && errMsg) ||
+            JSON.stringify(data);
+        }
 
         const isHtml =
           typeof detail === 'string' &&
-          (detail.includes('<!DOCTYPE html') || detail.includes('<html') || detail.includes('<head>'));
+          (detail.includes('<!DOCTYPE html') ||
+            detail.includes('<html') ||
+            detail.includes('<head>'));
 
         if (isHtml) {
           detail =
@@ -287,24 +428,98 @@ export const useVoiceStore = create<VoiceState>((set) => ({
         }
 
         set({ lastError: `HTTP ${status}: ${detail}` });
-        await speakTextAndWait('The service is temporarily unavailable. Please try again.', useSettingsStore.getState().language);
+        await speakTextAndWait(
+          'The service is temporarily unavailable. Please try again.',
+          useSettingsStore.getState().language,
+        );
       } else if (msg === 'Network Error') {
         set({
           lastError:
             'Network Error: revisa EXPO_PUBLIC_API_URL (no uses localhost en el teléfono), que el backend esté corriendo y que el puerto no esté bloqueado por firewall.',
         });
-        await speakTextAndWait('Network error. Please try again.', useSettingsStore.getState().language);
+        await speakTextAndWait(
+          'Network error. Please try again.',
+          useSettingsStore.getState().language,
+        );
       } else {
         set({ lastError: msg });
-        await speakTextAndWait('Something went wrong. Please try again.', useSettingsStore.getState().language);
+        await speakTextAndWait(
+          'Something went wrong. Please try again.',
+          useSettingsStore.getState().language,
+        );
       }
     } finally {
       set({ isProcessing: false });
     }
   },
 
-  setProcessing: (value) => set({ isProcessing: value }),
-  setTranscription: (text) => set({ transcription: text }),
-  setResponse: (text) => set({ response: text }),
-  reset: () => set({ transcription: '', response: '', isProcessing: false, lastError: null }),
+  confirm: async () => {
+    const { pendingOriginalText } = useVoiceStore.getState();
+    if (!pendingOriginalText.trim()) return;
+
+    try {
+      set({ isProcessing: true, status: 'processing', lastError: null });
+      const language = useSettingsStore.getState().language;
+      const res = await voiceAPI.processText(pendingOriginalText, {
+        language,
+        confirmation: 'confirmed',
+      });
+      const data = (res?.data ?? {}) as RawVoiceApiResponse;
+      const assistantText =
+        data.assistant_text ?? data.response ?? data.reply ?? data.message ?? '';
+      set({ response: assistantText, awaitingConfirmation: false, pendingConfirmationText: '' });
+      await speakTextAndWait(assistantText, language);
+    } catch (e: unknown) {
+      const msg = (e as { message?: unknown } | null)?.message;
+      set({ lastError: typeof msg === 'string' ? msg : 'Confirmation failed.' });
+    } finally {
+      set({ isProcessing: false });
+      set({ status: 'idle' });
+    }
+  },
+
+  cancel: async () => {
+    const { pendingOriginalText } = useVoiceStore.getState();
+    if (!pendingOriginalText.trim()) {
+      set({ awaitingConfirmation: false, pendingConfirmationText: '' });
+      return;
+    }
+
+    try {
+      set({ isProcessing: true, status: 'processing', lastError: null });
+      const language = useSettingsStore.getState().language;
+      const res = await voiceAPI.processText(pendingOriginalText, {
+        language,
+        confirmation: 'cancel',
+      });
+      const data = (res?.data ?? {}) as RawVoiceApiResponse;
+      const assistantText =
+        data.assistant_text ?? data.response ?? data.reply ?? data.message ?? '';
+      set({ response: assistantText, awaitingConfirmation: false, pendingConfirmationText: '' });
+      await speakTextAndWait(assistantText, language);
+    } catch (e: unknown) {
+      const msg = (e as { message?: unknown } | null)?.message;
+      set({ lastError: typeof msg === 'string' ? msg : 'Cancel failed.' });
+    } finally {
+      set({ isProcessing: false });
+      set({ status: 'idle' });
+    }
+  },
+
+  setProcessing: (value: boolean) => set({ isProcessing: value }),
+  setTranscription: (text: string) => set({ transcription: text }),
+  setResponse: (text: string) => set({ response: text }),
+  reset: () =>
+    set({
+      isListening: false,
+      isProcessing: false,
+      isSpeaking: false,
+      transcription: '',
+      response: '',
+      lastError: null,
+      awaitingConfirmation: false,
+      pendingConfirmationText: '',
+      pendingOriginalText: '',
+      _recording: null,
+    }),
 }));

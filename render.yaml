@@ -1,0 +1,162 @@
+# Render Blueprint for Leeloo
+# https://render.com/docs/blueprint-spec
+# Deploy: connect repo to Render, click "New Blueprint Instance".
+# All env vars marked sync:false MUST be set manually in the Render dashboard.
+
+services:
+  # -------------------------------------------------------------------- API
+  - type: web
+    name: leeloo-api
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerContext: .
+    dockerfilePath: ./services/api/Dockerfile
+    healthCheckPath: /v1/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: AI_ORCHESTRATOR_URL
+        fromService:
+          type: web
+          name: leeloo-ai
+          property: hostport
+      - key: STT_URL
+        fromService:
+          type: web
+          name: leeloo-stt
+          property: hostport
+      - key: REDIS_URL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_JWKS_URL
+        sync: false
+      - key: CLERK_ISSUER
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: ENCRYPTION_KEY_VERSION
+        value: "1"
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_OAUTH_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: AZURE_SPEECH_KEY
+        sync: false
+      - key: AZURE_SPEECH_REGION
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: https://leeloo.app,https://www.leeloo.app
+
+  # ----------------------------------------------------------- AI Orchestrator
+  - type: web
+    name: leeloo-ai
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerContext: .
+    dockerfilePath: ./services/ai-orchestrator/Dockerfile
+    healthCheckPath: /v1/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3002"
+      - key: STT_URL
+        fromService:
+          type: web
+          name: leeloo-stt
+          property: hostport
+      - key: REDIS_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
+      - key: TTS_PROVIDER
+        value: elevenlabs
+      - key: AZURE_SPEECH_KEY
+        sync: false
+      - key: AZURE_SPEECH_REGION
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+
+  # ------------------------------------------------------------------- Worker
+  - type: worker
+    name: leeloo-worker
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerContext: .
+    dockerfilePath: ./services/worker/Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # NOTE: Render `type: worker` does not expose an HTTP port. The worker
+      # bootstrap uses createApplicationContext (no app.listen). PORT is left
+      # unset on purpose.
+      - key: REDIS_URL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: ENCRYPTION_KEY_VERSION
+        value: "1"
+      - key: EXPO_ACCESS_TOKEN
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+
+  # ---------------------------------------------------------------------- STT
+  - type: web
+    name: leeloo-stt
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerContext: ./services/stt
+    dockerfilePath: ./services/stt/Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: WHISPER_MODEL_PATH
+        value: /models/ggml-base.bin
+      - key: WHISPER_THREADS
+        value: "2"
+      - key: PORT
+        value: "9000"
+      - key: SENTRY_DSN
+        sync: false

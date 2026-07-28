@@ -1,15 +1,59 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Mic, MicOff } from 'lucide-react-native';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useVoiceStore } from '@/store/voice';
 import { VoiceButton } from '@/components/VoiceButton';
-import { TaskList } from '@/components/TaskList';
 import { MotivationalCard } from '@/components/MotivationalCard';
+import { useAuthStore } from '@/store/auth';
+import { useTasksStore } from '@/store/tasks';
+import { ChildRequestBanner } from '@/components/ChildRequestBanner';
+import { LeelooAvatar } from '@/components/LeelooAvatar';
+import { useRouter } from 'expo-router';
 
 export default function HomeScreen() {
   const { transcription, response, isProcessing, lastError, sendText } = useVoiceStore();
+  const isSpeaking = useVoiceStore((s) => s.isSpeaking);
+  const session = useAuthStore((s) => s.session);
+  const hydrateTasks = useTasksStore((s) => s.hydrate);
+  const tasks = useTasksStore((s) => s.tasks);
+  const router = useRouter();
   const [draft, setDraft] = useState('');
+
+  useEffect(() => {
+    hydrateTasks();
+  }, [hydrateTasks]);
+
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Buenos días';
+    if (hour < 18) return 'Buenas tardes';
+    return 'Buenas noches';
+  }, []);
+
+  const userMetadata = ((session as any)?.user?.user_metadata || undefined) as
+    | Record<string, unknown>
+    | undefined;
+
+  const name =
+    (typeof userMetadata?.full_name === 'string' && userMetadata.full_name.trim()
+      ? userMetadata.full_name
+      : undefined) ||
+    (typeof userMetadata?.name === 'string' && userMetadata.name.trim() ? userMetadata.name : '') ||
+    'mamá';
+
+  const upcoming = useMemo(() => {
+    const pending = (tasks || []).filter((t) => String(t.status || '') !== 'done');
+    const sorted = pending.sort((a, b) => {
+      const aMs = a.due_at ? new Date(a.due_at).getTime() : Infinity;
+      const bMs = b.due_at ? new Date(b.due_at).getTime() : Infinity;
+      return aMs - bMs;
+    });
+    return sorted.slice(0, 3);
+  }, [tasks]);
+
+  const pendingApprovalsCount = useMemo(() => {
+    return (tasks || []).filter((t) => String(t.status || '') === 'pending_approval').length;
+  }, [tasks]);
 
   const handleSend = async () => {
     const text = draft;
@@ -22,8 +66,20 @@ export default function HomeScreen() {
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.greeting}>Hola! 👋</Text>
-          <Text style={styles.subtitle}>¿Cómo puedo ayudarte hoy?</Text>
+          <View style={styles.headerRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.greeting}>
+                {greeting}, {name}
+              </Text>
+              <Text style={styles.subtitle}>¿Cómo puedo ayudarte hoy?</Text>
+            </View>
+            <LeelooAvatar active={isSpeaking} />
+          </View>
+
+          <ChildRequestBanner
+            count={pendingApprovalsCount}
+            onPress={() => router.push('/(tabs)/dashboard?tab=approvals')}
+          />
         </View>
 
         {/* Voice Button */}
@@ -60,7 +116,10 @@ export default function HomeScreen() {
             <TouchableOpacity
               onPress={handleSend}
               disabled={isProcessing || !draft.trim()}
-              style={[styles.sendButton, (isProcessing || !draft.trim()) && styles.sendButtonDisabled]}
+              style={[
+                styles.sendButton,
+                (isProcessing || !draft.trim()) && styles.sendButtonDisabled,
+              ]}
             >
               <Text style={styles.sendButtonText}>{isProcessing ? '...' : 'Send'}</Text>
             </TouchableOpacity>
@@ -72,8 +131,21 @@ export default function HomeScreen() {
 
         {/* Today's Tasks */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Today's Tasks</Text>
-          <TaskList limit={5} />
+          <Text style={styles.sectionTitle}>Próximas tareas</Text>
+          {upcoming.length === 0 ? (
+            <Text style={styles.emptyText}>No hay tareas pendientes.</Text>
+          ) : (
+            <View style={{ gap: 8 }}>
+              {upcoming.map((t) => (
+                <View key={t.id} style={styles.taskRow}>
+                  <Text style={styles.taskTitle}>{t.title}</Text>
+                  {!!t.due_at && (
+                    <Text style={styles.taskMeta}>{new Date(t.due_at).toLocaleDateString()}</Text>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Quick Actions */}
@@ -113,6 +185,11 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 30,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
   greeting: {
     fontSize: 32,
     fontWeight: 'bold',
@@ -132,19 +209,38 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     marginBottom: 16,
   },
-  quickActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+  emptyText: {
+    color: '#6B7280',
   },
-  actionCard: {
-    width: '48%',
+  taskRow: {
+    padding: 14,
+    borderRadius: 14,
     backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E5E7EB',
+  },
+  taskTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1a1a1a',
+  },
+  taskMeta: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  actionCard: {
+    flex: 1,
+    backgroundColor: '#f5f0ff',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    gap: 6,
   },
   actionEmoji: {
     fontSize: 32,

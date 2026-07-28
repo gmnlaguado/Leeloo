@@ -6,6 +6,7 @@ import * as Haptics from 'expo-haptics';
 
 export function VoiceButton() {
   const { isListening, isProcessing, startListening, stopListening } = useVoiceStore();
+  const isSpeaking = useVoiceStore((s) => s.isSpeaking);
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -24,12 +25,12 @@ export function VoiceButton() {
             duration: 800,
             useNativeDriver: true,
           }),
-        ])
+        ]),
       ).start();
     } else {
       pulseAnim.setValue(1);
     }
-  }, [isListening]);
+  }, [isListening, pulseAnim]);
 
   const handlePress = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -65,17 +66,19 @@ export function VoiceButton() {
           activeOpacity={0.8}
         >
           <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-            {isListening ? (
-              <MicOff size={40} color="#fff" />
-            ) : (
-              <Mic size={40} color="#fff" />
-            )}
+            {isListening ? <MicOff size={40} color="#fff" /> : <Mic size={40} color="#fff" />}
           </Animated.View>
         </TouchableOpacity>
       </Animated.View>
 
       <Text style={styles.label}>
-        {isProcessing ? 'Processing...' : isListening ? 'Listening...' : 'Tap to speak'}
+        {isSpeaking
+          ? 'Speaking...'
+          : isProcessing
+            ? 'Processing...'
+            : isListening
+              ? 'Recording...'
+              : 'Hey Leeloo'}
       </Text>
     </View>
   );

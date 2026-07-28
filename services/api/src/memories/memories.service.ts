@@ -29,8 +29,12 @@ export class MemoriesService implements OnModuleInit {
       )`,
     );
 
-    await this.db.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_user_key_unique ON memories (user_id, key)');
-    await this.db.query('CREATE INDEX IF NOT EXISTS idx_memories_user_last_used ON memories (user_id, last_used DESC)');
+    await this.db.query(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_user_key_unique ON memories (user_id, key)',
+    );
+    await this.db.query(
+      'CREATE INDEX IF NOT EXISTS idx_memories_user_last_used ON memories (user_id, last_used DESC)',
+    );
     await this.db.query(
       `CREATE INDEX IF NOT EXISTS idx_memories_fts ON memories
        USING GIN (to_tsvector('simple', coalesce(key,'') || ' ' || coalesce(category,'') || ' ' || coalesce(value::text,'')))`,
@@ -45,7 +49,8 @@ export class MemoriesService implements OnModuleInit {
         `UPDATE memories SET last_used = NOW(), updated_at = NOW() WHERE id = ANY($1::uuid[])`,
         [safeIds],
       );
-    } catch {
+    } catch (err) {
+      console.warn('[MemoriesService] touchMemories failed', { error: String(err) });
     }
   }
 
@@ -54,7 +59,7 @@ export class MemoriesService implements OnModuleInit {
       .trim()
       .toLowerCase()
       .replace(/\s+/g, '_')
-      .replace(/[^a-z0-9_:\-]/g, '')
+      .replace(/[^a-z0-9_:-]/g, '')
       .slice(0, 80);
   }
 
@@ -131,7 +136,8 @@ export class MemoriesService implements OnModuleInit {
     opts?: { prefix?: string; category?: string; limit?: number },
   ) {
     const profileId = await this.getProfileId(userId);
-    const limit = typeof opts?.limit === 'number' ? Math.max(1, Math.min(200, Math.floor(opts.limit))) : 50;
+    const limit =
+      typeof opts?.limit === 'number' ? Math.max(1, Math.min(200, Math.floor(opts.limit))) : 50;
     const prefix = typeof opts?.prefix === 'string' ? opts.prefix.trim() : '';
     const category = typeof opts?.category === 'string' ? opts.category.trim() : '';
 
@@ -191,7 +197,10 @@ export class MemoriesService implements OnModuleInit {
     return this.updateMemory(row.id, { category, value, confidence: 1.0 });
   }
 
-  async appendTurn(userId: string, turn: { user: string; assistant: string; language?: string; meta?: any }) {
+  async appendTurn(
+    userId: string,
+    turn: { user: string; assistant: string; language?: string; meta?: any },
+  ) {
     const key = `turn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     return this.createMemory(userId, 'conversation_turn', key, {
       user: turn.user,
@@ -202,7 +211,10 @@ export class MemoriesService implements OnModuleInit {
     });
   }
 
-  async setSessionSummary(userId: string, summary: { language?: string; assistant_name?: string; summary: string }) {
+  async setSessionSummary(
+    userId: string,
+    summary: { language?: string; assistant_name?: string; summary: string },
+  ) {
     return this.upsertMemoryByKey(userId, 'session', 'session_summary', {
       assistant_name: summary.assistant_name || 'Leeloo',
       ...(summary.language ? { language: summary.language } : {}),
@@ -215,7 +227,8 @@ export class MemoriesService implements OnModuleInit {
     const row = await this.getMemoryByKey(userId, 'session_summary');
     const value = row?.value;
     if (!value || typeof value !== 'object') return null;
-    const summary = typeof (value as any).summary === 'string' ? String((value as any).summary) : '';
+    const summary =
+      typeof (value as any).summary === 'string' ? String((value as any).summary) : '';
     return summary ? summary : null;
   }
 
@@ -268,9 +281,7 @@ export class MemoriesService implements OnModuleInit {
     params.push(id);
 
     const res = await this.db.query(
-      `UPDATE memories SET ${fields.join(', ')} WHERE id = $${
-        params.length
-      } RETURNING *`,
+      `UPDATE memories SET ${fields.join(', ')} WHERE id = $${params.length} RETURNING *`,
       params,
     );
     return res.rows[0];

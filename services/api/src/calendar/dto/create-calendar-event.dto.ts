@@ -40,7 +40,11 @@ export class CreateCalendarEventDto {
   @IsIn(['trabajo', 'salud', 'familia', 'finanzas', 'otros'])
   category?: 'trabajo' | 'salud' | 'familia' | 'finanzas' | 'otros';
 
-  @ApiProperty({ required: false, type: [Number], description: 'Minutes before start_at to trigger reminders. Default [180].' })
+  @ApiProperty({
+    required: false,
+    type: [Number],
+    description: 'Minutes before start_at to trigger reminders. Default [180].',
+  })
   @IsOptional()
   @IsArray()
   @IsInt({ each: true })

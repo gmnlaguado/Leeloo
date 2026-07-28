@@ -61,7 +61,12 @@ export class ExecutiveBrain {
       if (/\b(angry|furious|mad|upset|frustrated|stressed)\b/.test(text)) return 'stressed';
       if (/\b(sad|down|anxious|worried|depressed)\b/.test(text)) return 'negative';
       if (/\b(happy|great|good|excited)\b/.test(text)) return 'positive';
-      if (/\b(triste|ansioso|ansiosa|deprimido|preocupado|preocupada|estresado|estresada|frustrado|frustrada|enojado|enojada)\b/.test(text)) return 'negative';
+      if (
+        /\b(triste|ansioso|ansiosa|deprimido|preocupado|preocupada|estresado|estresada|frustrado|frustrada|enojado|enojada)\b/.test(
+          text,
+        )
+      )
+        return 'negative';
       return 'neutral';
     })();
 
@@ -76,7 +81,10 @@ export class ExecutiveBrain {
     };
   }
 
-  inferVoiceIntentLayer0(text: string, language: ExecutiveBrainContext['language']): ExecutiveIntent | null {
+  inferVoiceIntentLayer0(
+    text: string,
+    language: ExecutiveBrainContext['language'],
+  ): ExecutiveIntent | null {
     const raw = String(text || '').trim();
     if (!raw) return null;
 
@@ -90,7 +98,8 @@ export class ExecutiveBrain {
         .trim();
 
     const s = normalize(raw);
-    const hasAny = (haystack: string, phrases: string[]) => phrases.some((p) => haystack.includes(normalize(p)));
+    const hasAny = (haystack: string, phrases: string[]) =>
+      phrases.some((p) => haystack.includes(normalize(p)));
 
     const isGreeting = hasAny(s, ['hi', 'hello', 'hey', 'buenas', 'hola', 'holi', 'saludos']);
     if (isGreeting) {
@@ -114,10 +123,13 @@ export class ExecutiveBrain {
       'remind me',
       'reminder',
     ]);
-    const isHouseholdReminder = /\b(envia|enviar|manda|mandar)\s+(un\s+)?recordatorio\s+(a|para)\b/i.test(raw);
+    const isHouseholdReminder =
+      /\b(envia|enviar|manda|mandar)\s+(un\s+)?recordatorio\s+(a|para)\b/i.test(raw);
     if (isHouseholdReminder) {
       const recipientQuery = (() => {
-        const m = raw.match(/\b(?:envia|enviar|manda|mandar)\s+(?:un\s+)?recordatorio\s+(?:a|para)\s+([^,]+)$/i);
+        const m = raw.match(
+          /\b(?:envia|enviar|manda|mandar)\s+(?:un\s+)?recordatorio\s+(?:a|para)\s+([^,]+)$/i,
+        );
         if (m && m[1]) return String(m[1]).trim();
         return '';
       })();
@@ -129,9 +141,14 @@ export class ExecutiveBrain {
       if (!String(filled.recipient_query || '').trim()) missing.push('recipient_query');
       missing.push('message');
 
-      const next_question = missing[0] === 'recipient_query'
-        ? (language === 'es' ? '¿A quién se lo envío? Dime el nombre o rol (ej. “mi papá”).' : 'Who should I send it to? Say the name or role.')
-        : (language === 'es' ? '¿Qué mensaje quieres que le envíe?' : 'What message should I send?');
+      const next_question =
+        missing[0] === 'recipient_query'
+          ? language === 'es'
+            ? '¿A quién se lo envío? Dime el nombre o rol (ej. “mi papá”).'
+            : 'Who should I send it to? Say the name or role.'
+          : language === 'es'
+            ? '¿Qué mensaje quieres que le envíe?'
+            : 'What message should I send?';
 
       return {
         intent: 'send_household_reminder',
@@ -147,7 +164,9 @@ export class ExecutiveBrain {
     }
     if (isReminderIntent) {
       const activity = (() => {
-        const m = raw.match(/(?:recordatorio|reminder|remind me to|recu[eé]rdame)\s*[:\-]?\s*(.+)$/i);
+        const m = raw.match(
+          /(?:recordatorio|reminder|remind me to|recu[eé]rdame)\s*[:-]?\s*(.+)$/i,
+        );
         if (m && m[1]) return String(m[1]).trim();
         return '';
       })();
@@ -159,9 +178,14 @@ export class ExecutiveBrain {
       if (!String(filled.activity || '').trim()) missing.push('activity');
       missing.push('start_at');
 
-      const next_question = missing[0] === 'activity'
-        ? (language === 'es' ? '¿Qué quieres que te recuerde?' : 'What should I remind you about?')
-        : (language === 'es' ? '¿Para cuándo? (di fecha y hora)' : 'When? (say date and time)');
+      const next_question =
+        missing[0] === 'activity'
+          ? language === 'es'
+            ? '¿Qué quieres que te recuerde?'
+            : 'What should I remind you about?'
+          : language === 'es'
+            ? '¿Para cuándo? (di fecha y hora)'
+            : 'When? (say date and time)';
 
       return {
         intent: 'reminder',
@@ -190,7 +214,9 @@ export class ExecutiveBrain {
     ]);
     if (isScheduleMeetingIntent) {
       const title = (() => {
-        const m = raw.match(/(?:evento|event|cita|reuni[oó]n|reunion|agenda|calendario|meeting|appointment)\s*[:\-]?\s*(.+)$/i);
+        const m = raw.match(
+          /(?:evento|event|cita|reuni[oó]n|reunion|agenda|calendario|meeting|appointment)\s*[:-]?\s*(.+)$/i,
+        );
         if (m && m[1]) return String(m[1]).trim();
         return '';
       })();
@@ -202,9 +228,14 @@ export class ExecutiveBrain {
       if (!String(filled.title || '').trim()) missing.push('title');
       missing.push('start_at');
 
-      const next_question = missing[0] === 'title'
-        ? (language === 'es' ? '¿Qué título le pongo al evento?' : "What's the event title?")
-        : (language === 'es' ? '¿Para cuándo es? (di fecha y hora)' : 'When is it? (say date and time)');
+      const next_question =
+        missing[0] === 'title'
+          ? language === 'es'
+            ? '¿Qué título le pongo al evento?'
+            : "What's the event title?"
+          : language === 'es'
+            ? '¿Para cuándo es? (di fecha y hora)'
+            : 'When is it? (say date and time)';
 
       return {
         intent: 'schedule_meeting',
@@ -241,7 +272,9 @@ export class ExecutiveBrain {
     );
     const langCandidate = (() => {
       if (langMatch && langMatch[2]) return String(langMatch[2]);
-      const m2 = s.match(/\b(en|in)\s+(english|ingles|inglés|spanish|espanol|español|portuguese|portugues|português|french|frances|francais|français|japanese|japones|japonés)\b/i);
+      const m2 = s.match(
+        /\b(en|in)\s+(english|ingles|inglés|spanish|espanol|español|portuguese|portugues|português|french|frances|francais|français|japanese|japones|japonés)\b/i,
+      );
       if (m2 && m2[2]) return String(m2[2]);
       return '';
     })();
@@ -249,12 +282,20 @@ export class ExecutiveBrain {
     if (wantsLanguageChange || langCandidate) {
       const cand = normalize(langCandidate || s);
       const lang =
-        cand.includes('english') || cand.includes('ingles') ? 'en' :
-        cand.includes('spanish') || cand.includes('espanol') ? 'es' :
-        cand.includes('portuguese') || cand.includes('portugues') ? 'pt' :
-        cand.includes('french') || cand.includes('francais') || cand.includes('frances') ? 'fr' :
-        cand.includes('japanese') || cand.includes('japones') || cand.includes(' nihongo ') || cand === 'ja' ? 'ja' :
-        null;
+        cand.includes('english') || cand.includes('ingles')
+          ? 'en'
+          : cand.includes('spanish') || cand.includes('espanol')
+            ? 'es'
+            : cand.includes('portuguese') || cand.includes('portugues')
+              ? 'pt'
+              : cand.includes('french') || cand.includes('francais') || cand.includes('frances')
+                ? 'fr'
+                : cand.includes('japanese') ||
+                    cand.includes('japones') ||
+                    cand.includes(' nihongo ') ||
+                    cand === 'ja'
+                  ? 'ja'
+                  : null;
 
       if (lang) {
         return {
@@ -287,7 +328,7 @@ export class ExecutiveBrain {
       if (email) filled.to = email;
 
       const body = (() => {
-        const m = raw.match(/(?:that says|saying|que diga|diciendo|mensaje|body)\s*[:\-]?\s*(.+)$/i);
+        const m = raw.match(/(?:that says|saying|que diga|diciendo|mensaje|body)\s*[:-]?\s*(.+)$/i);
         if (m && m[1]) return String(m[1]).trim();
         const m2 = raw.match(/(?:say|di|diga)\s+(.+)$/i);
         if (m2 && m2[1]) return String(m2[1]).trim();
@@ -308,7 +349,7 @@ export class ExecutiveBrain {
         if (missing[0] === 'body') {
           return language === 'es'
             ? '¿Qué quieres que diga el correo? Dímelo tal cual y lo mando.'
-            : "What should the email say? Tell me exactly and I’ll send it.";
+            : 'What should the email say? Tell me exactly and I’ll send it.';
         }
         return '';
       })();
@@ -336,7 +377,7 @@ export class ExecutiveBrain {
     ]);
     if (isTaskIntent) {
       const title = (() => {
-        const m = raw.match(/(?:task|tarea|remind me to|recu[eé]rdame)\s*[:\-]?\s*(.+)$/i);
+        const m = raw.match(/(?:task|tarea|remind me to|recu[eé]rdame)\s*[:-]?\s*(.+)$/i);
         if (m && m[1]) return String(m[1]).trim();
         return '';
       })();
@@ -348,7 +389,9 @@ export class ExecutiveBrain {
       if (!filled.title) missing.push('title');
 
       const next_question = missing.length
-        ? (language === 'es' ? '¿Cuál es el título de la tarea?' : "What's the task title?")
+        ? language === 'es'
+          ? '¿Cuál es el título de la tarea?'
+          : "What's the task title?"
         : '';
 
       return {
@@ -423,7 +466,11 @@ export class ExecutiveBrain {
     let out = String(raw || '').trim();
     if (!out) return '';
 
-    out = out.replace(/\n{2,}/g, '\n').replace(/\s+\n/g, '\n').replace(/\n\s+/g, '\n').trim();
+    out = out
+      .replace(/\n{2,}/g, '\n')
+      .replace(/\s+\n/g, '\n')
+      .replace(/\n\s+/g, '\n')
+      .trim();
     out = out.replace(/\n+/g, ' ');
     out = out.replace(/\s+/g, ' ').trim();
 

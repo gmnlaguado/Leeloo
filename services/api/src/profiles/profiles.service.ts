@@ -21,32 +21,30 @@ export class ProfilesService {
     return true;
   }
 
-  getConversationState(profile: any):
-    | {
-        preferred_language?: SupportedLanguage;
-        mode?: 'conversation' | 'action';
-        system_on?: boolean;
-        intent_state?:
-          | 'NONE'
-          | 'DETECTED'
-          | 'PENDING'
-          | 'AWAITING_CONFIRMATION'
-          | 'CONFIRMED'
-          | 'EXECUTING'
-          | 'EXECUTED'
-          | 'DONE';
-        assistant_name?: string;
-        current_goal?: string;
-        last_question?: string;
-        last_intent?: string;
-        last_action?: string;
-        pending_intent?: any;
-        pending_slots?: any;
-        missing_slots?: string[];
-        next_question?: string;
-        updated_at?: string;
-      }
-    | null {
+  getConversationState(profile: any): {
+    preferred_language?: SupportedLanguage;
+    mode?: 'conversation' | 'action';
+    system_on?: boolean;
+    intent_state?:
+      | 'NONE'
+      | 'DETECTED'
+      | 'PENDING'
+      | 'AWAITING_CONFIRMATION'
+      | 'CONFIRMED'
+      | 'EXECUTING'
+      | 'EXECUTED'
+      | 'DONE';
+    assistant_name?: string;
+    current_goal?: string;
+    last_question?: string;
+    last_intent?: string;
+    last_action?: string;
+    pending_intent?: any;
+    pending_slots?: any;
+    missing_slots?: string[];
+    next_question?: string;
+    updated_at?: string;
+  } | null {
     const state = profile?.preferences?.conversation_state;
     return state && typeof state === 'object' ? state : null;
   }
@@ -59,7 +57,13 @@ export class ProfilesService {
     }
 
     const locale = profile?.locale;
-    if (locale === 'es' || locale === 'en' || locale === 'pt' || locale === 'fr' || locale === 'ja') {
+    if (
+      locale === 'es' ||
+      locale === 'en' ||
+      locale === 'pt' ||
+      locale === 'fr' ||
+      locale === 'ja'
+    ) {
       return locale;
     }
 
@@ -97,9 +101,10 @@ export class ProfilesService {
     identity: { display_name?: string; reply_to_email?: string; nickname?: string },
   ) {
     const existing = await this.ensureProfileByClerkUserId(clerkUserId);
-    const current = (existing?.preferences?.user_identity && typeof existing.preferences.user_identity === 'object')
-      ? existing.preferences.user_identity
-      : {};
+    const current =
+      existing?.preferences?.user_identity && typeof existing.preferences.user_identity === 'object'
+        ? existing.preferences.user_identity
+        : {};
 
     const next = {
       ...current,
@@ -119,6 +124,37 @@ export class ProfilesService {
        WHERE clerk_user_id = $2
        RETURNING *`,
       [JSON.stringify(patch), clerkUserId],
+    );
+    return res.rows[0] || null;
+  }
+
+  async updateDirectColumns(
+    clerkUserId: string,
+    cols: Partial<{
+      leeloo_personality: string;
+      leeloo_name: string;
+      christian_mode: boolean;
+      preferred_language: string;
+    }>,
+  ) {
+    const allowed = ['leeloo_personality', 'leeloo_name', 'christian_mode', 'preferred_language'];
+    const sets: string[] = [];
+    const values: any[] = [];
+    let i = 1;
+    for (const key of allowed) {
+      if (key in cols && (cols as any)[key] !== undefined) {
+        sets.push(`${key} = $${i++}`);
+        values.push((cols as any)[key]);
+      }
+    }
+    if (sets.length === 0) {
+      return this.getProfileByClerkUserId(clerkUserId);
+    }
+    sets.push(`updated_at = NOW()`);
+    values.push(clerkUserId);
+    const res = await this.db.query(
+      `UPDATE profiles SET ${sets.join(', ')} WHERE clerk_user_id = $${i} RETURNING *`,
+      values,
     );
     return res.rows[0] || null;
   }

@@ -15,10 +15,17 @@ export default function Index() {
     }, 1000);
 
     return () => clearTimeout(timeout);
-  }, [session, hasCompletedOnboarding]);
+  }, [router, session, hasCompletedOnboarding]);
 
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#8B5CF6' }}>
+    <View
+      style={{
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#8B5CF6',
+      }}
+    >
       <ActivityIndicator size="large" color="#fff" />
     </View>
   );

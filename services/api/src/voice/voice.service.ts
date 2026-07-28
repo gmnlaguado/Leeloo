@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import FormData = require('form-data');
+import FormData from 'form-data';
 import OpenAI from 'openai';
 import { toFile } from 'openai/uploads';
 import { TasksService } from '../tasks/tasks.service';
@@ -18,7 +18,6 @@ import { computeConfidence, computeSlotConfidence } from './core/confidence';
 import { decide } from './core/decision-engine';
 import { InputNormalizer } from './core/input-normalizer';
 import { ExecutiveSupervisor } from './core/executive-supervisor';
-import { FactIngestor } from './core/fact-ingestor';
 import { ExecutiveBrain } from './core/executive-brain';
 
 @Injectable()
@@ -127,19 +126,17 @@ export class VoiceService {
   private inferDeterministicIntent(
     text: string,
     language: SupportedLanguage,
-  ):
-    | {
-        intent: string;
-        language: SupportedLanguage | null;
-        confidence: number;
-        required_slots: string[];
-        filled_slots: Record<string, any>;
-        missing_slots: string[];
-        next_question: string;
-        priority: 'low' | 'medium' | 'high';
-        intent_source?: string;
-      }
-    | null {
+  ): {
+    intent: string;
+    language: SupportedLanguage | null;
+    confidence: number;
+    required_slots: string[];
+    filled_slots: Record<string, any>;
+    missing_slots: string[];
+    next_question: string;
+    priority: 'low' | 'medium' | 'high';
+    intent_source?: string;
+  } | null {
     const normalizeEmailSpeech = (input: string) => {
       // Normalize common dictated tokens so emails can be captured deterministically.
       // Examples:
@@ -236,7 +233,9 @@ export class VoiceService {
         diciembre: 12,
       };
 
-      const m = s.match(/\b(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/);
+      const m = s.match(
+        /\b(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/,
+      );
       if (!m) return null;
 
       const day = Number(m[1]);
@@ -280,18 +279,23 @@ export class VoiceService {
       return iso;
     };
 
-    const parsedStartAt = parseDateTimeIso(lower) || parseDateTimeSpanishBasic(lower) || parseRelativeDayTime(lower);
+    const parsedStartAt =
+      parseDateTimeIso(lower) || parseDateTimeSpanishBasic(lower) || parseRelativeDayTime(lower);
 
     const deleteTrigger =
       /\b(delete|remove|cancel)\b/.test(lower) ||
       /\b(elimina|borrar|borra|cancela|cancelar|quita)\b/.test(lower);
-    const hasEventWord = /\b(event|appointment|meeting|calendario|evento|cita|reunion|reuni[oó]n)\b/.test(lower);
+    const hasEventWord =
+      /\b(event|appointment|meeting|calendario|evento|cita|reunion|reuni[oó]n)\b/.test(lower);
 
     if (deleteTrigger && hasEventWord) {
       const titleQuery = raw
         .replace(/\b(delete|remove|cancel)\b\s*/i, '')
         .replace(/\b(elimina|borrar|borra|cancela|cancelar|quita)\b\s*/i, '')
-        .replace(/\b(event|appointment|meeting|calendario|evento|cita|reunion|reuni[oó]n)\b\s*/i, '')
+        .replace(
+          /\b(event|appointment|meeting|calendario|evento|cita|reunion|reuni[oó]n)\b\s*/i,
+          '',
+        )
         .trim();
 
       const filled: Record<string, any> = {};
@@ -300,9 +304,12 @@ export class VoiceService {
       const missing: string[] = [];
       if (!String(filled.title_query || '').trim()) missing.push('title_query');
 
-      const next_question = missing[0] === 'title_query'
-        ? (language === 'es' ? '¿Cuál evento quieres eliminar? Dime el título o una parte.' : 'Which event should I delete? Say the title or part of it.')
-        : '';
+      const next_question =
+        missing[0] === 'title_query'
+          ? language === 'es'
+            ? '¿Cuál evento quieres eliminar? Dime el título o una parte.'
+            : 'Which event should I delete? Say the title or part of it.'
+          : '';
 
       return {
         intent: 'delete_event',
@@ -327,7 +334,10 @@ export class VoiceService {
         .replace(/\b(reschedule|move|change|update)\b\s*/i, '')
         .replace(/\b(cambia|mueve|reprograma|reagenda)\b\s*/i, '')
         .replace(/\b(el|la)\b\s*/i, '')
-        .replace(/\b(event|appointment|meeting|calendario|evento|cita|reunion|reuni[oó]n)\b\s*/i, '')
+        .replace(
+          /\b(event|appointment|meeting|calendario|evento|cita|reunion|reuni[oó]n)\b\s*/i,
+          '',
+        )
         .replace(/\b(to|for|para)\b\s+.+$/i, '')
         .trim();
 
@@ -339,11 +349,16 @@ export class VoiceService {
       if (!String(filled.title_query || '').trim()) missing.push('title_query');
       if (!String(filled.start_at || '').trim()) missing.push('start_at');
 
-      const next_question = missing[0] === 'title_query'
-        ? (language === 'es' ? '¿Qué evento quieres cambiar? Dime el título o una parte.' : 'Which event do you want to change? Say the title or part of it.')
-        : missing[0] === 'start_at'
-          ? (language === 'es' ? '¿Para qué fecha y hora?' : 'What date and time?')
-          : '';
+      const next_question =
+        missing[0] === 'title_query'
+          ? language === 'es'
+            ? '¿Qué evento quieres cambiar? Dime el título o una parte.'
+            : 'Which event do you want to change? Say the title or part of it.'
+          : missing[0] === 'start_at'
+            ? language === 'es'
+              ? '¿Para qué fecha y hora?'
+              : 'What date and time?'
+            : '';
 
       return {
         intent: 'update_event_time',
@@ -377,8 +392,12 @@ export class VoiceService {
       if (!String(filled.start_at || '').trim()) missing.push('start_at');
 
       const next_question = (() => {
-        if (missing[0] === 'title') return language === 'es' ? '¿Qué título le pongo al evento?' : "What's the event title?";
-        if (missing[0] === 'start_at') return language === 'es' ? '¿Para cuándo es? (di fecha y hora)' : 'When is it? (say date and time)';
+        if (missing[0] === 'title')
+          return language === 'es' ? '¿Qué título le pongo al evento?' : "What's the event title?";
+        if (missing[0] === 'start_at')
+          return language === 'es'
+            ? '¿Para cuándo es? (di fecha y hora)'
+            : 'When is it? (say date and time)';
         return '';
       })();
 
@@ -402,7 +421,9 @@ export class VoiceService {
       /\b(fala|falar|idioma)\b/.test(lower) ||
       /\b(nihongo|日本語)\b/.test(lower) ||
       /\b(speak|habla|hablame)\b/.test(lower) ||
-      /\b(in|en)\s+(english|ingles|inglés|spanish|espanol|español|portuguese|portugues|portugues|french|frances|francais|japanese|japones|japonés|japonais|portugais|anglais)\b/.test(lower) ||
+      /\b(in|en)\s+(english|ingles|inglés|spanish|espanol|español|portuguese|portugues|portugues|french|frances|francais|japanese|japones|japonés|japonais|portugais|anglais)\b/.test(
+        lower,
+      ) ||
       /\b(en)\s+(francais|français|anglais|espagnol|portugais|japonais)\b/.test(lower);
 
     if (wantsLanguage) {
@@ -410,7 +431,9 @@ export class VoiceService {
         if (/\b(english|ingles|inglés)\b/.test(lower)) return 'en';
         if (/\b(spanish|espanol|español)\b/.test(lower)) return 'es';
         if (/\b(portuguese|portugues|portugues)\b/.test(lower)) return 'pt';
-        if (/\b(french|frances|francais|français|japonais|anglais|espagnol|portugais)\b/.test(lower)) {
+        if (
+          /\b(french|frances|francais|français|japonais|anglais|espagnol|portugais)\b/.test(lower)
+        ) {
           if (/\b(anglais)\b/.test(lower)) return 'en';
           if (/\b(espagnol)\b/.test(lower)) return 'es';
           if (/\b(portugais)\b/.test(lower)) return 'pt';
@@ -441,9 +464,7 @@ export class VoiceService {
     const hasEmail = Boolean(emailMatch && emailMatch[0]);
 
     const wantsEmail =
-      /\b(send|email|mail)\b/i.test(lower) ||
-      /\b(enviar|correo|mail)\b/i.test(lower) ||
-      hasEmail;
+      /\b(send|email|mail)\b/i.test(lower) || /\b(enviar|correo|mail)\b/i.test(lower) || hasEmail;
 
     if (wantsEmail) {
       const filled: Record<string, any> = {};
@@ -462,9 +483,7 @@ export class VoiceService {
         }
       }
 
-      const bodyCandidate = afterKeywords
-        .replace(/^\s*(?:a|para)\s+[^,;:]+\s*/i, '')
-        .trim();
+      const bodyCandidate = afterKeywords.replace(/^\s*(?:a|para)\s+[^,;:]+\s*/i, '').trim();
 
       // Premium rule: don't accidentally treat the recipient name/role as the email body.
       // Only fill body when it clearly contains message content.
@@ -531,9 +550,7 @@ export class VoiceService {
         filled.message = String(mEs[2]).trim();
       }
 
-      const mEn = rawNoPrefix.match(
-        /^\s*remind\s+(.+?)(?:\s+(?:to|that)\s+)(.+)$/i,
-      );
+      const mEn = rawNoPrefix.match(/^\s*remind\s+(.+?)(?:\s+(?:to|that)\s+)(.+)$/i);
       if (!filled.recipient_query && mEn?.[1]) filled.recipient_query = String(mEn[1]).trim();
       if (!filled.message && mEn?.[2]) filled.message = String(mEn[2]).trim();
 
@@ -584,9 +601,7 @@ export class VoiceService {
       if (!String(filled.title || '').trim()) missing.push('title');
 
       const next_question =
-        missing[0] === 'title'
-          ? this.buildMissingTaskTitleMessage(language)
-          : '';
+        missing[0] === 'title' ? this.buildMissingTaskTitleMessage(language) : '';
 
       return {
         intent: 'create_task',
@@ -734,13 +749,21 @@ export class VoiceService {
       this.configService.get<string>('STT_ENDPOINT') ||
       this.configService.get<string>('WHISPER_ENDPOINT');
 
-    const preferOpenAI = String(this.configService.get<string>('STT_PREFER_OPENAI') || 'true').toLowerCase() !== 'false';
+    const sttSharedSecret = this.configService.get<string>('STT_SHARED_SECRET');
+    const sttAuthHeaders = sttSharedSecret ? { Authorization: `Bearer ${sttSharedSecret}` } : {};
+
+    const preferOpenAI =
+      String(this.configService.get<string>('STT_PREFER_OPENAI') || 'true').toLowerCase() !==
+      'false';
 
     const fallbackOnEmptyGlobal =
-      String(this.configService.get<string>('STT_FALLBACK_ON_EMPTY') || 'false').toLowerCase() === 'true';
+      String(this.configService.get<string>('STT_FALLBACK_ON_EMPTY') || 'false').toLowerCase() ===
+      'true';
 
     const fallbackOnEmptyWake =
-      String(this.configService.get<string>('STT_FALLBACK_ON_EMPTY_WAKE') || 'true').toLowerCase() !== 'false';
+      String(
+        this.configService.get<string>('STT_FALLBACK_ON_EMPTY_WAKE') || 'true',
+      ).toLowerCase() !== 'false';
 
     const wakeWordOnly = Boolean((userContext as any)?.wake_word_only);
 
@@ -760,14 +783,45 @@ export class VoiceService {
 
       // Lightweight heuristic (no extra deps): sufficient to detect "obvious" Spanish.
       const esHits = [
-        ' el ', ' la ', ' los ', ' las ', ' un ', ' una ', ' por ', ' para ', ' con ', ' sin ',
-        ' que ', ' como ', ' pero ', ' porque ', ' entonces ', ' ahora ',
-        ' hola', ' gracias', ' por favor', ' necesito', ' quiero', ' puedes',
+        ' el ',
+        ' la ',
+        ' los ',
+        ' las ',
+        ' un ',
+        ' una ',
+        ' por ',
+        ' para ',
+        ' con ',
+        ' sin ',
+        ' que ',
+        ' como ',
+        ' pero ',
+        ' porque ',
+        ' entonces ',
+        ' ahora ',
+        ' hola',
+        ' gracias',
+        ' por favor',
+        ' necesito',
+        ' quiero',
+        ' puedes',
       ].reduce((acc, w) => acc + (t.includes(w) ? 1 : 0), 0);
 
       const enHits = [
-        ' the ', ' a ', ' an ', ' and ', ' or ', ' but ', ' because ', ' so ',
-        ' hello', ' thanks', ' please', ' i need', ' i want', ' can you',
+        ' the ',
+        ' a ',
+        ' an ',
+        ' and ',
+        ' or ',
+        ' but ',
+        ' because ',
+        ' so ',
+        ' hello',
+        ' thanks',
+        ' please',
+        ' i need',
+        ' i want',
+        ' can you',
       ].reduce((acc, w) => acc + (t.includes(w) ? 1 : 0), 0);
 
       if (esHits >= 3 && esHits > enHits) return 'es';
@@ -909,6 +963,7 @@ export class VoiceService {
               timeout: wakeWordOnly ? sttWakeTimeoutMs : 120000,
               headers: {
                 ...form.getHeaders(),
+                ...sttAuthHeaders,
               },
               maxBodyLength: Infinity,
               maxContentLength: Infinity,
@@ -927,6 +982,7 @@ export class VoiceService {
                   timeout: wakeWordOnly ? sttWakeTimeoutMs : 120000,
                   headers: {
                     ...form.getHeaders(),
+                    ...sttAuthHeaders,
                   },
                   maxBodyLength: Infinity,
                   maxContentLength: Infinity,
@@ -989,6 +1045,7 @@ export class VoiceService {
               timeout: wakeWordOnly ? sttWakeTimeoutMs : 120000,
               headers: {
                 ...form2.getHeaders(),
+                ...sttAuthHeaders,
               },
               maxBodyLength: Infinity,
               maxContentLength: Infinity,
@@ -1078,12 +1135,19 @@ export class VoiceService {
   async processIntent(
     clerkUserId: string,
     text?: string,
-    userContext?: { language?: string; faith_mode?: boolean; role?: string; channel?: 'VOICE' | 'TEXT'; role_policy?: any },
+    userContext?: {
+      language?: string;
+      faith_mode?: boolean;
+      role?: string;
+      channel?: 'VOICE' | 'TEXT';
+      role_policy?: any;
+    },
   ) {
     const t0 = Date.now();
     const requestId = (userContext as any)?.request_id || null;
     const wakeWordOnly = Boolean((userContext as any)?.wake_word_only);
-    const sttMs = typeof (userContext as any)?.stt_ms === 'number' ? Number((userContext as any).stt_ms) : null;
+    const sttMs =
+      typeof (userContext as any)?.stt_ms === 'number' ? Number((userContext as any).stt_ms) : null;
     const llmIntentMs: { v: number | null } = { v: null };
     const llmResponseMs: { v: number | null } = { v: null };
 
@@ -1091,12 +1155,15 @@ export class VoiceService {
       (this.configService.get<string>('LLM_CHAT_MODEL') ||
         this.configService.get<string>('LLM_MODEL') ||
         this.configService.get<string>('LOCAL_LLM_MODEL')) &&
-        (this.configService.get<string>('LLAMA_BASE_URL') ||
-          this.configService.get<string>('LLM_ENDPOINT') ||
-          this.configService.get<string>('LOCAL_LLM_ENDPOINT')),
+      (this.configService.get<string>('LLAMA_BASE_URL') ||
+        this.configService.get<string>('LLM_ENDPOINT') ||
+        this.configService.get<string>('LOCAL_LLM_ENDPOINT')),
     );
 
-    const emitMetrics = (intentObj: any, opts?: { fallback_used?: boolean; intent_source?: string | null }) => {
+    const emitMetrics = (
+      intentObj: any,
+      opts?: { fallback_used?: boolean; intent_source?: string | null },
+    ) => {
       try {
         const intentName = String((intentObj as any)?.intent || '');
         const intentSource =
@@ -1105,7 +1172,9 @@ export class VoiceService {
             : String((intentObj as any)?.intent_source || '') || null;
         const coreMatched = this.isCoreIntent(intentName);
         const fallbackUsed =
-          typeof opts?.fallback_used === 'boolean' ? opts.fallback_used : intentSource === 'fallback';
+          typeof opts?.fallback_used === 'boolean'
+            ? opts.fallback_used
+            : intentSource === 'fallback';
         const totalMs = Date.now() - t0;
         const routerMs = totalMs - (sttMs || 0);
         this.logVoiceMetrics({
@@ -1132,7 +1201,6 @@ export class VoiceService {
     const channel: 'VOICE' | 'TEXT' = (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
     const normalizer = new InputNormalizer();
     const supervisor = new ExecutiveSupervisor();
-    const factIngestor = new FactIngestor();
     const normalizeEmailSpeech = (input: string) => {
       let s = String(input || '');
 
@@ -1170,12 +1238,9 @@ export class VoiceService {
     const state = this.profilesService.getConversationState(profile);
 
     const conversationMode: 'conversation' | 'action' =
-      (state?.mode === 'action' || state?.mode === 'conversation')
-        ? state.mode
-        : 'conversation';
+      state?.mode === 'action' || state?.mode === 'conversation' ? state.mode : 'conversation';
 
     const isCancel = (raw: string) => normalizer.decisionToken(raw) === 'CANCEL';
-    const isConfirm = (raw: string) => normalizer.decisionToken(raw) === 'YES';
 
     const buildConfirmQuestion = (intentName: string, language: SupportedLanguage): string => {
       const i = String(intentName || '');
@@ -1219,7 +1284,10 @@ export class VoiceService {
         : 'Okay. Do you want me to do it now?';
     };
 
-    const buildSendEmailConfirmQuestion = (toEmail: string, language: SupportedLanguage): string => {
+    const buildSendEmailConfirmQuestion = (
+      toEmail: string,
+      language: SupportedLanguage,
+    ): string => {
       const to = String(toEmail || '').trim();
       if (language === 'es') {
         return to
@@ -1231,10 +1299,9 @@ export class VoiceService {
         : 'Do you confirm I should send it?';
     };
 
-    let language =
-      (this.profilesService.getPreferredLanguage(profile) ||
-        ((userContext?.language || 'en').toLowerCase() as any) ||
-        'en') as SupportedLanguage;
+    let language = (this.profilesService.getPreferredLanguage(profile) ||
+      ((userContext?.language || 'en').toLowerCase() as any) ||
+      'en') as SupportedLanguage;
 
     const persistTurn = async (assistantText: string, meta?: any) => {
       try {
@@ -1246,7 +1313,10 @@ export class VoiceService {
         });
 
         const existing = await this.memoriesService.getMemoryByKey(clerkUserId, 'session_summary');
-        const prev = (existing?.value && typeof existing.value === 'object') ? String(existing.value.summary || '') : '';
+        const prev =
+          existing?.value && typeof existing.value === 'object'
+            ? String(existing.value.summary || '')
+            : '';
         const addition = `User: ${cleanedText}\nAssistant: ${assistantText}`;
         const next = prev ? `${prev}\n\n${addition}` : addition;
         const trimmed = next.length > 2400 ? next.slice(next.length - 2400) : next;
@@ -1255,8 +1325,8 @@ export class VoiceService {
           language,
           summary: trimmed,
         });
-      } catch {
-        // best-effort
+      } catch (err) {
+        console.warn('[LeelooApi] persistTurn failed', { userId: clerkUserId, error: String(err) });
       }
     };
 
@@ -1270,7 +1340,8 @@ export class VoiceService {
       if (i === 'send_email') return ['identity', 'preferences', 'relationships'];
       if (i === 'create_task' || i === 'reminder') return ['identity', 'preferences'];
       if (i === 'daily_planning') return ['identity', 'preferences', 'household'];
-      if (i === 'emotional_expression' || i === 'emotional_support') return ['identity', 'preferences', 'relationships'];
+      if (i === 'emotional_expression' || i === 'emotional_support')
+        return ['identity', 'preferences', 'relationships'];
       return ['identity', 'preferences'];
     };
 
@@ -1334,7 +1405,11 @@ export class VoiceService {
       return { context, facts, sessionSummary, relevant };
     };
 
-    const buildExecutedResponse = (intentName: string, actionResult: any, language: SupportedLanguage) => {
+    const buildExecutedResponse = (
+      intentName: string,
+      actionResult: any,
+      language: SupportedLanguage,
+    ) => {
       const i = String(intentName || '');
       if (i === 'send_household_reminder') {
         const meta = (actionResult as any)?.metadata || {};
@@ -1362,15 +1437,15 @@ export class VoiceService {
           : 'I tried to send the email, but it failed. Want to try again?';
       }
       if (i === 'create_task') {
-        const title = String((actionResult as any)?.title || (actionResult as any)?.name || '').trim();
+        const title = String(
+          (actionResult as any)?.title || (actionResult as any)?.name || '',
+        ).trim();
         return language === 'es'
           ? `Listo. Creé la tarea${title ? `: "${title}"` : ''}.`
           : `Done. I created the task${title ? `: "${title}"` : ''}.`;
       }
       if (i === 'reminder') {
-        return language === 'es'
-          ? 'Listo. Ya quedó creado.'
-          : 'Done. It’s created.';
+        return language === 'es' ? 'Listo. Ya quedó creado.' : 'Done. It’s created.';
       }
 
       if (i === 'delete_event') {
@@ -1387,9 +1462,7 @@ export class VoiceService {
           : `Done. I updated the event${title ? `: "${title}"` : ''}.`;
       }
 
-      return language === 'es'
-        ? 'Listo.'
-        : 'Done.';
+      return language === 'es' ? 'Listo.' : 'Done.';
     };
 
     const getFactValue = (rows: any[], namespace: string, key: string) => {
@@ -1425,8 +1498,12 @@ export class VoiceService {
     const mealPlanningTrigger = (rawLower: string) => {
       const t = String(rawLower || '');
       return (
-        /\b(what\s+should\s+i\s+cook|what\s+can\s+i\s+cook|what\s+to\s+cook|dinner\s+ideas|lunch\s+ideas|meal\s+ideas)\b/.test(t) ||
-        /\b(no\s+se\s+que\s+hacer\s+de\s+comer|no\s+sé\s+qué\s+hacer\s+de\s+comer|que\s+cocino|qué\s+cocino|ideas\s+de\s+comida|ideas\s+para\s+cenar|ideas\s+para\s+almorzar)\b/.test(t)
+        /\b(what\s+should\s+i\s+cook|what\s+can\s+i\s+cook|what\s+to\s+cook|dinner\s+ideas|lunch\s+ideas|meal\s+ideas)\b/.test(
+          t,
+        ) ||
+        /\b(no\s+se\s+que\s+hacer\s+de\s+comer|no\s+sé\s+qué\s+hacer\s+de\s+comer|que\s+cocino|qué\s+cocino|ideas\s+de\s+comida|ideas\s+para\s+cenar|ideas\s+para\s+almorzar)\b/.test(
+          t,
+        )
       );
     };
 
@@ -1437,10 +1514,22 @@ export class VoiceService {
       dislikes?: string[] | null;
       language: SupportedLanguage;
     }) => {
-      const items = (params.items || []).map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
+      const items = (params.items || [])
+        .map((x) =>
+          String(x || '')
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean);
       const minutes = params.minutes;
       const diet = String(params.diet || '').toLowerCase();
-      const dislikes = (params.dislikes || []).map((x) => String(x || '').trim().toLowerCase()).filter(Boolean);
+      const dislikes = (params.dislikes || [])
+        .map((x) =>
+          String(x || '')
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean);
 
       const has = (w: string) => items.some((i) => i.includes(w));
       const hasAny = (ws: string[]) => ws.some((w) => has(w));
@@ -1451,7 +1540,23 @@ export class VoiceService {
       const chicken = hasAny(['chicken', 'pollo']);
       const pasta = hasAny(['pasta', 'spaghetti', 'macaroni']);
       const tuna = hasAny(['tuna', 'atun', 'atún']);
-      const veggies = hasAny(['tomato', 'tomatoes', 'onion', 'garlic', 'pepper', 'spinach', 'broccoli', 'zanahoria', 'tomate', 'cebolla', 'ajo', 'pimiento', 'espinaca', 'brocoli', 'brócoli']);
+      const veggies = hasAny([
+        'tomato',
+        'tomatoes',
+        'onion',
+        'garlic',
+        'pepper',
+        'spinach',
+        'broccoli',
+        'zanahoria',
+        'tomate',
+        'cebolla',
+        'ajo',
+        'pimiento',
+        'espinaca',
+        'brocoli',
+        'brócoli',
+      ]);
 
       const options: { title: string; why: string; steps: string }[] = [];
 
@@ -1467,19 +1572,27 @@ export class VoiceService {
         if (eggs && veggies && !disliked('egg')) {
           push({
             title: params.language === 'es' ? 'Veggie omelet' : 'Veggie omelet',
-            why: params.language === 'es' ? 'Rápido y usa lo que ya tienes.' : 'Fast and uses what you already have.',
-            steps: params.language === 'es'
-              ? 'Saltea verduras 3–4 min, agrega huevos batidos, cuaja y listo.'
-              : 'Sauté veggies 3–4 min, add beaten eggs, set, done.',
+            why:
+              params.language === 'es'
+                ? 'Rápido y usa lo que ya tienes.'
+                : 'Fast and uses what you already have.',
+            steps:
+              params.language === 'es'
+                ? 'Saltea verduras 3–4 min, agrega huevos batidos, cuaja y listo.'
+                : 'Sauté veggies 3–4 min, add beaten eggs, set, done.',
           });
         }
         if (tuna && pasta && !disliked('tuna')) {
           push({
             title: params.language === 'es' ? 'Pasta rápida con atún' : 'Quick tuna pasta',
-            why: params.language === 'es' ? '15 min, simple y con proteína.' : '15 min, simple, protein-friendly.',
-            steps: params.language === 'es'
-              ? 'Hierve pasta, mezcla con atún y un toque de aceite/ajo si hay.'
-              : 'Boil pasta, mix in tuna and a bit of oil/garlic if you have it.',
+            why:
+              params.language === 'es'
+                ? '15 min, simple y con proteína.'
+                : '15 min, simple, protein-friendly.',
+            steps:
+              params.language === 'es'
+                ? 'Hierve pasta, mezcla con atún y un toque de aceite/ajo si hay.'
+                : 'Boil pasta, mix in tuna and a bit of oil/garlic if you have it.',
           });
         }
       }
@@ -1488,30 +1601,40 @@ export class VoiceService {
         if (rice && eggs && veggies && !disliked('egg')) {
           push({
             title: params.language === 'es' ? 'Arroz frito simple' : 'Simple fried rice',
-            why: params.language === 'es' ? 'Rinde y aprovecha sobras.' : 'Filling and great for leftovers.',
-            steps: params.language === 'es'
-              ? 'Saltea verduras, agrega arroz y luego huevo. Sazona y listo.'
-              : 'Sauté veggies, add rice, then egg. Season and done.',
+            why:
+              params.language === 'es'
+                ? 'Rinde y aprovecha sobras.'
+                : 'Filling and great for leftovers.',
+            steps:
+              params.language === 'es'
+                ? 'Saltea verduras, agrega arroz y luego huevo. Sazona y listo.'
+                : 'Sauté veggies, add rice, then egg. Season and done.',
           });
         }
 
         if (!isVeg && chicken && rice && !disliked('chicken')) {
           push({
-            title: params.language === 'es' ? 'Pollo salteado con arroz' : 'Chicken stir-fry with rice',
+            title:
+              params.language === 'es' ? 'Pollo salteado con arroz' : 'Chicken stir-fry with rice',
             why: params.language === 'es' ? 'Balanceado y fácil.' : 'Balanced and easy.',
-            steps: params.language === 'es'
-              ? 'Dora pollo, agrega verduras si hay, sirve sobre arroz.'
-              : 'Brown chicken, add veggies if you have them, serve over rice.',
+            steps:
+              params.language === 'es'
+                ? 'Dora pollo, agrega verduras si hay, sirve sobre arroz.'
+                : 'Brown chicken, add veggies if you have them, serve over rice.',
           });
         }
 
         if (pasta && veggies) {
           push({
             title: params.language === 'es' ? 'Pasta con verduras' : 'Veggie pasta',
-            why: params.language === 'es' ? 'Flexible con lo que haya.' : 'Flexible with whatever you have.',
-            steps: params.language === 'es'
-              ? 'Hierve pasta, saltea verduras, mezcla y ajusta sal/pimienta.'
-              : 'Boil pasta, sauté veggies, toss, adjust salt/pepper.',
+            why:
+              params.language === 'es'
+                ? 'Flexible con lo que haya.'
+                : 'Flexible with whatever you have.',
+            steps:
+              params.language === 'es'
+                ? 'Hierve pasta, saltea verduras, mezcla y ajusta sal/pimienta.'
+                : 'Boil pasta, sauté veggies, toss, adjust salt/pepper.',
           });
         }
       }
@@ -1519,10 +1642,14 @@ export class VoiceService {
       if (options.length === 0) {
         push({
           title: params.language === 'es' ? 'Bowl simple' : 'Simple bowl',
-          why: params.language === 'es' ? 'No requiere receta: arma con lo que tengas.' : 'No recipe needed—assemble from what you have.',
-          steps: params.language === 'es'
-            ? 'Elige base (arroz/pasta), agrega proteína si hay y verduras. Sazona.'
-            : 'Pick a base (rice/pasta), add protein if you have it and veggies. Season.',
+          why:
+            params.language === 'es'
+              ? 'No requiere receta: arma con lo que tengas.'
+              : 'No recipe needed—assemble from what you have.',
+          steps:
+            params.language === 'es'
+              ? 'Elige base (arroz/pasta), agrega proteína si hay y verduras. Sazona.'
+              : 'Pick a base (rice/pasta), add protein if you have it and veggies. Season.',
         });
       }
 
@@ -1573,15 +1700,25 @@ export class VoiceService {
           last_action: undefined,
         } as any);
 
-        const responseText = language === 'es'
-          ? 'Ok. ¿Qué quieres hacer ahora?'
-          : 'Okay. What do you want to do now?';
+        const responseText =
+          language === 'es' ? 'Ok. ¿Qué quieres hacer ahora?' : 'Okay. What do you want to do now?';
         const audioUrl = await this.generateTTS(responseText, language);
-        await persistTurn(responseText, { executive_router: true, reason: 'awaiting_confirmation_without_pending_intent' });
-        emitMetrics({ intent: 'query', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
+        await persistTurn(responseText, {
+          executive_router: true,
+          reason: 'awaiting_confirmation_without_pending_intent',
+        });
+        emitMetrics(
+          { intent: 'query', intent_source: 'deterministic' },
+          { intent_source: 'deterministic', fallback_used: false },
+        );
         return {
           transcription: cleanedText,
-          intent: { intent: 'query', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
+          intent: {
+            intent: 'query',
+            confidence: 1,
+            decision: 'COACH',
+            original_text: cleanedText,
+          } as any,
           action_result: null,
           response_text: responseText,
           response_audio_url: audioUrl,
@@ -1603,15 +1740,29 @@ export class VoiceService {
           last_action: undefined,
         } as any);
 
-        const responseText = language === 'es'
-          ? 'Listo. No lo hago. ¿Qué quieres hacer ahora?'
-          : "Okay. I won't do it. What do you want to do now?";
+        const responseText =
+          language === 'es'
+            ? 'Listo. No lo hago. ¿Qué quieres hacer ahora?'
+            : "Okay. I won't do it. What do you want to do now?";
         const audioUrl = await this.generateTTS(responseText, language);
-        await persistTurn(responseText, { executive_router: true, intent: pendingName, token, canceled: true });
-        emitMetrics({ intent: 'cancel', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
+        await persistTurn(responseText, {
+          executive_router: true,
+          intent: pendingName,
+          token,
+          canceled: true,
+        });
+        emitMetrics(
+          { intent: 'cancel', intent_source: 'deterministic' },
+          { intent_source: 'deterministic', fallback_used: false },
+        );
         return {
           transcription: cleanedText,
-          intent: { intent: 'cancel', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
+          intent: {
+            intent: 'cancel',
+            confidence: 1,
+            decision: 'COACH',
+            original_text: cleanedText,
+          } as any,
           action_result: null,
           response_text: responseText,
           response_audio_url: audioUrl,
@@ -1636,7 +1787,12 @@ export class VoiceService {
         const actionResult = await this.executeIntent(clerkUserId, pendingIntent, language);
         const responseText = buildExecutedResponse(pendingName, actionResult, language);
         const audioUrl = await this.generateTTS(responseText, language);
-        await persistTurn(responseText, { executive_router: true, intent: pendingName, token, executed: true });
+        await persistTurn(responseText, {
+          executive_router: true,
+          intent: pendingName,
+          token,
+          executed: true,
+        });
 
         await this.profilesService.setConversationState(clerkUserId, {
           preferred_language: language,
@@ -1654,7 +1810,12 @@ export class VoiceService {
 
         return {
           transcription: cleanedText,
-          intent: { ...pendingIntent, confidence: 1, decision: 'ACTION', original_text: cleanedText } as any,
+          intent: {
+            ...pendingIntent,
+            confidence: 1,
+            decision: 'ACTION',
+            original_text: cleanedText,
+          } as any,
           action_result: actionResult,
           task_id: (actionResult as any)?.id || null,
           response_text: responseText,
@@ -1663,12 +1824,21 @@ export class VoiceService {
       }
 
       const confirmQ = buildConfirmQuestion(pendingName, language);
-      const responseText = language === 'es'
-        ? `${confirmQ} (Responde “sí” o “no”.)`
-        : `${confirmQ} (Answer “yes” or “no”.)`;
+      const responseText =
+        language === 'es'
+          ? `${confirmQ} (Responde “sí” o “no”.)`
+          : `${confirmQ} (Answer “yes” or “no”.)`;
       const audioUrl = await this.generateTTS(responseText, language);
-      await persistTurn(responseText, { executive_router: true, intent: pendingName, token, awaiting_confirmation: true });
-      emitMetrics({ intent: pendingName, intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
+      await persistTurn(responseText, {
+        executive_router: true,
+        intent: pendingName,
+        token,
+        awaiting_confirmation: true,
+      });
+      emitMetrics(
+        { intent: pendingName, intent_source: 'deterministic' },
+        { intent_source: 'deterministic', fallback_used: false },
+      );
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
         assistant_name: 'Leeloo',
@@ -1683,7 +1853,12 @@ export class VoiceService {
       } as any);
       return {
         transcription: cleanedText,
-        intent: { intent: 'awaiting_confirmation', confidence: 1, decision: 'QUESTION', original_text: cleanedText } as any,
+        intent: {
+          intent: 'awaiting_confirmation',
+          confidence: 1,
+          decision: 'QUESTION',
+          original_text: cleanedText,
+        } as any,
         action_result: null,
         response_text: responseText,
         response_audio_url: audioUrl,
@@ -1730,12 +1905,13 @@ export class VoiceService {
         });
 
         const responseText =
-          language === 'es'
-            ? 'Ya estoy contigo. Sigamos.'
-            : "I'm here. Let's continue.";
+          language === 'es' ? 'Ya estoy contigo. Sigamos.' : "I'm here. Let's continue.";
         const audioUrl = await this.generateTTS(responseText, language);
         await persistTurn(responseText, { system: 'wake', preserved_pending_flow: true });
-        emitMetrics({ intent: 'system_on', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
+        emitMetrics(
+          { intent: 'system_on', intent_source: 'deterministic' },
+          { intent_source: 'deterministic', fallback_used: false },
+        );
         return {
           transcription: cleanedText,
           intent: { intent: 'system_on', confidence: 1 },
@@ -1785,7 +1961,10 @@ export class VoiceService {
 
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { system: 'wake', has_name: Boolean(displayName) });
-      emitMetrics({ intent: 'system_on', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
+      emitMetrics(
+        { intent: 'system_on', intent_source: 'deterministic' },
+        { intent_source: 'deterministic', fallback_used: false },
+      );
       return {
         transcription: cleanedText,
         intent: { intent: 'system_on', confidence: 1 },
@@ -1809,7 +1988,10 @@ export class VoiceService {
             : "We're in the middle of something. Let's finish first.";
         const audioUrl = await this.generateTTS(responseText, language);
         await persistTurn(responseText, { system: 'sleep', ignored_due_to_pending_flow: true });
-        emitMetrics({ intent: 'system_off', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
+        emitMetrics(
+          { intent: 'system_off', intent_source: 'deterministic' },
+          { intent_source: 'deterministic', fallback_used: false },
+        );
         return {
           transcription: cleanedText,
           intent: { intent: 'system_off', confidence: 1 },
@@ -1857,7 +2039,10 @@ export class VoiceService {
       const responseText = language === 'es' ? pick(variantsEs) : pick(variantsEn);
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { system: 'sleep' });
-      emitMetrics({ intent: 'system_off', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
+      emitMetrics(
+        { intent: 'system_off', intent_source: 'deterministic' },
+        { intent_source: 'deterministic', fallback_used: false },
+      );
       return {
         transcription: cleanedText,
         intent: { intent: 'system_off', confidence: 1 },
@@ -1868,12 +2053,16 @@ export class VoiceService {
     }
 
     if (execDecision.kind === 'SYSTEM_OFF_BLOCK') {
-      const responseText = language === 'es'
-        ? 'Estoy en silencio. Si quieres que vuelva, di “Leeloo despierta”.'
-        : 'I’m quiet right now. If you want me back, say “Leeloo wake up”.';
+      const responseText =
+        language === 'es'
+          ? 'Estoy en silencio. Si quieres que vuelva, di “Leeloo despierta”.'
+          : 'I’m quiet right now. If you want me back, say “Leeloo wake up”.';
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { system: 'off' });
-      emitMetrics({ intent: 'system_off', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
+      emitMetrics(
+        { intent: 'system_off', intent_source: 'deterministic' },
+        { intent_source: 'deterministic', fallback_used: false },
+      );
       return {
         transcription: cleanedText,
         intent: { intent: 'system_off', confidence: 1 },
@@ -1884,15 +2073,24 @@ export class VoiceService {
     }
 
     if (execDecision.kind === 'BLOCK_EXECUTING') {
-      const responseText = language === 'es'
-        ? 'Dame un segundo: estoy terminando algo. ¿Quieres que lo cancele?' 
-        : "Give me a second—I’m finishing something. Do you want me to cancel it?";
+      const responseText =
+        language === 'es'
+          ? 'Dame un segundo: estoy terminando algo. ¿Quieres que lo cancele?'
+          : 'Give me a second—I’m finishing something. Do you want me to cancel it?';
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { executive_block: 'EXECUTING' });
-      emitMetrics({ intent: 'executing', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
+      emitMetrics(
+        { intent: 'executing', intent_source: 'deterministic' },
+        { intent_source: 'deterministic', fallback_used: false },
+      );
       return {
         transcription: cleanedText,
-        intent: { intent: 'executing', confidence: 1, decision: 'QUESTION', original_text: cleanedText } as any,
+        intent: {
+          intent: 'executing',
+          confidence: 1,
+          decision: 'QUESTION',
+          original_text: cleanedText,
+        } as any,
         action_result: null,
         response_text: responseText,
         response_audio_url: audioUrl,
@@ -1925,14 +2123,18 @@ export class VoiceService {
           last_intent: 'query',
           last_action: undefined,
         } as any);
-        const responseText = language === 'es'
-          ? 'Ok. ¿Qué quieres hacer ahora?'
-          : 'Okay. What do you want to do now?';
+        const responseText =
+          language === 'es' ? 'Ok. ¿Qué quieres hacer ahora?' : 'Okay. What do you want to do now?';
         const audioUrl = await this.generateTTS(responseText, language);
         await persistTurn(responseText, { executive_router: true, reason: 'no_pending_intent' });
         return {
           transcription: cleanedText,
-          intent: { intent: 'query', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
+          intent: {
+            intent: 'query',
+            confidence: 1,
+            decision: 'COACH',
+            original_text: cleanedText,
+          } as any,
           action_result: null,
           response_text: responseText,
           response_audio_url: audioUrl,
@@ -1961,14 +2163,20 @@ export class VoiceService {
           last_question: undefined,
           last_intent: pendingName,
         } as any);
-        const responseText = language === 'es'
-          ? 'Listo. No lo hago. ¿Qué quieres hacer ahora?'
-          : "Okay. I won't do it. What do you want to do now?";
+        const responseText =
+          language === 'es'
+            ? 'Listo. No lo hago. ¿Qué quieres hacer ahora?'
+            : "Okay. I won't do it. What do you want to do now?";
         const audioUrl = await this.generateTTS(responseText, language);
         await persistTurn(responseText, { intent: pendingName, cancel: true });
         return {
           transcription: cleanedText,
-          intent: { intent: 'cancel', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
+          intent: {
+            intent: 'cancel',
+            confidence: 1,
+            decision: 'COACH',
+            original_text: cleanedText,
+          } as any,
           action_result: null,
           response_text: responseText,
           response_audio_url: audioUrl,
@@ -1999,7 +2207,12 @@ export class VoiceService {
         const actionResult = await this.executeIntent(clerkUserId, pendingIntent, language);
         const responseText = buildExecutedResponse(pendingName, actionResult, language);
         const audioUrl = await this.generateTTS(responseText, language);
-        await persistTurn(responseText, { executive_router: true, intent: pendingName, token, executed: true });
+        await persistTurn(responseText, {
+          executive_router: true,
+          intent: pendingName,
+          token,
+          executed: true,
+        });
 
         console.log('[LeelooApi] intent_state.transition', {
           userId: clerkUserId,
@@ -2024,7 +2237,12 @@ export class VoiceService {
 
         return {
           transcription: cleanedText,
-          intent: { ...pendingIntent, confidence: 1, decision: 'ACTION', original_text: cleanedText } as any,
+          intent: {
+            ...pendingIntent,
+            confidence: 1,
+            decision: 'ACTION',
+            original_text: cleanedText,
+          } as any,
           action_result: actionResult,
           task_id: (actionResult as any)?.id || null,
           response_text: responseText,
@@ -2034,11 +2252,17 @@ export class VoiceService {
 
       // token OTHER: keep asking deterministically.
       const confirmQ = buildConfirmQuestion(pendingName, language);
-      const responseText = language === 'es'
-        ? `${confirmQ} (Responde “sí” o “no”.)`
-        : `${confirmQ} (Answer “yes” or “no”.)`;
+      const responseText =
+        language === 'es'
+          ? `${confirmQ} (Responde “sí” o “no”.)`
+          : `${confirmQ} (Answer “yes” or “no”.)`;
       const audioUrl = await this.generateTTS(responseText, language);
-      await persistTurn(responseText, { executive_router: true, intent: pendingName, token, awaiting_confirmation: true });
+      await persistTurn(responseText, {
+        executive_router: true,
+        intent: pendingName,
+        token,
+        awaiting_confirmation: true,
+      });
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
         assistant_name: 'Leeloo',
@@ -2083,7 +2307,10 @@ export class VoiceService {
       const responseText = this.buildSttFailureMessage(language);
       const audioUrl = await this.generateTTS(responseText, language);
 
-      emitMetrics({ intent: 'stt_failed', intent_source: 'deterministic' }, { intent_source: 'deterministic', fallback_used: false });
+      emitMetrics(
+        { intent: 'stt_failed', intent_source: 'deterministic' },
+        { intent_source: 'deterministic', fallback_used: false },
+      );
       return {
         transcription: '',
         intent: null,
@@ -2095,14 +2322,21 @@ export class VoiceService {
 
     // ExecutiveBrain v2: deterministic slot fill while an intent is pending.
     // This avoids calling Qwen again (big latency) when the user is answering a missing slot question.
-    if (state?.pending_intent && Array.isArray(state?.missing_slots) && state.missing_slots.length > 0) {
+    if (
+      state?.pending_intent &&
+      Array.isArray(state?.missing_slots) &&
+      state.missing_slots.length > 0
+    ) {
       const pendingIntent = state.pending_intent;
       const intentName = String(pendingIntent?.intent || '');
-      const missing = (state.missing_slots as string[]).map((s: any) => String(s || '')).filter(Boolean);
+      const missing = (state.missing_slots as string[])
+        .map((s: any) => String(s || ''))
+        .filter(Boolean);
       const firstMissing = missing[0] || '';
-      const filled = (pendingIntent?.filled_slots && typeof pendingIntent.filled_slots === 'object')
-        ? { ...(pendingIntent.filled_slots as any) }
-        : {};
+      const filled =
+        pendingIntent?.filled_slots && typeof pendingIntent.filled_slots === 'object'
+          ? { ...(pendingIntent.filled_slots as any) }
+          : {};
 
       let changed = false;
 
@@ -2130,15 +2364,25 @@ export class VoiceService {
           changed = true;
         }
 
-        if ((!String(filled.to || '').trim() || !isValidEmail(String(filled.to || '').trim())) && recipientQuery) {
+        if (
+          (!String(filled.to || '').trim() || !isValidEmail(String(filled.to || '').trim())) &&
+          recipientQuery
+        ) {
           try {
-            const contact = await this.householdService.findBestContactByNameOrRole(clerkUserId, recipientQuery);
+            const contact = await this.householdService.findBestContactByNameOrRole(
+              clerkUserId,
+              recipientQuery,
+            );
             const email = String((contact as any)?.email || '').trim();
             if (email && isValidEmail(email)) {
               filled.to = email;
               changed = true;
             }
-          } catch {
+          } catch (err) {
+            console.warn('[LeelooApi] send_email resolve recipient failed', {
+              userId: clerkUserId,
+              error: String(err),
+            });
           }
         }
       }
@@ -2166,7 +2410,8 @@ export class VoiceService {
           if (parsed?.intent === 'send_household_reminder') {
             const recip = String(parsed?.filled_slots?.recipient_query || '').trim();
             const msg = String(parsed?.filled_slots?.message || '').trim();
-            if (recip && !String(filled.recipient_query || '').trim()) filled.recipient_query = recip;
+            if (recip && !String(filled.recipient_query || '').trim())
+              filled.recipient_query = recip;
             if (msg) filled.message = msg;
           } else {
             filled.message = cleanedTrim;
@@ -2189,7 +2434,8 @@ export class VoiceService {
         }
         if (firstMissing === 'start_at') {
           const normalized = String(cleanedText || '').trim();
-          const parsed = this.inferDeterministicIntent(normalized, language)?.filled_slots?.start_at;
+          const parsed = this.inferDeterministicIntent(normalized, language)?.filled_slots
+            ?.start_at;
           filled.start_at = String(parsed || '').trim() || filled.start_at || '';
           if (String(filled.start_at || '').trim()) changed = true;
         }
@@ -2202,7 +2448,8 @@ export class VoiceService {
         }
         if (firstMissing === 'start_at') {
           const normalized = String(cleanedText || '').trim();
-          const parsed = this.inferDeterministicIntent(normalized, language)?.filled_slots?.start_at;
+          const parsed = this.inferDeterministicIntent(normalized, language)?.filled_slots
+            ?.start_at;
           filled.start_at = String(parsed || '').trim() || filled.start_at || '';
           if (String(filled.start_at || '').trim()) changed = true;
         }
@@ -2215,7 +2462,8 @@ export class VoiceService {
         }
         if (firstMissing === 'start_at') {
           const normalized = String(cleanedText || '').trim();
-          const parsed = this.inferDeterministicIntent(normalized, language)?.filled_slots?.start_at;
+          const parsed = this.inferDeterministicIntent(normalized, language)?.filled_slots
+            ?.start_at;
           filled.start_at = String(parsed || '').trim() || filled.start_at || '';
           if (String(filled.start_at || '').trim()) changed = true;
         }
@@ -2276,31 +2524,59 @@ export class VoiceService {
             typeof nextPending?.next_question === 'string' && nextPending.next_question.trim()
               ? nextPending.next_question.trim()
               : intentName === 'send_email' && nextMissing[0] === 'to'
-                ? (language === 'en' ? 'What email address should I send it to?' : '¿A qué correo quieres que lo envíe?')
+                ? language === 'en'
+                  ? 'What email address should I send it to?'
+                  : '¿A qué correo quieres que lo envíe?'
                 : intentName === 'send_email' && nextMissing[0] === 'body'
-                  ? (language === 'en' ? 'What should the email say?' : '¿Qué quieres que diga el correo?')
+                  ? language === 'en'
+                    ? 'What should the email say?'
+                    : '¿Qué quieres que diga el correo?'
                   : intentName === 'send_household_reminder' && nextMissing[0] === 'recipient_query'
-                    ? (language === 'en' ? 'Who should I send it to? Say the name or role.' : '¿A quién se lo envío? Dime el nombre o rol (ej. “mi papá”).')
+                    ? language === 'en'
+                      ? 'Who should I send it to? Say the name or role.'
+                      : '¿A quién se lo envío? Dime el nombre o rol (ej. “mi papá”).'
                     : intentName === 'send_household_reminder' && nextMissing[0] === 'message'
-                      ? (language === 'en' ? 'What message should I send?' : '¿Qué mensaje quieres que le envíe?')
-                  : intentName === 'reminder' && nextMissing[0] === 'activity'
-                    ? (language === 'en' ? 'What should I remind you about?' : '¿Qué quieres que te recuerde?')
-                    : intentName === 'reminder' && nextMissing[0] === 'start_at'
-                      ? (language === 'en' ? 'When should I remind you? (say date and time)' : '¿Para cuándo? (di fecha y hora)')
-                      : intentName === 'schedule_meeting' && nextMissing[0] === 'title'
-                        ? (language === 'en' ? "What's the event title?" : '¿Qué título le pongo al evento?')
-                        : intentName === 'schedule_meeting' && nextMissing[0] === 'start_at'
-                          ? (language === 'en' ? 'When is it? (say date and time)' : '¿Para cuándo es? (di fecha y hora)')
-                          : intentName === 'delete_event' && nextMissing[0] === 'title_query'
-                            ? (language === 'en' ? 'Which event should I delete? Say the title or part of it.' : '¿Cuál evento quieres eliminar? Dime el título o una parte.')
-                            : intentName === 'update_event_time' && nextMissing[0] === 'title_query'
-                              ? (language === 'en' ? 'Which event do you want to change? Say the title or part of it.' : '¿Qué evento quieres cambiar? Dime el título o una parte.')
-                              : intentName === 'update_event_time' && nextMissing[0] === 'start_at'
-                                ? (language === 'en' ? 'What date and time?' : '¿Para qué fecha y hora?')
-                          : this.buildMissingTaskTitleMessage(language);
+                      ? language === 'en'
+                        ? 'What message should I send?'
+                        : '¿Qué mensaje quieres que le envíe?'
+                      : intentName === 'reminder' && nextMissing[0] === 'activity'
+                        ? language === 'en'
+                          ? 'What should I remind you about?'
+                          : '¿Qué quieres que te recuerde?'
+                        : intentName === 'reminder' && nextMissing[0] === 'start_at'
+                          ? language === 'en'
+                            ? 'When should I remind you? (say date and time)'
+                            : '¿Para cuándo? (di fecha y hora)'
+                          : intentName === 'schedule_meeting' && nextMissing[0] === 'title'
+                            ? language === 'en'
+                              ? "What's the event title?"
+                              : '¿Qué título le pongo al evento?'
+                            : intentName === 'schedule_meeting' && nextMissing[0] === 'start_at'
+                              ? language === 'en'
+                                ? 'When is it? (say date and time)'
+                                : '¿Para cuándo es? (di fecha y hora)'
+                              : intentName === 'delete_event' && nextMissing[0] === 'title_query'
+                                ? language === 'en'
+                                  ? 'Which event should I delete? Say the title or part of it.'
+                                  : '¿Cuál evento quieres eliminar? Dime el título o una parte.'
+                                : intentName === 'update_event_time' &&
+                                    nextMissing[0] === 'title_query'
+                                  ? language === 'en'
+                                    ? 'Which event do you want to change? Say the title or part of it.'
+                                    : '¿Qué evento quieres cambiar? Dime el título o una parte.'
+                                  : intentName === 'update_event_time' &&
+                                      nextMissing[0] === 'start_at'
+                                    ? language === 'en'
+                                      ? 'What date and time?'
+                                      : '¿Para qué fecha y hora?'
+                                    : this.buildMissingTaskTitleMessage(language);
 
           const audioUrl = await this.generateTTS(responseText, language);
-          await persistTurn(responseText, { intent: intentName, slot: firstMissing, invalid: true });
+          await persistTurn(responseText, {
+            intent: intentName,
+            slot: firstMissing,
+            invalid: true,
+          });
           await this.profilesService.setConversationState(clerkUserId, {
             preferred_language: language,
             assistant_name: 'Leeloo',
@@ -2351,7 +2627,6 @@ export class VoiceService {
           response_text: confirmQ,
           response_audio_url: audioUrl,
         };
-
       }
     }
 
@@ -2361,7 +2636,7 @@ export class VoiceService {
       // Premium rule: do not reset or re-run intent detection if STT failed.
       // If there is a pending flow, re-ask the last question deterministically.
       const responseText = state?.pending_intent
-        ? (state?.last_question || state?.next_question || this.buildSttFailureMessage(language))
+        ? state?.last_question || state?.next_question || this.buildSttFailureMessage(language)
         : this.buildSttFailureMessage(language);
       const audioUrl = await this.generateTTS(responseText, language);
 
@@ -2406,9 +2681,10 @@ export class VoiceService {
     const wantsMealPlanning = mealPlanningTrigger(cleanedText.toLowerCase());
     if ((isMealPlanningActive || wantsMealPlanning) && cleanedText) {
       if (isCancel(cleanedText)) {
-        const responseText = language === 'es'
-          ? 'Listo. Cancelamos la planificación de comida. ¿Qué quieres hacer ahora?'
-          : 'Okay. Canceling meal planning. What do you want to do now?';
+        const responseText =
+          language === 'es'
+            ? 'Listo. Cancelamos la planificación de comida. ¿Qué quieres hacer ahora?'
+            : 'Okay. Canceling meal planning. What do you want to do now?';
         const audioUrl = await this.generateTTS(responseText, language);
         await persistTurn(responseText, { household_manager: 'cancel' });
         await this.profilesService.setConversationState(clerkUserId, {
@@ -2424,35 +2700,50 @@ export class VoiceService {
         } as any);
         return {
           transcription: cleanedText,
-          intent: { intent: 'meal_planning', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
+          intent: {
+            intent: 'meal_planning',
+            confidence: 1,
+            decision: 'COACH',
+            original_text: cleanedText,
+          } as any,
           action_result: null,
           response_text: responseText,
           response_audio_url: audioUrl,
         };
       }
 
-      const factsRows = await this.memoriesService.getFacts(clerkUserId, ['household', 'preferences'], 40);
+      const factsRows = await this.memoriesService.getFacts(
+        clerkUserId,
+        ['household', 'preferences'],
+        40,
+      );
       const groceryList = getFactValue(factsRows, 'household', 'grocery_list');
       const diet = getFactValue(factsRows, 'preferences', 'diet');
       const dislikes = getFactValue(factsRows, 'preferences', 'dislikes');
 
-      const items: string[] = Array.isArray(groceryList) ? groceryList.map((x) => String(x || '').trim()).filter(Boolean) : [];
+      const items: string[] = Array.isArray(groceryList)
+        ? groceryList.map((x) => String(x || '').trim()).filter(Boolean)
+        : [];
 
-      const stateSlots = (state as any)?.pending_slots && typeof (state as any)?.pending_slots === 'object'
-        ? (state as any).pending_slots
-        : {};
-      const mealCtx = (stateSlots as any)?.meal_planning && typeof (stateSlots as any)?.meal_planning === 'object'
-        ? (stateSlots as any).meal_planning
-        : {};
+      const stateSlots =
+        (state as any)?.pending_slots && typeof (state as any)?.pending_slots === 'object'
+          ? (state as any).pending_slots
+          : {};
+      const mealCtx =
+        (stateSlots as any)?.meal_planning && typeof (stateSlots as any)?.meal_planning === 'object'
+          ? (stateSlots as any).meal_planning
+          : {};
 
       const minutesFromUser = parseMinutes(cleanedText);
-      const minutes = minutesFromUser || (typeof mealCtx?.minutes === 'number' ? mealCtx.minutes : null);
+      const minutes =
+        minutesFromUser || (typeof mealCtx?.minutes === 'number' ? mealCtx.minutes : null);
 
       // If we don't have grocery_list, ask only for that (one question).
       if (!items || items.length === 0) {
-        const responseText = language === 'es'
-          ? '¿Qué ingredientes tienes ahora mismo? Solo dímelos en lista (separados por comas).'
-          : 'What ingredients do you have right now? Just list them—comma separated.';
+        const responseText =
+          language === 'es'
+            ? '¿Qué ingredientes tienes ahora mismo? Solo dímelos en lista (separados por comas).'
+            : 'What ingredients do you have right now? Just list them—comma separated.';
         const audioUrl = await this.generateTTS(responseText, language);
         await persistTurn(responseText, { household_manager: 'ask_grocery_list' });
         await this.profilesService.setConversationState(clerkUserId, {
@@ -2469,7 +2760,12 @@ export class VoiceService {
         } as any);
         return {
           transcription: cleanedText,
-          intent: { intent: 'meal_planning', confidence: 1, decision: 'QUESTION', original_text: cleanedText } as any,
+          intent: {
+            intent: 'meal_planning',
+            confidence: 1,
+            decision: 'QUESTION',
+            original_text: cleanedText,
+          } as any,
           action_result: null,
           response_text: responseText,
           response_audio_url: audioUrl,
@@ -2478,9 +2774,10 @@ export class VoiceService {
 
       // If minutes missing, ask only that (default missing question).
       if (!minutes) {
-        const responseText = language === 'es'
-          ? '¿Cuántos minutos tienes para cocinar? (por ejemplo: 15, 30, 45)'
-          : 'How many minutes do you have to cook? (for example: 15, 30, 45)';
+        const responseText =
+          language === 'es'
+            ? '¿Cuántos minutos tienes para cocinar? (por ejemplo: 15, 30, 45)'
+            : 'How many minutes do you have to cook? (for example: 15, 30, 45)';
         const audioUrl = await this.generateTTS(responseText, language);
         await persistTurn(responseText, { household_manager: 'ask_minutes' });
         await this.profilesService.setConversationState(clerkUserId, {
@@ -2489,7 +2786,10 @@ export class VoiceService {
           current_goal: 'meal_planning',
           intent_state: 'PENDING',
           pending_intent: { intent: 'meal_planning' },
-          pending_slots: { ...(stateSlots || {}), meal_planning: { ...(mealCtx || {}), minutes: null } },
+          pending_slots: {
+            ...(stateSlots || {}),
+            meal_planning: { ...(mealCtx || {}), minutes: null },
+          },
           missing_slots: ['minutes'],
           next_question: responseText,
           last_question: responseText,
@@ -2497,7 +2797,12 @@ export class VoiceService {
         } as any);
         return {
           transcription: cleanedText,
-          intent: { intent: 'meal_planning', confidence: 1, decision: 'QUESTION', original_text: cleanedText } as any,
+          intent: {
+            intent: 'meal_planning',
+            confidence: 1,
+            decision: 'QUESTION',
+            original_text: cleanedText,
+          } as any,
           action_result: null,
           response_text: responseText,
           response_audio_url: audioUrl,
@@ -2512,16 +2817,19 @@ export class VoiceService {
         language,
       });
 
-      const selectionMatch = cleanedText.toLowerCase().match(/\b(option|opcion|opción)\s*(\d)\b|\b(\d)\b/);
+      const selectionMatch = cleanedText
+        .toLowerCase()
+        .match(/\b(option|opcion|opción)\s*(\d)\b|\b(\d)\b/);
       const selectedIdx = selectionMatch ? Number(selectionMatch[2] || selectionMatch[3]) : null;
       const prevOptions: any[] = Array.isArray(mealCtx?.options) ? mealCtx.options : [];
       const usableOptions = prevOptions.length > 0 ? prevOptions : options;
 
       if (selectedIdx && selectedIdx >= 1 && selectedIdx <= usableOptions.length) {
         const chosen = usableOptions[selectedIdx - 1];
-        const responseText = language === 'es'
-          ? `Perfecto. Opción ${selectedIdx}: ${chosen.title}. ${chosen.steps}`
-          : `Great. Option ${selectedIdx}: ${chosen.title}. ${chosen.steps}`;
+        const responseText =
+          language === 'es'
+            ? `Perfecto. Opción ${selectedIdx}: ${chosen.title}. ${chosen.steps}`
+            : `Great. Option ${selectedIdx}: ${chosen.title}. ${chosen.steps}`;
         const audioUrl = await this.generateTTS(responseText, language);
         await persistTurn(responseText, { household_manager: 'selected', option: selectedIdx });
         await this.profilesService.setConversationState(clerkUserId, {
@@ -2530,14 +2838,22 @@ export class VoiceService {
           current_goal: 'meal_planning',
           intent_state: 'DONE',
           pending_intent: { intent: 'meal_planning' },
-          pending_slots: { ...(stateSlots || {}), meal_planning: { minutes, options: usableOptions } },
+          pending_slots: {
+            ...(stateSlots || {}),
+            meal_planning: { minutes, options: usableOptions },
+          },
           missing_slots: [],
           last_intent: 'meal_planning',
           last_question: undefined,
         } as any);
         return {
           transcription: cleanedText,
-          intent: { intent: 'meal_planning', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
+          intent: {
+            intent: 'meal_planning',
+            confidence: 1,
+            decision: 'COACH',
+            original_text: cleanedText,
+          } as any,
           action_result: { selected_option: selectedIdx, option: chosen },
           response_text: responseText,
           response_audio_url: audioUrl,
@@ -2549,11 +2865,16 @@ export class VoiceService {
         .map((o, idx) => `${idx + 1}) ${o.title} — ${o.why}`)
         .join(language === 'es' ? '\n' : '\n');
 
-      const responseText = language === 'es'
-        ? `Aquí tienes opciones basadas en tu despensa (${minutes} min):\n${lines}\nElige 1–${options.length}.`
-        : `Here are options based on your pantry (${minutes} min):\n${lines}\nPick 1–${options.length}.`;
+      const responseText =
+        language === 'es'
+          ? `Aquí tienes opciones basadas en tu despensa (${minutes} min):\n${lines}\nElige 1–${options.length}.`
+          : `Here are options based on your pantry (${minutes} min):\n${lines}\nPick 1–${options.length}.`;
       const audioUrl = await this.generateTTS(responseText, language);
-      await persistTurn(responseText, { household_manager: 'options', minutes, options_count: options.length });
+      await persistTurn(responseText, {
+        household_manager: 'options',
+        minutes,
+        options_count: options.length,
+      });
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
         assistant_name: 'Leeloo',
@@ -2568,7 +2889,12 @@ export class VoiceService {
       } as any);
       return {
         transcription: cleanedText,
-        intent: { intent: 'meal_planning', confidence: 1, decision: 'COACH', original_text: cleanedText } as any,
+        intent: {
+          intent: 'meal_planning',
+          confidence: 1,
+          decision: 'COACH',
+          original_text: cleanedText,
+        } as any,
         action_result: { minutes, options },
         response_text: responseText,
         response_audio_url: audioUrl,
@@ -2579,7 +2905,8 @@ export class VoiceService {
     const intentContext = memForIntent.context;
 
     // PIPELINE: Intent Detection
-    const channelForIntent: 'VOICE' | 'TEXT' = (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
+    const channelForIntent: 'VOICE' | 'TEXT' =
+      (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
     const intentT0 = Date.now();
     const intent = await this.extractIntent(cleanedText, intentContext, language, channelForIntent);
     const intentT1 = Date.now();
@@ -2605,7 +2932,9 @@ export class VoiceService {
       };
     }
 
-    const memForResponse = await memoryGate(namespacesForResponse(String((intent as any)?.intent || '')));
+    const memForResponse = await memoryGate(
+      namespacesForResponse(String((intent as any)?.intent || '')),
+    );
     const responseContext = memForResponse.context;
 
     // HARD RULE: only explicit set_language can change session language.
@@ -2615,7 +2944,13 @@ export class VoiceService {
 
     if (intent?.intent === 'set_language') {
       const requested = String((intent as any)?.language || '').toLowerCase() as SupportedLanguage;
-      if (requested === 'es' || requested === 'en' || requested === 'pt' || requested === 'fr' || requested === 'ja') {
+      if (
+        requested === 'es' ||
+        requested === 'en' ||
+        requested === 'pt' ||
+        requested === 'fr' ||
+        requested === 'ja'
+      ) {
         language = requested;
         await this.profilesService.ensureProfileByClerkUserId(clerkUserId, { language });
         await this.profilesService.updateLanguage(clerkUserId, language);
@@ -2648,7 +2983,8 @@ export class VoiceService {
 
     // Normalize slot names from different models/providers so execution is deterministic.
     if (intent && typeof intent === 'object') {
-      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+      const filled =
+        intent.filled_slots && typeof intent.filled_slots === 'object' ? intent.filled_slots : {};
 
       const isValidEmail = (raw: string) => {
         const s = String(raw || '').trim();
@@ -2660,9 +2996,11 @@ export class VoiceService {
         const normalized: any = { ...filled };
         if (!normalized.to && normalized.recipient) normalized.to = normalized.recipient;
         if (!normalized.to && normalized.email) normalized.to = normalized.email;
-        if (!normalized.recipient_query && normalized.recipientQuery) normalized.recipient_query = normalized.recipientQuery;
+        if (!normalized.recipient_query && normalized.recipientQuery)
+          normalized.recipient_query = normalized.recipientQuery;
         if (!normalized.body && normalized.email_body) normalized.body = normalized.email_body;
-        if (!normalized.body && normalized.email_content) normalized.body = normalized.email_content;
+        if (!normalized.body && normalized.email_content)
+          normalized.body = normalized.email_content;
 
         // Guard: some models/users provide only a name/role ("Gabriela", "mi esposa") which must
         // be treated as the recipient, not the message body.
@@ -2683,12 +3021,19 @@ export class VoiceService {
         const toCandidateRaw = String(normalized.to || '').trim();
         if ((!toCandidateRaw || !isValidEmail(toCandidateRaw)) && candidateRecipientQuery) {
           try {
-            const contact = await this.householdService.findBestContactByNameOrRole(clerkUserId, candidateRecipientQuery);
+            const contact = await this.householdService.findBestContactByNameOrRole(
+              clerkUserId,
+              candidateRecipientQuery,
+            );
             const email = String((contact as any)?.email || '').trim();
             if (email && isValidEmail(email)) {
               normalized.to = email;
             }
-          } catch {
+          } catch (err) {
+            console.warn('[LeelooApi] normalizeIntentSlots resolve recipient failed', {
+              userId: clerkUserId,
+              error: String(err),
+            });
           }
         }
 
@@ -2704,24 +3049,24 @@ export class VoiceService {
           intent.missing_slots = missing;
           intent.next_question =
             missing[0] === 'to'
-              ? (language === 'en'
-                  ? 'Who should I send it to? Tell me the email or the name/role.'
-                  : language === 'pt'
-                    ? 'Para qual e-mail você quer que eu envie?'
-                    : language === 'fr'
-                      ? "À quelle adresse e-mail veux-tu que je l’envoie ?"
+              ? language === 'en'
+                ? 'Who should I send it to? Tell me the email or the name/role.'
+                : language === 'pt'
+                  ? 'Para qual e-mail você quer que eu envie?'
+                  : language === 'fr'
+                    ? 'À quelle adresse e-mail veux-tu que je l’envoie ?'
                     : language === 'ja'
                       ? 'どのメールアドレスに送ればいい？'
-                        : '¿A quién se lo envío? Dime el correo o el nombre/rol.')
-              : (language === 'en'
-                  ? 'What should the email say? Tell me exactly and I’ll send it.'
-                  : language === 'pt'
-                    ? 'O que você quer que o e-mail diga? Diga exatamente e eu envio.'
-                    : language === 'fr'
-                      ? "Que veux-tu que l’e-mail dise ? Dis-le-moi exactement et je l’envoie."
+                      : '¿A quién se lo envío? Dime el correo o el nombre/rol.'
+              : language === 'en'
+                ? 'What should the email say? Tell me exactly and I’ll send it.'
+                : language === 'pt'
+                  ? 'O que você quer que o e-mail diga? Diga exatamente e eu envio.'
+                  : language === 'fr'
+                    ? 'Que veux-tu que l’e-mail dise ? Dis-le-moi exactement et je l’envoie.'
                     : language === 'ja'
                       ? 'メール本文は何て書く？そのまま言ってくれたら送るよ。'
-                      : '¿Qué quieres que diga el correo? Dímelo tal cual y lo mando.');
+                      : '¿Qué quieres que diga el correo? Dímelo tal cual y lo mando.';
         }
       }
     }
@@ -2782,21 +3127,9 @@ export class VoiceService {
       last_action: state?.last_action || null,
     });
 
-    const isExplicitActionRequest = (() => {
-      const lower = cleanedText.toLowerCase();
-      // Email explicit asks
-      if (/(^|\b)(send|enviar|manda|mandar)\b.*\b(email|correo)\b/.test(lower)) return true;
-      if (/\b(env[ií]a|manda)\s+(un\s+)?correo\b/.test(lower)) return true;
-      // Task explicit asks
-      if (/(^|\b)(create|crear|haz|hacer)\b.*\b(task|tarea|recordatorio|reminder)\b/.test(lower)) return true;
-      if (/\b(agrega|añade|anade)\s+(una\s+)?tarea\b/.test(lower)) return true;
-      // Meeting explicit asks
-      if (/(^|\b)(schedule|programa|agenda)\b.*\b(meeting|reuni[oó]n)\b/.test(lower)) return true;
-      return false;
-    })();
-
     const emotionOverridesAction =
-      emotion && emotion.intensity >= 0.6 &&
+      emotion &&
+      emotion.intensity >= 0.6 &&
       ['stressed', 'confused', 'sad', 'frustrated', 'anxious', 'angry'].includes(emotion.label);
 
     // QUESTION path: missing critical slots OR low confidence
@@ -2804,16 +3137,21 @@ export class VoiceService {
       let responseText = intent?.next_question || this.buildMissingTaskTitleMessage(language);
       const lastQ = state?.last_question;
       if (lastQ && responseText && lastQ.trim() === responseText.trim()) {
-        responseText = language === 'es'
-          ? 'Ok, lo pregunto de otra forma: ¿qué dato exacto te falta definirme para poder hacerlo ya?'
-          : 'Okay—another way: what exact detail do you need to tell me so I can do it right now?';
+        responseText =
+          language === 'es'
+            ? 'Ok, lo pregunto de otra forma: ¿qué dato exacto te falta definirme para poder hacerlo ya?'
+            : 'Okay—another way: what exact detail do you need to tell me so I can do it right now?';
       }
 
       const lead = emotionLeadSentence(language, emotion);
       responseText = lead ? `${lead} ${responseText}` : responseText;
 
       const audioUrl = await this.generateTTS(responseText, language);
-      await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'QUESTION', missing: missingSlots });
+      await persistTurn(responseText, {
+        intent: String(intent?.intent || ''),
+        decision: 'QUESTION',
+        missing: missingSlots,
+      });
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
         assistant_name: 'Leeloo',
@@ -2834,10 +3172,19 @@ export class VoiceService {
         intent: String(intent?.intent || ''),
         missing_slots: missingSlots,
       });
-      emitMetrics(intent, { intent_source: (intent as any)?.intent_source || 'deterministic', fallback_used: (intent as any)?.intent_source === 'fallback' });
+      emitMetrics(intent, {
+        intent_source: (intent as any)?.intent_source || 'deterministic',
+        fallback_used: (intent as any)?.intent_source === 'fallback',
+      });
       return {
         transcription: cleanedText,
-        intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'QUESTION', original_text: cleanedText },
+        intent: {
+          ...intent,
+          emotion,
+          confidence: confidence.combined_confidence,
+          decision: 'QUESTION',
+          original_text: cleanedText,
+        },
         action_result: null,
         response_text: responseText,
         response_audio_url: audioUrl,
@@ -2845,23 +3192,39 @@ export class VoiceService {
     }
 
     if (decision.decision === 'CONVERSATION') {
-      if (channel === 'VOICE' && (this.isVoiceLlmCircuitOpen() || this.isVoiceIntentLlmDisabled())) {
+      if (
+        channel === 'VOICE' &&
+        (this.isVoiceLlmCircuitOpen() || this.isVoiceIntentLlmDisabled())
+      ) {
         const responseText =
           language === 'es'
             ? 'Estoy teniendo problemas de conexión. Puedo crear una tarea o enviar un correo si me lo dices directo.'
             : "I'm having connection trouble. I can still create a task or send an email if you tell me directly.";
         const audioUrl = await this.generateTTS(responseText, language);
-        await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'CONVERSATION', deterministic_fallback: true });
+        await persistTurn(responseText, {
+          intent: String(intent?.intent || ''),
+          decision: 'CONVERSATION',
+          deterministic_fallback: true,
+        });
         await this.profilesService.setConversationState(clerkUserId, {
           preferred_language: language,
           assistant_name: 'Leeloo',
           last_intent: String(intent?.intent || ''),
           last_question: undefined,
         });
-        emitMetrics(intent, { intent_source: (intent as any)?.intent_source || 'deterministic', fallback_used: (intent as any)?.intent_source === 'fallback' });
+        emitMetrics(intent, {
+          intent_source: (intent as any)?.intent_source || 'deterministic',
+          fallback_used: (intent as any)?.intent_source === 'fallback',
+        });
         return {
           transcription: cleanedText,
-          intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'CONVERSATION', original_text: cleanedText },
+          intent: {
+            ...intent,
+            emotion,
+            confidence: confidence.combined_confidence,
+            decision: 'CONVERSATION',
+            original_text: cleanedText,
+          },
           action_result: null,
           response_text: responseText,
           response_audio_url: audioUrl,
@@ -2884,17 +3247,29 @@ export class VoiceService {
       const respT1 = Date.now();
       llmResponseMs.v = respT1 - respT0;
       const audioUrl = await this.generateTTS(responseText, language);
-      await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'CONVERSATION' });
+      await persistTurn(responseText, {
+        intent: String(intent?.intent || ''),
+        decision: 'CONVERSATION',
+      });
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
         assistant_name: 'Leeloo',
         last_intent: String(intent?.intent || ''),
         last_question: undefined,
       });
-      emitMetrics(intent, { intent_source: (intent as any)?.intent_source || 'deterministic', fallback_used: (intent as any)?.intent_source === 'fallback' });
+      emitMetrics(intent, {
+        intent_source: (intent as any)?.intent_source || 'deterministic',
+        fallback_used: (intent as any)?.intent_source === 'fallback',
+      });
       return {
         transcription: cleanedText,
-        intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'CONVERSATION', original_text: cleanedText },
+        intent: {
+          ...intent,
+          emotion,
+          confidence: confidence.combined_confidence,
+          decision: 'CONVERSATION',
+          original_text: cleanedText,
+        },
         action_result: null,
         response_text: responseText,
         response_audio_url: audioUrl,
@@ -2902,7 +3277,10 @@ export class VoiceService {
     }
 
     // COACH path: mid confidence OR emotion override
-    if (decision.decision === 'COACH' || (decision.decision === 'ACTION' && emotionOverridesAction)) {
+    if (
+      decision.decision === 'COACH' ||
+      (decision.decision === 'ACTION' && emotionOverridesAction)
+    ) {
       const respT0 = Date.now();
       const responseText = await this.generateResponse(
         {
@@ -2927,10 +3305,19 @@ export class VoiceService {
         last_intent: String(intent?.intent || ''),
         last_question: undefined,
       });
-      emitMetrics(intent, { intent_source: (intent as any)?.intent_source || 'deterministic', fallback_used: (intent as any)?.intent_source === 'fallback' });
+      emitMetrics(intent, {
+        intent_source: (intent as any)?.intent_source || 'deterministic',
+        fallback_used: (intent as any)?.intent_source === 'fallback',
+      });
       return {
         transcription: cleanedText,
-        intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'COACH', original_text: cleanedText },
+        intent: {
+          ...intent,
+          emotion,
+          confidence: confidence.combined_confidence,
+          decision: 'COACH',
+          original_text: cleanedText,
+        },
         action_result: null,
         response_text: responseText,
         response_audio_url: audioUrl,
@@ -2939,15 +3326,25 @@ export class VoiceService {
 
     // IGNORE path: repeated intent/action lock
     if (decision.decision === 'IGNORE') {
-      const responseText = language === 'es'
-        ? 'Ya lo tengo en marcha. Si quieres cambiar algo, dime exactamente qué parte.'
-        : 'I’ve got it in motion. If you want to change something, tell me exactly what.';
+      const responseText =
+        language === 'es'
+          ? 'Ya lo tengo en marcha. Si quieres cambiar algo, dime exactamente qué parte.'
+          : 'I’ve got it in motion. If you want to change something, tell me exactly what.';
       const audioUrl = await this.generateTTS(responseText, language);
       await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'IGNORE' });
-      emitMetrics(intent, { intent_source: (intent as any)?.intent_source || 'deterministic', fallback_used: (intent as any)?.intent_source === 'fallback' });
+      emitMetrics(intent, {
+        intent_source: (intent as any)?.intent_source || 'deterministic',
+        fallback_used: (intent as any)?.intent_source === 'fallback',
+      });
       return {
         transcription: cleanedText,
-        intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'IGNORE', original_text: cleanedText },
+        intent: {
+          ...intent,
+          emotion,
+          confidence: confidence.combined_confidence,
+          decision: 'IGNORE',
+          original_text: cleanedText,
+        },
         action_result: null,
         response_text: responseText,
         response_audio_url: audioUrl,
@@ -2957,9 +3354,14 @@ export class VoiceService {
     // ACTION intent detected.
     // If slots are missing, we must ask for them FIRST (PENDING). Otherwise we can ask for explicit confirmation.
     if (missingSlots.length > 0) {
-      const responseText = String(intent?.next_question || '').trim() || this.buildMissingTaskTitleMessage(language);
+      const responseText =
+        String(intent?.next_question || '').trim() || this.buildMissingTaskTitleMessage(language);
       const audioUrl = await this.generateTTS(responseText, language);
-      await persistTurn(responseText, { intent: String(intent?.intent || ''), decision: 'QUESTION', missing: missingSlots });
+      await persistTurn(responseText, {
+        intent: String(intent?.intent || ''),
+        decision: 'QUESTION',
+        missing: missingSlots,
+      });
       await this.profilesService.setConversationState(clerkUserId, {
         preferred_language: language,
         assistant_name: 'Leeloo',
@@ -2990,7 +3392,13 @@ export class VoiceService {
 
       return {
         transcription: cleanedText,
-        intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'QUESTION', original_text: cleanedText },
+        intent: {
+          ...intent,
+          emotion,
+          confidence: confidence.combined_confidence,
+          decision: 'QUESTION',
+          original_text: cleanedText,
+        },
         action_result: null,
         response_text: responseText,
         response_audio_url: audioUrl,
@@ -3001,14 +3409,20 @@ export class VoiceService {
     const confirmQ = (() => {
       const i = String(intent?.intent || '');
       if (i === 'send_email') {
-        const filled = (intent?.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+        const filled =
+          intent?.filled_slots && typeof intent.filled_slots === 'object'
+            ? intent.filled_slots
+            : {};
         const to = String(filled.to || filled.email || filled.contact_email || '').trim();
         return buildSendEmailConfirmQuestion(to, language);
       }
       return buildConfirmQuestion(i, language);
     })();
     const audioUrl = await this.generateTTS(confirmQ, language);
-    await persistTurn(confirmQ, { intent: String(intent?.intent || ''), awaiting_confirmation: true });
+    await persistTurn(confirmQ, {
+      intent: String(intent?.intent || ''),
+      awaiting_confirmation: true,
+    });
     await this.profilesService.setConversationState(clerkUserId, {
       preferred_language: language,
       assistant_name: 'Leeloo',
@@ -3031,16 +3445,24 @@ export class VoiceService {
       reason: 'awaiting_confirmation',
     });
 
-    emitMetrics(intent, { intent_source: (intent as any)?.intent_source || 'deterministic', fallback_used: (intent as any)?.intent_source === 'fallback' });
+    emitMetrics(intent, {
+      intent_source: (intent as any)?.intent_source || 'deterministic',
+      fallback_used: (intent as any)?.intent_source === 'fallback',
+    });
 
     return {
       transcription: cleanedText,
-      intent: { ...intent, emotion, confidence: confidence.combined_confidence, decision: 'QUESTION', original_text: cleanedText },
+      intent: {
+        ...intent,
+        emotion,
+        confidence: confidence.combined_confidence,
+        decision: 'QUESTION',
+        original_text: cleanedText,
+      },
       action_result: null,
       response_text: confirmQ,
       response_audio_url: audioUrl,
     };
-
   }
 
   private async executeIntent(clerkUserId: string, intent: any, language: SupportedLanguage) {
@@ -3076,20 +3498,29 @@ export class VoiceService {
     }
 
     if (intent.intent === 'send_email') {
-      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+      const filled =
+        intent.filled_slots && typeof intent.filled_slots === 'object' ? intent.filled_slots : {};
       let to = (filled.to || filled.email || filled.contact_email || '').toString().trim();
-      const recipientQuery = String(filled.recipient_query || filled.recipient || filled.contact || '').trim();
+      const recipientQuery = String(
+        filled.recipient_query || filled.recipient || filled.contact || '',
+      ).trim();
       if ((!to || !to.includes('@')) && recipientQuery) {
-        const contact = await this.householdService.findBestContactByNameOrRole(clerkUserId, recipientQuery);
+        const contact = await this.householdService.findBestContactByNameOrRole(
+          clerkUserId,
+          recipientQuery,
+        );
         const email = String((contact as any)?.email || '').trim();
         if (email) {
           to = email;
         }
       }
-      const subject = (filled.subject || filled.title || intent.title || 'Message from Leeloo').toString().trim();
+      const subject = (filled.subject || filled.title || intent.title || 'Message from Leeloo')
+        .toString()
+        .trim();
       const text = (filled.body || filled.content || filled.email_content || '').toString().trim();
 
-      const isValidEmail = (raw: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(raw || '').trim());
+      const isValidEmail = (raw: string) =>
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(raw || '').trim());
       if (!isValidEmail(to) || !text) return null;
 
       let sendOk = false;
@@ -3104,7 +3535,12 @@ export class VoiceService {
         sendOk = true;
       } catch (err) {
         sendError = String(err);
-        console.warn('[LeelooApi] send_email failed', { userId: clerkUserId, to, subject, error: sendError });
+        console.warn('[LeelooApi] send_email failed', {
+          userId: clerkUserId,
+          to,
+          subject,
+          error: sendError,
+        });
       }
 
       actionResult = await this.tasksService.createTask({
@@ -3134,12 +3570,16 @@ export class VoiceService {
     }
 
     if (intent.intent === 'send_household_reminder') {
-      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+      const filled =
+        intent.filled_slots && typeof intent.filled_slots === 'object' ? intent.filled_slots : {};
       const recipientQuery = String(filled.recipient_query || '').trim();
       const message = String(filled.message || filled.body || '').trim();
       if (!recipientQuery || !message) return null;
 
-      const contact = await this.householdService.findBestContactByNameOrRole(clerkUserId, recipientQuery);
+      const contact = await this.householdService.findBestContactByNameOrRole(
+        clerkUserId,
+        recipientQuery,
+      );
       const to = String((contact as any)?.email || '').trim();
       if (!to) return null;
 
@@ -3148,9 +3588,10 @@ export class VoiceService {
         this.configService.get<string>('LEEL00_APP_DOWNLOAD_URL') ||
         'https://leeloo.app';
 
-      const subject = language === 'es'
-        ? `Recordatorio para ${String((contact as any)?.name || recipientQuery).trim()}`
-        : `Reminder for ${String((contact as any)?.name || recipientQuery).trim()}`;
+      const subject =
+        language === 'es'
+          ? `Recordatorio para ${String((contact as any)?.name || recipientQuery).trim()}`
+          : `Reminder for ${String((contact as any)?.name || recipientQuery).trim()}`;
       const text = `${message}\n\n${language === 'es' ? 'Descarga Leeloo aquí:' : 'Download Leeloo here:'} ${downloadUrl}`;
 
       const profile = await this.profilesService.ensureProfileByClerkUserId(clerkUserId);
@@ -3165,7 +3606,11 @@ export class VoiceService {
         sendOk = true;
       } catch (err) {
         sendError = String(err);
-        console.warn('[LeelooApi] send_household_reminder failed', { userId: clerkUserId, to, error: sendError });
+        console.warn('[LeelooApi] send_household_reminder failed', {
+          userId: clerkUserId,
+          to,
+          error: sendError,
+        });
       }
 
       actionResult = await this.tasksService.createTask({
@@ -3187,7 +3632,8 @@ export class VoiceService {
     }
 
     if (intent.intent === 'reminder') {
-      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+      const filled =
+        intent.filled_slots && typeof intent.filled_slots === 'object' ? intent.filled_slots : {};
       const activity = (filled.activity || filled.title || intent.title || '').toString().trim();
       const startAt = String(filled.start_at || '').trim();
       if (!activity || !startAt) return null;
@@ -3236,7 +3682,8 @@ export class VoiceService {
     }
 
     if (intent.intent === 'schedule_meeting') {
-      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+      const filled =
+        intent.filled_slots && typeof intent.filled_slots === 'object' ? intent.filled_slots : {};
       const title = (filled.title || intent.title || '').toString().trim();
       const startAt = String(filled.start_at || '').trim();
       if (!title || !startAt) return null;
@@ -3271,7 +3718,8 @@ export class VoiceService {
     }
 
     if (intent.intent === 'delete_event') {
-      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+      const filled =
+        intent.filled_slots && typeof intent.filled_slots === 'object' ? intent.filled_slots : {};
       const q = String(filled.title_query || '').trim();
       if (!q) return null;
       const event = await this.calendarService.findNextUpcomingEventByTitle(clerkUserId, q);
@@ -3280,7 +3728,8 @@ export class VoiceService {
     }
 
     if (intent.intent === 'update_event_time') {
-      const filled = (intent.filled_slots && typeof intent.filled_slots === 'object') ? intent.filled_slots : {};
+      const filled =
+        intent.filled_slots && typeof intent.filled_slots === 'object' ? intent.filled_slots : {};
       const q = String(filled.title_query || '').trim();
       const startAt = String(filled.start_at || '').trim();
       if (!q || !startAt) return null;
@@ -3288,7 +3737,9 @@ export class VoiceService {
       if (!Number.isFinite(ms) || ms < Date.now()) return null;
       const event = await this.calendarService.findNextUpcomingEventByTitle(clerkUserId, q);
       if (!event) return null;
-      actionResult = await this.calendarService.updateEvent(clerkUserId, String(event.id), { start_at: startAt });
+      actionResult = await this.calendarService.updateEvent(clerkUserId, String(event.id), {
+        start_at: startAt,
+      });
     }
 
     return actionResult;
@@ -3301,14 +3752,19 @@ export class VoiceService {
       case 'pt':
         return 'Qual é o título da tarefa?';
       case 'fr':
-        return "Quel est le titre de la tâche ?";
+        return 'Quel est le titre de la tâche ?';
       case 'en':
       default:
         return "What's the task title?";
     }
   }
 
-  private async extractIntent(text: string, context: string, language: SupportedLanguage, channel: 'VOICE' | 'TEXT') {
+  private async extractIntent(
+    text: string,
+    context: string,
+    language: SupportedLanguage,
+    channel: 'VOICE' | 'TEXT',
+  ) {
     const executiveBrain = new ExecutiveBrain();
     const heuristic = executiveBrain.inferVoiceIntentLayer0(text, language);
     if (heuristic) return heuristic as any;
@@ -3320,9 +3776,12 @@ export class VoiceService {
     const qwenBaseUrl = this.configService.get<string>('QWEN_BASE_URL');
     const intentEndpoint = qwenBaseUrl
       ? `${qwenBaseUrl.replace(/\/$/, '')}/chat/completions`
-      : this.configService.get<string>('LLM_ENDPOINT') || this.configService.get<string>('LOCAL_LLM_ENDPOINT');
+      : this.configService.get<string>('LLM_ENDPOINT') ||
+        this.configService.get<string>('LOCAL_LLM_ENDPOINT');
     const llamaBaseUrl = this.configService.get<string>('LLAMA_BASE_URL');
-    const intentFallbackEndpoint = llamaBaseUrl ? `${llamaBaseUrl.replace(/\/$/, '')}/chat/completions` : null;
+    const intentFallbackEndpoint = llamaBaseUrl
+      ? `${llamaBaseUrl.replace(/\/$/, '')}/chat/completions`
+      : null;
     const apiKey =
       this.configService.get<string>('LLM_API_KEY') ||
       this.configService.get<string>('LOCAL_LLM_API_KEY');
@@ -3332,9 +3791,7 @@ export class VoiceService {
       this.configService.get<string>('LLM_MODEL') ||
       this.configService.get<string>('LOCAL_LLM_MODEL');
     const model =
-      intentModelLabel === 'qwen'
-        ? qwenModel || fallbackModel
-        : intentModelLabel || fallbackModel;
+      intentModelLabel === 'qwen' ? qwenModel || fallbackModel : intentModelLabel || fallbackModel;
 
     const fallbackModelForIntent = (llamaModel || fallbackModel || '').trim();
 
@@ -3356,7 +3813,9 @@ export class VoiceService {
     }
 
     if (channel === 'VOICE' && (this.isVoiceLlmCircuitOpen() || this.isVoiceIntentLlmDisabled())) {
-      const remaining = this.voiceIntentLlmDisabledUntilMs ? Math.max(0, this.voiceIntentLlmDisabledUntilMs - Date.now()) : null;
+      const remaining = this.voiceIntentLlmDisabledUntilMs
+        ? Math.max(0, this.voiceIntentLlmDisabledUntilMs - Date.now())
+        : null;
       console.warn('[LeelooApi] voice.llm.intent.disabled', {
         reason: this.isVoiceLlmCircuitOpen() ? 'circuit_open' : 'health_probe',
         remaining_ms: remaining,
@@ -3378,10 +3837,7 @@ export class VoiceService {
       } as any;
     }
 
-    const trimmedContext =
-      channel === 'VOICE'
-        ? this.trimForVoicePrompt(context, 1400)
-        : context;
+    const trimmedContext = channel === 'VOICE' ? this.trimForVoicePrompt(context, 1400) : context;
 
     const prompt =
       `Contexto del usuario (NO inventar):\n${trimmedContext}\n\n` +
@@ -3462,7 +3918,11 @@ export class VoiceService {
         }
         const parsed = JSON.parse(content);
         if (!parsed || typeof parsed !== 'object') return parsed;
-        if (typeof parsed.confidence !== 'number' || !Number.isFinite(parsed.confidence) || parsed.confidence <= 0) {
+        if (
+          typeof parsed.confidence !== 'number' ||
+          !Number.isFinite(parsed.confidence) ||
+          parsed.confidence <= 0
+        ) {
           parsed.confidence = 0.65;
         }
         return parsed;
@@ -3511,7 +3971,11 @@ export class VoiceService {
           });
 
           try {
-            const secondary = await sendIntent(intentFallbackEndpoint as string, fallbackModelForIntent, fallbackBudgetMs);
+            const secondary = await sendIntent(
+              intentFallbackEndpoint as string,
+              fallbackModelForIntent,
+              fallbackBudgetMs,
+            );
             console.log('[LeelooApi] voice.llm.intent.fallback.ok', {
               traceId,
               ms: Date.now() - t0,
@@ -3595,7 +4059,8 @@ export class VoiceService {
     const llamaBaseUrl = this.configService.get<string>('LLAMA_BASE_URL');
     const chatEndpoint = llamaBaseUrl
       ? `${llamaBaseUrl.replace(/\/$/, '')}/chat/completions`
-      : this.configService.get<string>('LLM_ENDPOINT') || this.configService.get<string>('LOCAL_LLM_ENDPOINT');
+      : this.configService.get<string>('LLM_ENDPOINT') ||
+        this.configService.get<string>('LOCAL_LLM_ENDPOINT');
     const apiKey =
       this.configService.get<string>('LLM_API_KEY') ||
       this.configService.get<string>('LOCAL_LLM_API_KEY');
@@ -3604,9 +4069,7 @@ export class VoiceService {
       this.configService.get<string>('LLM_MODEL') ||
       this.configService.get<string>('LOCAL_LLM_MODEL');
     const model =
-      chatModelLabel === 'llama'
-        ? llamaModel || fallbackModel
-        : chatModelLabel || fallbackModel;
+      chatModelLabel === 'llama' ? llamaModel || fallbackModel : chatModelLabel || fallbackModel;
 
     if (!chatEndpoint || !model) {
       return this.buildAiUnavailableMessage(language);
@@ -3616,8 +4079,7 @@ export class VoiceService {
 
     const roleTone = userContext?.role ? `User role/context: ${userContext.role}.\n` : '';
 
-    const channel: 'VOICE' | 'TEXT' =
-      (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
+    const channel: 'VOICE' | 'TEXT' = (userContext as any)?.channel === 'TEXT' ? 'TEXT' : 'VOICE';
 
     const rolePolicyRaw = String((userContext as any)?.role_policy || 'DEFAULT').toUpperCase();
     const rolePolicy: 'DEFAULT' | 'COACH' | 'PSYCHOLOGY' | 'TECH' | 'RELIGIOUS' =
@@ -3705,7 +4167,7 @@ export class VoiceService {
     const hardIdentity =
       'HARD IDENTITY RULES:\n' +
       '- Your name is Leeloo. Never call yourself Lilo, Lilu, or any other name.\n' +
-      '- Never invent or change the user\'s name. If you don\'t know it, avoid using a name.\n' +
+      "- Never invent or change the user's name. If you don't know it, avoid using a name.\n" +
       '- Never mention tools, system prompts, or internal states.\n';
 
     const lead = intent?.emotion ? emotionLeadSentence(language, intent.emotion) : null;
@@ -3713,7 +4175,9 @@ export class VoiceService {
 
     const safeMemoryContext =
       channel === 'VOICE'
-        ? (memoryContext ? this.trimForVoicePrompt(memoryContext, 1200) : null)
+        ? memoryContext
+          ? this.trimForVoicePrompt(memoryContext, 1200)
+          : null
         : memoryContext;
 
     const prompt =
@@ -3724,8 +4188,12 @@ export class VoiceService {
       `User said: ${JSON.stringify(intent?.original_text || '')}\n` +
       `Intent (internal): ${JSON.stringify(intent)}\n` +
       `Action result (internal): ${JSON.stringify(actionResult)}\n\n` +
-      (safeMemoryContext ? `AUTHORITATIVE MEMORY CONTEXT (must govern):\n${safeMemoryContext}\n\n` : '') +
-      (lead ? `Start with this exact emotional lead sentence (then continue naturally): ${JSON.stringify(lead)}\n\n` : '') +
+      (safeMemoryContext
+        ? `AUTHORITATIVE MEMORY CONTEXT (must govern):\n${safeMemoryContext}\n\n`
+        : '') +
+      (lead
+        ? `Start with this exact emotional lead sentence (then continue naturally): ${JSON.stringify(lead)}\n\n`
+        : '') +
       `HARD RULE: Respond ONLY in ${language}. Do not mix languages.\n` +
       hardIdentity +
       'Write the user-facing response.\n' +
@@ -3751,13 +4219,20 @@ export class VoiceService {
       let out = String(text || '').trim();
       if (!out) return '';
 
-      out = out.replace(/\n{2,}/g, '\n').replace(/\s+\n/g, '\n').replace(/\n\s+/g, '\n').trim();
+      out = out
+        .replace(/\n{2,}/g, '\n')
+        .replace(/\s+\n/g, '\n')
+        .replace(/\n\s+/g, '\n')
+        .trim();
       out = out.replace(/\n+/g, ' ');
       out = out.replace(/\s+/g, ' ').trim();
 
       const bulletLike = /(^|\s)([-*]|\d+\.)\s+/;
       if (bulletLike.test(out)) {
-        const parts = out.split(/(?:^|\s)(?:[-*]|\d+\.)\s+/).map((p) => p.trim()).filter(Boolean);
+        const parts = out
+          .split(/(?:^|\s)(?:[-*]|\d+\.)\s+/)
+          .map((p) => p.trim())
+          .filter(Boolean);
         if (parts.length > 1) {
           out = parts.slice(0, 3).join(' ');
         }
@@ -3774,8 +4249,10 @@ export class VoiceService {
       return out;
     };
 
-    const looksLikeSpanish = (s: string) => /\b(el|la|de|que|y|para|hola|gracias|por favor|enviar|correo)\b/i.test(s);
-    const looksLikeEnglish = (s: string) => /\b(the|and|to|please|hello|thanks|send|email)\b/i.test(s);
+    const looksLikeSpanish = (s: string) =>
+      /\b(el|la|de|que|y|para|hola|gracias|por favor|enviar|correo)\b/i.test(s);
+    const looksLikeEnglish = (s: string) =>
+      /\b(the|and|to|please|hello|thanks|send|email)\b/i.test(s);
     const isWrongLanguage = (target: SupportedLanguage, output: string) => {
       const out = (output || '').trim();
       if (!out) return false;
@@ -3833,7 +4310,9 @@ export class VoiceService {
         language_target: language,
       });
 
-      let out = await send(`HARD LANGUAGE LOCK: Output must be ONLY in ${language}.\n${hardIdentity}`);
+      let out = await send(
+        `HARD LANGUAGE LOCK: Output must be ONLY in ${language}.\n${hardIdentity}`,
+      );
       if (isWrongLanguage(language, out)) {
         console.warn('[LeelooApi] voice.llm.response.language_mismatch', {
           traceId,
@@ -3893,8 +4372,7 @@ export class VoiceService {
       return '';
     }
 
-    const modelId =
-      this.configService.get<string>('ELEVENLABS_MODEL_ID') || 'eleven_turbo_v2';
+    const modelId = this.configService.get<string>('ELEVENLABS_MODEL_ID') || 'eleven_turbo_v2';
 
     try {
       const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
@@ -3925,7 +4403,11 @@ export class VoiceService {
 
       return publicUrl;
     } catch (err) {
-      console.error('ElevenLabs TTS error:', (err as any)?.response?.status, (err as any)?.response?.data || String(err));
+      console.error(
+        'ElevenLabs TTS error:',
+        (err as any)?.response?.status,
+        (err as any)?.response?.data || String(err),
+      );
       return '';
     }
   }
@@ -3937,7 +4419,7 @@ export class VoiceService {
       case 'pt':
         return 'Agora mesmo não consigo ajudar com isso. Posso criar uma tarefa, um lembrete ou enviar um e-mail. O que você precisa?';
       case 'fr':
-        return "Là tout de suite, je ne peux pas t’aider avec ça. Je peux créer une tâche, un rappel, ou envoyer un e-mail. De quoi as-tu besoin ?";
+        return 'Là tout de suite, je ne peux pas t’aider avec ça. Je peux créer une tâche, un rappel, ou envoyer un e-mail. De quoi as-tu besoin ?';
       case 'ja':
         return '今はその件を手伝えない。タスク作成、リマインダー、メール送信はできるよ。何をしたい？';
       case 'en':

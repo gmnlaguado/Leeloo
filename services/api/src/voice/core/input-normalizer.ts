@@ -45,8 +45,10 @@ export class InputNormalizer {
       s.includes('no lo mandes');
     if (cancel) return 'CANCEL';
 
-    const yesRegex = /^(si|s i|claro|dale|ok|okay|vale|de una|adelante|confirma|confirmo|yes|yeah|yep|sure|confirm)(\b|$)/;
-    const noRegex = /^(no|negativo|mejor no|no gracias|nope|nah|dont|do not|don t|stop|cancel)(\b|$)/;
+    const yesRegex =
+      /^(si|s i|claro|dale|ok|okay|vale|de una|adelante|confirma|confirmo|yes|yeah|yep|sure|confirm)(\b|$)/;
+    const noRegex =
+      /^(no|negativo|mejor no|no gracias|nope|nah|dont|do not|don t|stop|cancel)(\b|$)/;
 
     const hasYes =
       yesRegex.test(s) ||
@@ -63,11 +65,7 @@ export class InputNormalizer {
       s === 'yeah' ||
       s === 'sure';
 
-    const hasNo =
-      noRegex.test(s) ||
-      s === 'no' ||
-      s === 'nope' ||
-      s === 'nah';
+    const hasNo = noRegex.test(s) || s === 'no' || s === 'nope' || s === 'nah';
 
     if (hasYes && !hasNo) return 'YES';
     if (hasNo && !hasYes) return 'NO';

@@ -17,8 +17,7 @@ export class ProcessVoiceDto {
 
   @ApiProperty({
     required: false,
-    description:
-      'Optional user context for personalization (language, faith_mode, role, etc.)',
+    description: 'Optional user context for personalization (language, faith_mode, role, etc.)',
   })
   @IsOptional()
   user_context?: {
@@ -30,11 +29,17 @@ export class ProcessVoiceDto {
     conversation_only?: boolean;
   };
 
-  @ApiProperty({ required: false, description: 'Force conversation-only mode (no actions/tools) (multipart field)' })
+  @ApiProperty({
+    required: false,
+    description: 'Force conversation-only mode (no actions/tools) (multipart field)',
+  })
   @IsOptional()
   conversation_only?: string;
 
-  @ApiProperty({ required: false, description: 'Role/persona hint for conversation (multipart field)' })
+  @ApiProperty({
+    required: false,
+    description: 'Role/persona hint for conversation (multipart field)',
+  })
   @IsOptional()
   @IsString()
   role?: string;

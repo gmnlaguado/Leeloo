@@ -24,7 +24,8 @@ export class HouseholdController {
   @ApiOperation({ summary: 'Create household contact' })
   async create(
     @Req() req: AuthedRequest,
-    @Body() body: { role?: string | null; name: string; email?: string | null; phone?: string | null },
+    @Body()
+    body: { role?: string | null; name: string; email?: string | null; phone?: string | null },
   ) {
     return this.householdService.createContact(req.user.id, body);
   }
@@ -34,7 +35,8 @@ export class HouseholdController {
   async update(
     @Req() req: AuthedRequest,
     @Param('id') id: string,
-    @Body() body: { role?: string | null; name?: string; email?: string | null; phone?: string | null },
+    @Body()
+    body: { role?: string | null; name?: string; email?: string | null; phone?: string | null },
   ) {
     return this.householdService.updateContact(req.user.id, id, body);
   }

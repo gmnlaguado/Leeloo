@@ -46,10 +46,7 @@ export class CalendarController {
 
   @Delete('events/:id')
   @ApiOperation({ summary: 'Delete a calendar event' })
-  async deleteEvent(
-    @Req() req: AuthedRequest,
-    @Param('id') id: string,
-  ) {
+  async deleteEvent(@Req() req: AuthedRequest, @Param('id') id: string) {
     return this.calendarService.deleteEvent(req.user.id, id);
   }
 
