@@ -21,6 +21,10 @@
     "worker": "cd services/worker && npm run start:dev",
     "ai": "cd services/ai-orchestrator && npm run start:dev"
   },
+  "dependencies": {
+    "reflect-metadata": "^0.1.14",
+    "rxjs": "^7.8.1"
+  },
   "devDependencies": {
     "@types/node": "^20.10.5",
     "@typescript-eslint/eslint-plugin": "^8.23.0",
