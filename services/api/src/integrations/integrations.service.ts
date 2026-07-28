@@ -449,7 +449,7 @@ export class IntegrationsService {
       [profileId],
     );
     return {
-      integrations: res.rows.map((row) => this.toPublicRow(row)).filter(Boolean),
+      integrations: res.rows.map((row: any) => this.toPublicRow(row)).filter(Boolean),
     };
   }
 

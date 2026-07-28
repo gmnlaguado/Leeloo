@@ -4,11 +4,11 @@ import { IsString, IsOptional, IsISO8601, IsIn, IsArray, IsInt } from 'class-val
 export class CreateCalendarEventDto {
   @ApiProperty()
   @IsString()
-  title: string;
+  title!: string;
 
   @ApiProperty()
   @IsISO8601()
-  start_at: string;
+  start_at!: string;
 
   @ApiProperty({ required: false })
   @IsOptional()

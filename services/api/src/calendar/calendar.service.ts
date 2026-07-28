@@ -52,7 +52,7 @@ export class CalendarService implements OnModuleInit {
          FROM information_schema.columns
          WHERE table_schema = 'public' AND table_name = 'calendar_events'`,
       );
-      const cols = new Set((colsRes.rows || []).map((r) => String(r.column_name)));
+      const cols = new Set((colsRes.rows || []).map((r: { column_name: string }) => String(r.column_name)));
 
       const ensureColumn = async (name: string, typeSql: string) => {
         if (cols.has(name)) return;

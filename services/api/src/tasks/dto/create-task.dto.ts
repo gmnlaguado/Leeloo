@@ -4,7 +4,7 @@ import { IsString, IsOptional, IsISO8601, IsObject } from 'class-validator';
 export class CreateTaskDto {
   @ApiProperty()
   @IsString()
-  title: string;
+  title!: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
