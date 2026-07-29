@@ -13,7 +13,10 @@ export class DatabaseService implements OnModuleDestroy {
       throw new Error('DATABASE_URL is not configured');
     }
 
-    this.pool = new Pool({ connectionString });
+    this.pool = new Pool({
+      connectionString,
+      ssl: { rejectUnauthorized: false },
+    });
   }
 
   async getClient(): Promise<PoolClient> {
