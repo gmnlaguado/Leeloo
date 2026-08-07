@@ -68,7 +68,7 @@ export class VoiceService {
       memories = await this.openAiQueue.fetchMemoryContext({
         userId: input.userId,
         query: transcription,
-        limit: 10,
+        limit: 5,
       });
     } catch {
       memories = '';
