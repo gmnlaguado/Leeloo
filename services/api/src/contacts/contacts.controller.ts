@@ -16,7 +16,7 @@ import { ContactsService } from './contacts.service';
 type AuthedRequest = { user: { id: string } };
 
 @ApiTags('contacts')
-@Controller('v1/contacts')
+@Controller('contacts')
 @UseGuards(AuthGuard)
 @ApiBearerAuth()
 export class ContactsController {
