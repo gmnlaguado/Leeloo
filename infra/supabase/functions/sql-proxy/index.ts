@@ -8,7 +8,7 @@ let pool: Pool | null = null;
 
 function getPool(): Pool {
   if (!pool) {
-    pool = new Pool(DB_URL, 3, true);
+    pool = new Pool(DB_URL, 1, true);
   }
   return pool;
 }

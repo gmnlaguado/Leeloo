@@ -10,15 +10,24 @@ services:
     runtime: docker
     plan: starter
     region: oregon
+    branch: main
     dockerContext: .
     dockerfilePath: ./services/api/Dockerfile
     healthCheckPath: /v1/health
     autoDeploy: true
+    buildFilter:
+      paths:
+        - services/api/**
+        - packages/**
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: "3000"
+      - key: ALLOWED_ORIGINS
+        value: https://leeloo.app,https://www.leeloo.app
+      - key: ENCRYPTION_KEY_VERSION
+        value: "1"
       - key: AI_ORCHESTRATOR_URL
         fromService:
           type: web
@@ -29,8 +38,7 @@ services:
           type: web
           name: leeloo-stt
           property: hostport
-      - key: REDIS_URL
-        sync: false
+      # ---- Supabase
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL
@@ -39,18 +47,33 @@ services:
         sync: false
       - key: SUPABASE_ANON_KEY
         sync: false
-      - key: CLERK_SECRET_KEY
+      - key: SQL_PROXY_SECRET
         sync: false
-      - key: CLERK_PUBLISHABLE_KEY
-        sync: false
+      # ---- Auth (Clerk)
       - key: CLERK_JWKS_URL
         sync: false
       - key: CLERK_ISSUER
         sync: false
+      # ---- Encryption
       - key: ENCRYPTION_KEY
         sync: false
-      - key: ENCRYPTION_KEY_VERSION
-        value: "1"
+      # ---- Cloudflare R2 (TTS audio storage)
+      - key: R2_ENDPOINT
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_PUBLIC_BASE_URL
+        sync: false
+      # ---- Email (Resend)
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      # ---- OAuth integrations
       - key: GOOGLE_OAUTH_CLIENT_ID
         sync: false
       - key: GOOGLE_OAUTH_CLIENT_SECRET
@@ -59,16 +82,17 @@ services:
         sync: false
       - key: MICROSOFT_OAUTH_CLIENT_SECRET
         sync: false
-      - key: AZURE_SPEECH_KEY
+      # ---- STT shared secret (caller side)
+      - key: STT_SHARED_SECRET
         sync: false
-      - key: AZURE_SPEECH_REGION
+      # ---- Voice / TTS (optional — enables audio responses)
+      - key: ELEVENLABS_API_KEY
         sync: false
-      - key: RESEND_API_KEY
+      - key: ELEVENLABS_VOICE_ID
         sync: false
+      # ---- Observability
       - key: SENTRY_DSN
         sync: false
-      - key: ALLOWED_ORIGINS
-        value: https://leeloo.app,https://www.leeloo.app
 
   # ----------------------------------------------------------- AI Orchestrator
   - type: web
@@ -76,34 +100,61 @@ services:
     runtime: docker
     plan: starter
     region: oregon
+    branch: main
     dockerContext: .
     dockerfilePath: ./services/ai-orchestrator/Dockerfile
     healthCheckPath: /v1/health
     autoDeploy: true
+    buildFilter:
+      paths:
+        - services/ai-orchestrator/**
+        - packages/**
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: "3002"
+      - key: TTS_PROVIDER
+        value: elevenlabs
       - key: STT_URL
         fromService:
           type: web
           name: leeloo-stt
           property: hostport
-      - key: REDIS_URL
-        sync: false
+      # ---- AI providers
       - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
         sync: false
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: ELEVENLABS_VOICE_ID
         sync: false
-      - key: TTS_PROVIDER
-        value: elevenlabs
-      - key: AZURE_SPEECH_KEY
+      # ---- Redis (BullMQ)
+      - key: REDIS_URL
         sync: false
-      - key: AZURE_SPEECH_REGION
+      # ---- Supabase (pgvector memory + failFastEnv)
+      - key: SUPABASE_URL
         sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_DB_URL
+        sync: false
+      # ---- Encryption (failFastEnv — future use)
+      - key: ENCRYPTION_KEY
+        sync: false
+      # ---- Auth (Clerk)
+      - key: CLERK_JWKS_URL
+        sync: false
+      - key: CLERK_ISSUER
+        sync: false
+      # ---- Internal API base URL
+      - key: API_BASE_URL
+        value: https://leeloo-api.onrender.com
+      # ---- STT shared secret (caller side)
+      - key: STT_SHARED_SECRET
+        sync: false
+      # ---- Observability
       - key: SENTRY_DSN
         sync: false
 
@@ -113,31 +164,39 @@ services:
     runtime: docker
     plan: starter
     region: oregon
+    branch: main
     dockerContext: .
     dockerfilePath: ./services/worker/Dockerfile
     autoDeploy: true
+    buildFilter:
+      paths:
+        - services/worker/**
+        - packages/**
     envVars:
       - key: NODE_ENV
         value: production
-      # NOTE: Render `type: worker` does not expose an HTTP port. The worker
-      # bootstrap uses createApplicationContext (no app.listen). PORT is left
-      # unset on purpose.
+      - key: ENCRYPTION_KEY_VERSION
+        value: "1"
+      # ---- Redis (BullMQ)
       - key: REDIS_URL
         sync: false
+      # ---- Database
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-      - key: OPENAI_API_KEY
-        sync: false
+      # ---- Encryption
       - key: ENCRYPTION_KEY
         sync: false
-      - key: ENCRYPTION_KEY_VERSION
-        value: "1"
+      # ---- AI (required by failFastEnv even though handlers are stubs)
+      - key: OPENAI_API_KEY
+        sync: false
+      # ---- Push notifications (Expo)
       - key: EXPO_ACCESS_TOKEN
         sync: false
+      # ---- Observability
       - key: SENTRY_DSN
         sync: false
 
@@ -145,18 +204,26 @@ services:
   - type: web
     name: leeloo-stt
     runtime: docker
-    plan: starter
+    plan: standard
     region: oregon
+    branch: main
     dockerContext: ./services/stt
     dockerfilePath: ./services/stt/Dockerfile
     healthCheckPath: /health
     autoDeploy: true
+    buildFilter:
+      paths:
+        - services/stt/**
     envVars:
       - key: WHISPER_MODEL_PATH
-        value: /models/ggml-base.bin
+        value: /models/ggml-tiny.bin
       - key: WHISPER_THREADS
         value: "2"
       - key: PORT
         value: "9000"
+      # ---- Auth (shared secret — required, service 503s without it)
+      - key: STT_SHARED_SECRET
+        sync: false
+      # ---- Observability
       - key: SENTRY_DSN
         sync: false

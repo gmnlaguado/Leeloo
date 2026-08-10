@@ -82,7 +82,9 @@ export class DiagnosticsController {
   }
 
   @Get('email-public')
-  @ApiOperation({ summary: 'Public diagnostics: email provider config presence (no secrets)' })
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Diagnostics: email provider config presence (no secrets)' })
   async emailConfigPublic() {
     const apiKey =
       this.configService.get<string>('RESEND_API_KEY') ||

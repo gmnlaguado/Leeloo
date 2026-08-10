@@ -25,14 +25,14 @@ function failFastEnv() {
   };
 
   assertOk('OPENAI_API_KEY', { notEquals: ['sk-your-key-here'] });
+  assertOk('ANTHROPIC_API_KEY', { notEquals: ['sk-ant-your-key-here'] });
   assertOk('SUPABASE_URL', { notEquals: ['https://your-project.supabase.co'] });
   assertOk('SUPABASE_SERVICE_KEY', { notEquals: ['your-service-key'] });
-  assertOk('JWT_SECRET', { minLen: 24, notEquals: ['your-jwt-secret-change-in-production'] });
   assertOk('REDIS_URL', { notEquals: ['redis://localhost:6379'] });
-  assertOk('ENCRYPTION_KEY', { minLen: 32, notEquals: ['your-encryption-key-32-chars-min'] });
 
   if (isProd) {
     assertOk('CLERK_JWKS_URL');
+    assertOk('API_BASE_URL');
   }
 }
 

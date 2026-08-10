@@ -8,6 +8,7 @@ import { R2Module } from '../r2/r2.module';
 import { EmailModule } from '../email/email.module';
 import { CalendarModule } from '../calendar/calendar.module';
 import { HouseholdModule } from '../household/household.module';
+import { ContactsModule } from '../contacts/contacts.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { HouseholdModule } from '../household/household.module';
     EmailModule,
     CalendarModule,
     HouseholdModule,
+    ContactsModule,
   ],
   controllers: [VoiceController],
   providers: [VoiceService],

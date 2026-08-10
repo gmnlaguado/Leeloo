@@ -146,9 +146,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
 CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks;
 CREATE TRIGGER update_tasks_updated_at BEFORE UPDATE ON tasks
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -173,6 +175,7 @@ CREATE INDEX IF NOT EXISTS idx_voice_profiles_active ON voice_profiles(user_id, 
 
 ALTER TABLE voice_profiles ENABLE ROW LEVEL SECURITY;
 
+DROP TRIGGER IF EXISTS update_voice_profiles_updated_at ON voice_profiles;
 CREATE TRIGGER update_voice_profiles_updated_at
   BEFORE UPDATE ON voice_profiles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

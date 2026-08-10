@@ -126,7 +126,7 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       bytesBase64: input.bytes.toString('base64'),
     });
     try {
-      return (await job.waitUntilFinished(this.events)) as string;
+      return (await job.waitUntilFinished(this.events, 30_000)) as string;
     } catch (err: any) {
       this.throwOnOpenAiBackpressure(err);
       throw err;
@@ -143,7 +143,7 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       voice: input.voice,
     });
     try {
-      return (await job.waitUntilFinished(this.events)) as string;
+      return (await job.waitUntilFinished(this.events, 30_000)) as string;
     } catch (err: any) {
       this.throwOnOpenAiBackpressure(err);
       throw err;
@@ -170,7 +170,7 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
         systemPromptVersion: input.systemPromptVersion,
       });
 
-      const raw = (await job.waitUntilFinished(this.events)) as string;
+      const raw = (await job.waitUntilFinished(this.events, 30_000)) as string;
       const parsed = JSON.parse(raw || '{}');
 
       const slots = parsed?.slots && typeof parsed.slots === 'object' ? parsed.slots : {};
@@ -214,7 +214,7 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     const userContent = this.buildIntentPrompt(data);
     const response = await this.anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 400,
+      max_tokens: 700,
       temperature: 0.2,
       system: data.systemPrompt,
       messages: [{ role: 'user', content: userContent }],
@@ -249,7 +249,7 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       query: input.query,
       limit: input.limit,
     });
-    return (await job.waitUntilFinished(this.events)) as string;
+    return (await job.waitUntilFinished(this.events, 15_000)) as string;
   }
 
   private throwOnOpenAiBackpressure(err: any) {

@@ -15,6 +15,7 @@ import { HealthModule } from './health/health.module';
 import { EmailModule } from './email/email.module';
 import { DiagnosticsModule } from './diagnostics/diagnostics.module';
 import { HouseholdModule } from './household/household.module';
+import { ContactsModule } from './contacts/contacts.module';
 import { SmsModule } from './sms/sms.module';
 import { CartModule } from './cart/cart.module';
 import { MediaModule } from './media/media.module';
@@ -55,6 +56,7 @@ import { CryptoModule } from './common/crypto/crypto.module';
     RemindersModule,
     DiagnosticsModule,
     HouseholdModule,
+    ContactsModule,
   ],
   providers: [
     {

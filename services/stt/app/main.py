@@ -1,4 +1,3 @@
-import base64
 import hmac
 import os
 import re
@@ -20,6 +19,11 @@ class TranscribeRequest(BaseModel):
 
 
 app = FastAPI()
+
+
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 
 # --------------------------------------------------------------------------

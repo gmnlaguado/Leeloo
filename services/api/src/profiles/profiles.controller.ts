@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { ProfilesService } from './profiles.service';
@@ -131,5 +131,38 @@ export class ProfilesController {
       return this.profilesService.ensureProfileByClerkUserId(userId);
     }
     return updated;
+  }
+
+  @Post('me/device')
+  @ApiOperation({ summary: 'Register device locale + timezone on first launch (Feature: auto language detection)' })
+  async registerDevice(
+    @Req() req: AuthedRequest,
+    @Body() body: { locale?: string; timezone?: string; expo_push_token?: string },
+  ) {
+    const userId = req.user.id;
+    const locale = String(body?.locale || '').trim();
+    const timezone = String(body?.timezone || '').trim();
+    const pushToken = String(body?.expo_push_token || '').trim();
+
+    // Detect language from locale (e.g. "es-CO" → "es", "en-US" → "en")
+    const langCode = locale.split(/[-_]/)[0].toLowerCase();
+    const supported = ['es', 'en', 'pt', 'fr', 'ja'];
+    const language = supported.includes(langCode) ? langCode : 'en';
+
+    const cols: Record<string, any> = { preferred_language: language };
+    if (timezone) cols['timezone'] = timezone;
+
+    await this.profilesService.updateDirectColumns(userId, cols as any);
+
+    if (pushToken) {
+      await this.profilesService.updatePreferences(userId, { expo_push_token: pushToken });
+    }
+
+    return {
+      ok: true,
+      detected_language: language,
+      locale,
+      timezone: timezone || null,
+    };
   }
 }

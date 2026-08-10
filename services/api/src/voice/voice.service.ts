@@ -12,6 +12,7 @@ import { R2Service } from '../r2/r2.service';
 import { EmailService } from '../email/email.service';
 import { CalendarService } from '../calendar/calendar.service';
 import { HouseholdService } from '../household/household.service';
+import { ContactsService } from '../contacts/contacts.service';
 import { buildLeelooUniversalPrompt } from './core/leeloo-core.prompt';
 import { detectEmotionHeuristic, emotionLeadSentence } from './core/emotion';
 import { computeConfidence, computeSlotConfidence } from './core/confidence';
@@ -719,6 +720,7 @@ export class VoiceService {
     private emailService: EmailService,
     private calendarService: CalendarService,
     private householdService: HouseholdService,
+    private contactsService: ContactsService,
   ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     this.openai = apiKey ? new OpenAI({ apiKey }) : null;
@@ -1236,6 +1238,20 @@ export class VoiceService {
       (await this.profilesService.getProfileByClerkUserId(clerkUserId).catch(() => null)) ||
       (await this.profilesService.ensureProfileByClerkUserId(clerkUserId).catch(() => null));
     const state = this.profilesService.getConversationState(profile);
+
+    // Feature: wire leeloo_personality → role_policy so generateResponse uses the right persona
+    if (!(userContext as any)?.role_policy) {
+      const _personality = String(profile?.leeloo_personality || 'default').toLowerCase();
+      const _policyMap: Record<string, string> = {
+        christian: 'RELIGIOUS',
+        faith: 'RELIGIOUS',
+        coach: 'COACH',
+        mentor: 'COACH',
+        counselor: 'PSYCHOLOGY',
+        business: 'TECH',
+      };
+      userContext = { ...(userContext ?? {}), role_policy: _policyMap[_personality] || 'DEFAULT' } as typeof userContext;
+    }
 
     const conversationMode: 'conversation' | 'action' =
       state?.mode === 'action' || state?.mode === 'conversation' ? state.mode : 'conversation';
@@ -3505,13 +3521,19 @@ export class VoiceService {
         filled.recipient_query || filled.recipient || filled.contact || '',
       ).trim();
       if ((!to || !to.includes('@')) && recipientQuery) {
-        const contact = await this.householdService.findBestContactByNameOrRole(
-          clerkUserId,
-          recipientQuery,
-        );
-        const email = String((contact as any)?.email || '').trim();
-        if (email) {
-          to = email;
+        // 1. Search personal contacts first
+        const personalContact = await this.contactsService.findByName(clerkUserId, recipientQuery);
+        const personalEmail = String((personalContact as any)?.email || '').trim();
+        if (personalEmail) {
+          to = personalEmail;
+        } else {
+          // 2. Fall back to household contacts
+          const contact = await this.householdService.findBestContactByNameOrRole(
+            clerkUserId,
+            recipientQuery,
+          );
+          const email = String((contact as any)?.email || '').trim();
+          if (email) to = email;
         }
       }
       const subject = (filled.subject || filled.title || intent.title || 'Message from Leeloo')
