@@ -23,6 +23,10 @@ COPY tsconfig.json ./
 COPY packages ./packages
 COPY services/api ./services/api
 RUN npx turbo run build --filter=@leeloo/api...
+# Merge service-level node_modules that npm workspaces didn't hoist into root
+RUN if [ -d /repo/services/api/node_modules ]; then \
+      cp -rn /repo/services/api/node_modules/. /repo/node_modules/ 2>/dev/null || true; \
+    fi
 
 FROM node:20-alpine AS runner
 RUN apk add --no-cache curl tini
