@@ -24,7 +24,6 @@ function failFastEnv() {
     }
   };
 
-  assertOk('OPENAI_API_KEY', { notEquals: ['sk-your-key-here'] });
   assertOk('ANTHROPIC_API_KEY', { notEquals: ['sk-ant-your-key-here'] });
   assertOk('SUPABASE_URL', { notEquals: ['https://your-project.supabase.co'] });
   assertOk('SUPABASE_SERVICE_KEY', { notEquals: ['your-service-key'] });

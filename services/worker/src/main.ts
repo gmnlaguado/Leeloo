@@ -24,7 +24,6 @@ function failFastEnv() {
     }
   };
 
-  assertOk('OPENAI_API_KEY', { notEquals: ['sk-your-key-here'] });
   assertOk('SUPABASE_URL', { notEquals: ['https://your-project.supabase.co'] });
   assertOk('SUPABASE_SERVICE_ROLE_KEY', { notEquals: ['your-service-key'] });
   assertOk('REDIS_URL', { notEquals: ['redis://localhost:6379'] });
