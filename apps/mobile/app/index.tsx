@@ -1,32 +1,41 @@
 import { useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useAuth } from '@clerk/clerk-expo';
 import { useAuthStore } from '@/store/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function Index() {
   const router = useRouter();
-  const session = useAuthStore((state) => state.session);
-  const hasCompletedOnboarding = useAuthStore((state) => state.hasCompletedOnboarding);
+  const { isLoaded, isSignedIn } = useAuth();
+  const setHasCompletedOnboarding = useAuthStore((s) => s.setHasCompletedOnboarding);
 
   useEffect(() => {
-    // Navigation logic after auth check
-    const timeout = setTimeout(() => {
-      router.replace('/(tabs)/home');
-    }, 1000);
+    if (!isLoaded) return;
 
-    return () => clearTimeout(timeout);
-  }, [router, session, hasCompletedOnboarding]);
+    const navigate = async () => {
+      if (!isSignedIn) {
+        router.replace('/(auth)/sign-in');
+        return;
+      }
+
+      // Check if onboarding was completed
+      const done = await AsyncStorage.getItem('hasCompletedOnboarding');
+      if (done !== 'true') {
+        router.replace('/onboarding');
+        return;
+      }
+
+      setHasCompletedOnboarding(true);
+      router.replace('/(tabs)/home');
+    };
+
+    void navigate();
+  }, [isLoaded, isSignedIn]);
 
   return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#8B5CF6',
-      }}
-    >
-      <ActivityIndicator size="large" color="#fff" />
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0B0B14' }}>
+      <ActivityIndicator size="large" color="#7C3AED" />
     </View>
   );
 }
