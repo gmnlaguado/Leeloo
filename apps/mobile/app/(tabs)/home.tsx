@@ -150,23 +150,35 @@ export default function HomeScreen() {
 
         {/* Quick Actions */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <Text style={styles.sectionTitle}>Acciones rápidas</Text>
           <View style={styles.quickActions}>
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity
+              style={styles.actionCard}
+              onPress={() => sendText('revisa mis correos')}
+            >
               <Text style={styles.actionEmoji}>📧</Text>
-              <Text style={styles.actionText}>Check Email</Text>
+              <Text style={styles.actionText}>Correos</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionCard}>
-              <Text style={styles.actionEmoji}>🛒</Text>
-              <Text style={styles.actionText}>Shopping List</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity
+              style={styles.actionCard}
+              onPress={() => router.push('/(tabs)/calendar')}
+            >
               <Text style={styles.actionEmoji}>📅</Text>
-              <Text style={styles.actionText}>Schedule</Text>
+              <Text style={styles.actionText}>Agenda</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionCard}>
-              <Text style={styles.actionEmoji}>👨‍👩‍👧</Text>
-              <Text style={styles.actionText}>Family</Text>
+            <TouchableOpacity
+              style={styles.actionCard}
+              onPress={() => sendText('¿qué tareas tengo pendientes?')}
+            >
+              <Text style={styles.actionEmoji}>✅</Text>
+              <Text style={styles.actionText}>Tareas</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionCard}
+              onPress={() => router.push('/settings/integrations')}
+            >
+              <Text style={styles.actionEmoji}>🔗</Text>
+              <Text style={styles.actionText}>Conectar</Text>
             </TouchableOpacity>
           </View>
         </View>

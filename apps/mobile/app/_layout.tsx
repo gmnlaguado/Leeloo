@@ -79,6 +79,7 @@ export default function RootLayout() {
               <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="settings/personality" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="settings/integrations" options={{ presentation: 'modal' }} />
             </Stack>
             <VoiceConfirmationModal />
             <StatusBar style="auto" />
