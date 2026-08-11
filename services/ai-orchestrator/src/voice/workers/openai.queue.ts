@@ -219,9 +219,11 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 700,
       temperature: 0.2,
-      system: data.systemPrompt,
+      // Prompt caching: system prompt is identical across all calls → Anthropic
+      // charges 10x less for cached input tokens (after the first call warms the cache).
+      system: [{ type: 'text', text: data.systemPrompt, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: userContent }],
-    });
+    } as any);
 
     const inputTokens = response.usage?.input_tokens ?? 0;
     const outputTokens = response.usage?.output_tokens ?? 0;
