@@ -40,7 +40,10 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     const redisUrl = String(process.env.REDIS_URL || '').trim();
-    this.redis = new IORedis(redisUrl);
+    this.redis = new IORedis(redisUrl, {
+      maxRetriesPerRequest: null,
+      enableReadyCheck: false,
+    });
 
     this.queue = new Queue('openai', {
       connection: this.redis,
