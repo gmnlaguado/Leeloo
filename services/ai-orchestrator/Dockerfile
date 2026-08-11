@@ -22,6 +22,10 @@ COPY tsconfig.json ./
 COPY packages ./packages
 COPY services/ai-orchestrator ./services/ai-orchestrator
 RUN npx turbo run build --filter=@leeloo/ai-orchestrator...
+# Merge service-level node_modules that npm workspaces didn't hoist into root
+RUN if [ -d /repo/services/ai-orchestrator/node_modules ]; then \
+      cp -rn /repo/services/ai-orchestrator/node_modules/. /repo/node_modules/ 2>/dev/null || true; \
+    fi
 
 FROM node:20-alpine AS runner
 RUN apk add --no-cache curl tini
