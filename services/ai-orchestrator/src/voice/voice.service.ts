@@ -500,6 +500,10 @@ export class VoiceService {
         return { ok: true, provider: 'none', endpoint: null, data: null };
       }
 
+      if (intent === 'emotional_support') {
+        return { ok: true, provider: 'none', endpoint: null, data: null };
+      }
+
       if (intent === 'chat') {
         return { ok: true, provider: 'none', endpoint: null, data: null };
       }
