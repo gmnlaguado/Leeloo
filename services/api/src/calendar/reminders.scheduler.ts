@@ -139,7 +139,7 @@ export class RemindersScheduler implements OnModuleInit {
           e.start_at as start_at,
           e.location as location,
           e.remind_offsets_minutes as remind_offsets_minutes,
-          rs.expo_push_token as expo_push_token,
+          COALESCE(rs.expo_push_token, p.expo_push_token) as expo_push_token,
           rs.default_reminder_offset_minutes as default_offset,
           rs.quiet_hours as quiet_hours,
           p.preferences as preferences
@@ -156,7 +156,7 @@ export class RemindersScheduler implements OnModuleInit {
           t.user_id as user_id,
           t.title as title,
           t.due_at as due_at,
-          rs.expo_push_token as expo_push_token,
+          COALESCE(rs.expo_push_token, p.expo_push_token) as expo_push_token,
           rs.default_reminder_offset_minutes as default_offset,
           rs.quiet_hours as quiet_hours,
           p.preferences as preferences
