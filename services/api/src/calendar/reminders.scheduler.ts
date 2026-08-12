@@ -222,15 +222,19 @@ export class RemindersScheduler implements OnModuleInit {
           );
           if ((already.rows || []).length > 0) continue;
 
+          const minutesLeft = Math.round((startAt.getTime() - now.getTime()) / 60000);
+          const timeHint = minutesLeft <= 1 ? 'ahora mismo' : minutesLeft <= 60 ? `en ${minutesLeft} minutos` : `a las ${startAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}`;
           const pushOk = token
             ? await this.sendExpoPush(token, {
-                title: 'Leeloo',
-                body: `${r.title}${r.location ? ` · ${r.location}` : ''}`,
+                title: '⏰ Leeloo',
+                body: `${r.title}${r.location ? ` · ${r.location}` : ''} — ${timeHint}`,
+                categoryId: 'reminder',
                 data: {
                   kind: 'calendar_reminder',
                   event_id: r.event_id,
                   start_at: toIso(startAt),
                   offset_minutes: off,
+                  speak_text: `Oye, ${r.title}${r.location ? ` en ${r.location}` : ''} ${timeHint}`,
                 },
               })
             : false;
@@ -291,15 +295,19 @@ export class RemindersScheduler implements OnModuleInit {
           );
           if ((already.rows || []).length > 0) continue;
 
+          const minsLeft = Math.round((dueAt.getTime() - now.getTime()) / 60000);
+          const timeHint2 = minsLeft <= 1 ? 'ahora mismo' : minsLeft <= 60 ? `en ${minsLeft} minutos` : `a las ${dueAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}`;
           const pushOk = token
             ? await this.sendExpoPush(token, {
-                title: 'Leeloo',
-                body: `Task: ${r.title}`,
+                title: '⏰ Leeloo',
+                body: `Recuerda: ${r.title} — ${timeHint2}`,
+                categoryId: 'reminder',
                 data: {
                   kind: 'task_reminder',
                   task_id: r.task_id,
                   due_at: toIso(dueAt),
                   offset_minutes: off,
+                  speak_text: `Oye, recuerda: ${r.title} ${timeHint2}`,
                 },
               })
             : false;
@@ -347,7 +355,7 @@ export class RemindersScheduler implements OnModuleInit {
 
   private async sendExpoPush(
     to: string,
-    payload: { title: string; body: string; data?: Record<string, any> },
+    payload: { title: string; body: string; categoryId?: string; data?: Record<string, any> },
   ): Promise<boolean> {
     try {
       const url = 'https://exp.host/--/api/v2/push/send';
@@ -364,6 +372,7 @@ export class RemindersScheduler implements OnModuleInit {
           sound: 'default',
           title: payload.title,
           body: payload.body,
+          categoryId: payload.categoryId,
           data: payload.data || {},
         },
         { timeout: timeoutMs },
