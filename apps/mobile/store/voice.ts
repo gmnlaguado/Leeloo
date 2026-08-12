@@ -3,7 +3,7 @@ import { Audio } from 'expo-av';
 import type { AVPlaybackStatus } from 'expo-av';
 import type { AudioMode } from 'expo-av';
 import * as Speech from 'expo-speech';
-import { voiceAPI, profilesAPI } from '@/lib/api';
+import { voiceAPI, profilesAPI, tasksAPI } from '@/lib/api';
 import { useSettingsStore } from '@/store/settings';
 
 const getProfileOpts = async (): Promise<{ personality?: string; user_name?: string }> => {
@@ -136,6 +136,21 @@ const playAudioUrl = async (uri: string) => {
   }
 };
 
+export interface PendingReminder {
+  taskId: string;
+  title: string;
+}
+
+// Local keyword matching — cero tokens
+export function matchReminderResponse(text: string): 'done' | 'postpone' | number | null {
+  const t = text.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+  if (/\b(listo|hecho|ok|ya lo hice|completado|ya|done)\b/.test(t)) return 'done';
+  const minMatch = t.match(/(\d+)\s*(min|minuto|minutos)/);
+  if (minMatch) return parseInt(minMatch[1], 10);
+  if (/\b(posponer|despues|luego|mas tarde|postpone|después|después|espera)\b/.test(t)) return 10;
+  return null;
+}
+
 interface VoiceState {
   isListening: boolean;
   isProcessing: boolean;
@@ -147,6 +162,7 @@ interface VoiceState {
   awaitingConfirmation: boolean;
   pendingConfirmationText: string;
   pendingOriginalText: string;
+  pendingReminder: PendingReminder | null;
   startListening: () => Promise<void>;
   stopListening: () => Promise<void>;
   sendText: (text: string) => Promise<void>;
@@ -155,6 +171,7 @@ interface VoiceState {
   setProcessing: (value: boolean) => void;
   setTranscription: (text: string) => void;
   setResponse: (text: string) => void;
+  setPendingReminder: (r: PendingReminder | null) => void;
   reset: () => void;
   _recording: Audio.Recording | null;
 }
@@ -170,6 +187,7 @@ export const useVoiceStore = create<VoiceState>((set) => ({
   awaitingConfirmation: false,
   pendingConfirmationText: '',
   pendingOriginalText: '',
+  pendingReminder: null,
   _recording: null,
 
   startListening: async () => {
@@ -216,6 +234,35 @@ export const useVoiceStore = create<VoiceState>((set) => ({
 
       set({ isProcessing: true });
       const language = useSettingsStore.getState().language;
+
+      // Si hay un recordatorio pendiente, intentamos matching local primero (cero tokens)
+      const reminder = useVoiceStore.getState().pendingReminder;
+      if (reminder) {
+        const sttRes = await voiceAPI.processVoice(uri, { language, wakeWordOnly: true });
+        const sttData = (sttRes?.data ?? {}) as Record<string, unknown>;
+        const transcribed = typeof sttData.transcription === 'string' ? sttData.transcription : '';
+        const match = matchReminderResponse(transcribed);
+        if (match !== null) {
+          set({ pendingReminder: null, transcription: transcribed });
+          if (match === 'done') {
+            await tasksAPI.updateTask(reminder.taskId, { status: 'done' });
+            const reply = 'Listo, marcado como completado.';
+            set({ response: reply, status: 'idle' });
+            await speakTextAndWait(reply, language);
+          } else {
+            const mins = typeof match === 'number' ? match : 10;
+            const newDue = new Date(Date.now() + mins * 60 * 1000).toISOString();
+            await tasksAPI.updateTask(reminder.taskId, { due_at: newDue });
+            const reply = `Ok, te recuerdo ${reminder.title} en ${mins} minutos.`;
+            set({ response: reply, status: 'idle' });
+            await speakTextAndWait(reply, language);
+          }
+          set({ isProcessing: false });
+          return;
+        }
+        // No coincidió — caemos al flujo normal con el audio ya grabado
+      }
+
       const profileOpts = await getProfileOpts();
       const res = await voiceAPI.processVoice(uri, { language, ...profileOpts });
       const data = (res?.data ?? {}) as RawVoiceApiResponse;
@@ -524,6 +571,7 @@ export const useVoiceStore = create<VoiceState>((set) => ({
   setProcessing: (value: boolean) => set({ isProcessing: value }),
   setTranscription: (text: string) => set({ transcription: text }),
   setResponse: (text: string) => set({ response: text }),
+  setPendingReminder: (r) => set({ pendingReminder: r }),
   reset: () =>
     set({
       isListening: false,
@@ -535,6 +583,7 @@ export const useVoiceStore = create<VoiceState>((set) => ({
       awaitingConfirmation: false,
       pendingConfirmationText: '',
       pendingOriginalText: '',
+      pendingReminder: null,
       _recording: null,
     }),
 }));

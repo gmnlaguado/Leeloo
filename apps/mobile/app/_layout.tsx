@@ -18,6 +18,7 @@ import {
   subscribeWakeWord,
 } from '@/services/wake-word.service';
 import { useVoiceStore } from '@/store/voice';
+import type { PendingReminder } from '@/store/voice';
 import { tasksAPI } from '@/lib/api';
 
 const queryClient = new QueryClient();
@@ -108,14 +109,39 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
     };
   }, [isSignedIn]);
 
-  // Foreground notification: speak via TTS when app is open
+  // Foreground notification: speak via TTS + abrir micrófono para respuesta por voz
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener((notification) => {
       const data = notification.request.content.data as Record<string, unknown>;
       const speakText = typeof data?.speak_text === 'string' ? data.speak_text : null;
-      if (speakText) {
-        Speech.speak(speakText, { language: 'es', rate: 0.95 });
-      }
+      const taskId = typeof data?.task_id === 'string' ? data.task_id : null;
+      const kind = typeof data?.kind === 'string' ? data.kind : null;
+
+      if (!speakText) return;
+
+      const isReminder = kind === 'task_reminder' || kind === 'calendar_reminder';
+
+      Speech.speak(speakText, {
+        language: 'es',
+        rate: 0.95,
+        onDone: () => {
+          // Después de hablar, si es recordatorio, activa el micrófono automáticamente
+          if (isReminder && taskId) {
+            const reminder: PendingReminder = {
+              taskId,
+              title: typeof data?.title === 'string' ? data.title : '',
+            };
+            // 800ms de pausa para que el usuario se prepare
+            setTimeout(() => {
+              const { isListening, isProcessing } = useVoiceStore.getState();
+              if (!isListening && !isProcessing) {
+                useVoiceStore.getState().setPendingReminder(reminder);
+                void useVoiceStore.getState().startListening();
+              }
+            }, 800);
+          }
+        },
+      });
     });
     return () => sub.remove();
   }, []);
