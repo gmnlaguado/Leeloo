@@ -381,25 +381,44 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       // Fallback to recency.
       try {
         const limit = Math.max(1, Math.min(5, Math.floor(input.limit || 5)));
-        const res = await this.pool.query(
-          `SELECT category, key, value
-           FROM memories
-           WHERE user_id = $1
-             AND key NOT LIKE 'turn_%'
-           ORDER BY last_used DESC
-           LIMIT $2`,
-          [profileId, limit],
-        );
-        const rows = res.rows || [];
-        return rows
+        const [memRes, contactRes] = await Promise.all([
+          this.pool.query(
+            `SELECT category, key, value
+             FROM memories
+             WHERE user_id = $1
+               AND key NOT LIKE 'turn_%'
+             ORDER BY last_used DESC
+             LIMIT $2`,
+            [profileId, limit],
+          ),
+          this.pool.query(
+            `SELECT name, nickname, email, phone, relation
+             FROM contacts
+             WHERE user_id = $1
+             ORDER BY updated_at DESC
+             LIMIT 20`,
+            [profileId],
+          ),
+        ]);
+
+        const memLines = (memRes.rows || []).map((r: any) => {
+          const cat = String(r?.category || '').trim();
+          const k = String(r?.key || '').trim();
+          return `${cat}${k ? `:${k}` : ''} = ${JSON.stringify(r?.value)}`;
+        });
+
+        const contactLines = (contactRes.rows || [])
+          .filter((r: any) => r?.email || r?.phone)
           .map((r: any) => {
-            const cat = String(r?.category || '').trim();
-            const k = String(r?.key || '').trim();
-            const v = r?.value;
-            const line = `${cat}${k ? `:${k}` : ''}`;
-            return `${line} = ${JSON.stringify(v)}`;
-          })
-          .join('\n');
+            const name = r.nickname ? `${r.name} (${r.nickname})` : r.name;
+            const parts = [];
+            if (r.email) parts.push(`email:${r.email}`);
+            if (r.phone) parts.push(`phone:${r.phone}`);
+            if (r.relation) parts.push(`relation:${r.relation}`);
+            return `contact:${name} = ${parts.join(', ')}`;
+          });
+
+        return [...memLines, ...contactLines].join('\n');
       } catch {
         return '';
       }
