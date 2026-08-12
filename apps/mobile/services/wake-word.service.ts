@@ -19,7 +19,7 @@ import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
 import { Audio } from 'expo-av';
 
-import api from '@/lib/api';
+import { voiceAPI } from '@/lib/api';
 
 export const WAKE_WORD_TASK = 'LEELOO_WAKE_WORD_DETECTION';
 
@@ -76,7 +76,7 @@ export function matchesWakePhrase(transcription: string): boolean {
   return WAKE_PHRASES.some((p) => normalized.includes(p));
 }
 
-async function captureShortAudioToFormData(): Promise<FormData | null> {
+async function captureShortAudio(): Promise<string | null> {
   try {
     const perm = await Audio.requestPermissionsAsync();
     if (!perm.granted) return null;
@@ -90,17 +90,7 @@ async function captureShortAudioToFormData(): Promise<FormData | null> {
     const { recording } = await Audio.Recording.createAsync(RECORDING_OPTIONS);
     await new Promise((res) => setTimeout(res, 2000));
     await recording.stopAndUnloadAsync();
-    const uri = recording.getURI();
-    if (!uri) return null;
-
-    const form = new FormData();
-    form.append('audio', {
-      uri,
-      name: 'wake.m4a',
-      type: 'audio/m4a',
-    } as any);
-    form.append('wake_word_only', 'true');
-    return form;
+    return recording.getURI() ?? null;
   } catch {
     return null;
   }
@@ -108,17 +98,17 @@ async function captureShortAudioToFormData(): Promise<FormData | null> {
 
 TaskManager.defineTask(WAKE_WORD_TASK, async () => {
   try {
-    const form = await captureShortAudioToFormData();
-    if (!form) return BackgroundFetch.BackgroundFetchResult.NoData;
+    const uri = await captureShortAudio();
+    if (!uri) return BackgroundFetch.BackgroundFetchResult.NoData;
 
-    const res = await api.post<{ transcription?: string }>('/v1/voice/process', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 12000,
-    });
+    const res = await voiceAPI.processVoice(uri, { wakeWordOnly: true });
+    const data = (res?.data ?? {}) as Record<string, unknown>;
 
-    const transcription = res.data?.transcription || '';
-    if (matchesWakePhrase(transcription)) {
-      // Caller registers a listener on this event via `subscribeWakeWord(...)`.
+    const transcription = typeof data.transcription === 'string' ? data.transcription : '';
+    const wakeDetected =
+      data.wake_word_detected === true || matchesWakePhrase(transcription);
+
+    if (wakeDetected) {
       wakeListeners.forEach((cb) => {
         try {
           cb(transcription);

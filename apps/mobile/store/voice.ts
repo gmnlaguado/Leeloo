@@ -3,8 +3,21 @@ import { Audio } from 'expo-av';
 import type { AVPlaybackStatus } from 'expo-av';
 import type { AudioMode } from 'expo-av';
 import * as Speech from 'expo-speech';
-import { voiceAPI } from '@/lib/api';
+import { voiceAPI, profilesAPI } from '@/lib/api';
 import { useSettingsStore } from '@/store/settings';
+
+const getProfileOpts = async (): Promise<{ personality?: string; user_name?: string }> => {
+  try {
+    const res = await profilesAPI.getMe();
+    const p = (res?.data as Record<string, unknown> | null) ?? {};
+    return {
+      personality: typeof p.leeloo_personality === 'string' ? p.leeloo_personality : undefined,
+      user_name: typeof p.leeloo_name === 'string' ? p.leeloo_name : undefined,
+    };
+  } catch {
+    return {};
+  }
+};
 
 type VoiceStatus = 'idle' | 'recording' | 'processing' | 'speaking' | 'awaiting_confirmation';
 
@@ -203,7 +216,8 @@ export const useVoiceStore = create<VoiceState>((set) => ({
 
       set({ isProcessing: true });
       const language = useSettingsStore.getState().language;
-      const res = await voiceAPI.processVoice(uri, { language });
+      const profileOpts = await getProfileOpts();
+      const res = await voiceAPI.processVoice(uri, { language, ...profileOpts });
       const data = (res?.data ?? {}) as RawVoiceApiResponse;
 
       const transcription = data.transcription ?? data.text ?? data.input_text ?? '';
@@ -340,7 +354,8 @@ export const useVoiceStore = create<VoiceState>((set) => ({
         pendingOriginalText: trimmed,
       });
       const language = useSettingsStore.getState().language;
-      const res = await voiceAPI.processText(trimmed, { language });
+      const profileOpts = await getProfileOpts();
+      const res = await voiceAPI.processText(trimmed, { language, ...profileOpts });
       const data = (res?.data ?? {}) as RawVoiceApiResponse;
 
       const assistantText =

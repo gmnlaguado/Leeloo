@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import axios from 'axios';
-import { LEELOO_SYSTEM_PROMPT, LEELOO_SYSTEM_PROMPT_VERSION } from '@leeloo/ai-prompts';
+import {
+  LEELOO_SYSTEM_PROMPT,
+  LEELOO_SYSTEM_PROMPT_VERSION,
+  buildSystemPrompt,
+  type LeelooPersonality,
+} from '@leeloo/ai-prompts';
 import { OpenAiQueue } from './workers/openai.queue';
 
 type SupportedLanguage = 'es' | 'en' | 'pt' | 'fr' | 'ja';
@@ -26,6 +31,8 @@ export class VoiceService {
     audio?: Express.Multer.File;
     authorization?: string;
     confirmation?: 'confirmed' | 'cancel';
+    personality?: string;
+    userName?: string;
   }) {
     const language = this.normalizeLanguage(input.language);
 
@@ -74,6 +81,27 @@ export class VoiceService {
       memories = '';
     }
 
+    const validPersonalities: LeelooPersonality[] = [
+      'default', 'christian', 'coach', 'mentor', 'business', 'counselor', 'faith',
+    ];
+    const personality: LeelooPersonality =
+      validPersonalities.includes(input.personality as LeelooPersonality)
+        ? (input.personality as LeelooPersonality)
+        : 'default';
+
+    const hour = new Date().getHours();
+    const timeOfDay =
+      hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
+
+    const systemPrompt = input.userName
+      ? buildSystemPrompt(personality, input.userName, {
+          todayTasks: [],
+          upcomingEvents: [],
+          pendingApprovals: 0,
+          timeOfDay,
+        })
+      : LEELOO_SYSTEM_PROMPT;
+
     let intent: IntentResult;
     try {
       intent = await this.openAiQueue.extractIntent({
@@ -81,7 +109,7 @@ export class VoiceService {
         language,
         transcription,
         memoryContext: memories,
-        systemPrompt: LEELOO_SYSTEM_PROMPT,
+        systemPrompt,
         systemPromptVersion: LEELOO_SYSTEM_PROMPT_VERSION,
       });
     } catch (err: any) {

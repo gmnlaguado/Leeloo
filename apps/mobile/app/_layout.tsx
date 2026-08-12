@@ -9,6 +9,12 @@ import { useAuthStore } from '@/store/auth';
 import { setClerkTokenGetter, setClerkUserId, setClerkSignOut } from '@/lib/clerkAuth';
 import { VoiceConfirmationModal } from '@/components/VoiceConfirmationModal';
 import { registerForPushNotificationsAsync } from '@/services/push.service';
+import {
+  registerWakeWordDetection,
+  unregisterWakeWordDetection,
+  subscribeWakeWord,
+} from '@/services/wake-word.service';
+import { useVoiceStore } from '@/store/voice';
 
 const queryClient = new QueryClient();
 
@@ -53,6 +59,21 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
       void registerForPushNotificationsAsync();
     }
   }, [isSignedIn, userId]);
+
+  useEffect(() => {
+    if (!isSignedIn) return;
+    void registerWakeWordDetection();
+    const unsub = subscribeWakeWord(() => {
+      const { isListening, isProcessing } = useVoiceStore.getState();
+      if (!isListening && !isProcessing) {
+        void useVoiceStore.getState().startListening();
+      }
+    });
+    return () => {
+      unsub();
+      void unregisterWakeWordDetection();
+    };
+  }, [isSignedIn]);
 
   return <>{children}</>;
 }

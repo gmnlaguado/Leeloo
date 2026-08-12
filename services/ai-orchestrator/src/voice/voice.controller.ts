@@ -48,6 +48,8 @@ export class VoiceController {
       String(body?.wake_word_only || '')
         .trim()
         .toLowerCase() === 'true';
+    const personality = typeof body?.personality === 'string' ? body.personality : undefined;
+    const userName = typeof body?.user_name === 'string' ? body.user_name : undefined;
 
     if (!audio && !text)
       throw new BadRequestException('Either audio file or text must be provided');
@@ -60,6 +62,8 @@ export class VoiceController {
       audio,
       authorization,
       confirmation,
+      personality,
+      userName,
     });
   }
 

@@ -190,7 +190,7 @@ api.interceptors.response.use(
 export const voiceAPI = {
   processVoice: async (
     audioUri: string,
-    opts?: { language?: string },
+    opts?: { language?: string; personality?: string; user_name?: string; wakeWordOnly?: boolean },
   ): Promise<{ data: unknown; status: number }> => {
     // Axios + multipart is flaky in RN/Expo Go. Use fetch here for stability.
     const { token, source } = await resolveBearerToken();
@@ -207,6 +207,15 @@ export const voiceAPI = {
     formData.append('audio', audioFile as unknown as Blob);
     if (opts?.language) {
       formData.append('language', opts.language);
+    }
+    if (opts?.personality) {
+      formData.append('personality', opts.personality);
+    }
+    if (opts?.user_name) {
+      formData.append('user_name', opts.user_name);
+    }
+    if (opts?.wakeWordOnly) {
+      formData.append('wake_word_only', 'true');
     }
 
     const controller = new AbortController();
@@ -255,7 +264,7 @@ export const voiceAPI = {
 
   processText: async (
     text: string,
-    opts?: { language?: string; confirmation?: 'confirmed' | 'cancel' },
+    opts?: { language?: string; confirmation?: 'confirmed' | 'cancel'; personality?: string; user_name?: string },
   ): Promise<AxiosResponse<unknown>> => {
     // The ai-orchestrator identifies the caller from the verified Clerk JWT
     // (AuthGuard), not from `user_id` in the body — that field is accepted but
@@ -269,6 +278,8 @@ export const voiceAPI = {
         text,
         ...(opts?.language ? { language: opts.language } : {}),
         ...(opts?.confirmation ? { confirmation: opts.confirmation } : {}),
+        ...(opts?.personality ? { personality: opts.personality } : {}),
+        ...(opts?.user_name ? { user_name: opts.user_name } : {}),
       } satisfies RequestBody,
       {
         timeout: 30000,
