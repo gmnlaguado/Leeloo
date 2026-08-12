@@ -485,6 +485,21 @@ export class VoiceService {
         return { ok: true, provider: 'api', endpoint: '/v1/verse/daily', data: res.data };
       }
 
+      if (intent === 'suggest_meal') {
+        // Conversational — Claude responds directly with meal suggestions
+        return { ok: true, provider: 'none', endpoint: null, data: null };
+      }
+
+      if (intent === 'get_recipe') {
+        // Conversational — Claude responds directly with the recipe
+        return { ok: true, provider: 'none', endpoint: null, data: null };
+      }
+
+      if (intent === 'recommend_restaurant') {
+        // Conversational — Claude responds directly with restaurant recommendations
+        return { ok: true, provider: 'none', endpoint: null, data: null };
+      }
+
       if (intent === 'chat') {
         return { ok: true, provider: 'none', endpoint: null, data: null };
       }
