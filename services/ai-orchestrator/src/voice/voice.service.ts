@@ -93,13 +93,14 @@ export class VoiceService {
     const timeOfDay =
       hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
 
+    const userCtx = input.userName
+      ? await this.openAiQueue
+          .fetchUserContext(input.userId)
+          .catch(() => ({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 }))
+      : { todayTasks: [], upcomingEvents: [], pendingApprovals: 0 };
+
     const systemPrompt = input.userName
-      ? buildSystemPrompt(personality, input.userName, {
-          todayTasks: [],
-          upcomingEvents: [],
-          pendingApprovals: 0,
-          timeOfDay,
-        })
+      ? buildSystemPrompt(personality, input.userName, { ...userCtx, timeOfDay })
       : LEELOO_SYSTEM_PROMPT;
 
     let intent: IntentResult;
@@ -344,9 +345,11 @@ export class VoiceService {
         const to = String(slots.to || '').trim();
         const subject = String(slots.subject || '').trim();
         const body = String(slots.body || '').trim();
-        if (!to) return { ok: false, fallback_text: 'Who should I email?' };
-        if (!subject) return { ok: false, fallback_text: 'What is the email subject?' };
-        if (!body) return { ok: false, fallback_text: 'What should the email say?' };
+        const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!to) return { ok: false, fallback_text: '¿A quién le envío el correo? Dime el email exacto.' };
+        if (!EMAIL_RE.test(to)) return { ok: false, fallback_text: `"${to}" no parece un correo válido. ¿Me lo puedes dictar letra por letra?` };
+        if (!subject) return { ok: false, fallback_text: '¿Cuál es el asunto del correo?' };
+        if (!body) return { ok: false, fallback_text: '¿Qué quieres que diga el correo?' };
         const res = await axios.post(
           `${apiBaseUrl.replace(/\/+$/, '')}/v1/email/send`,
           { to, subject, body },

@@ -1,30 +1,16 @@
 import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
-import { Worker, Queue, Job } from 'bullmq';
-import IORedis from 'ioredis';
 import { WorkerDbService } from './worker-db.service';
 import { NotificationsJob } from './notifications.job';
-
-export type CalendarGuardianJobName =
-  | 'alert_upcoming_events'
-  | 'alert_overdue_tasks'
-  | 'alert_pending_approvals'
-  | 'detect_calendar_conflicts'
-  | 'prepare_tomorrow_briefing';
 
 export interface CalendarGuardianJobData {
   userId?: string;
   triggeredAt: string;
 }
 
-const QUEUE_NAME = 'calendar-guardian';
-
 @Injectable()
 export class CalendarGuardianJob implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('CalendarGuardianJob');
-  private connection: IORedis | null = null;
-  private worker: Worker | null = null;
-  private queue: Queue | null = null;
-  private cronTimer: NodeJS.Timeout | null = null;
+  private sweepTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly db: WorkerDbService,
@@ -32,93 +18,47 @@ export class CalendarGuardianJob implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    const redisUrl = String(process.env.REDIS_URL || '').trim();
-    if (!redisUrl) {
-      this.logger.warn('REDIS_URL missing — CalendarGuardianJob disabled');
-      return;
-    }
-
-    this.connection = new IORedis(redisUrl, {
-      maxRetriesPerRequest: null,
-      enableReadyCheck: false,
-    });
-
-    this.queue = new Queue(QUEUE_NAME, { connection: this.connection });
-
-    this.worker = new Worker(
-      QUEUE_NAME,
-      async (job: Job) => {
-        const name = job.name as CalendarGuardianJobName;
-        const data = job.data as CalendarGuardianJobData;
-        switch (name) {
-          case 'alert_upcoming_events':
-            return this.alertUpcomingEvents(data);
-          case 'alert_overdue_tasks':
-            return this.alertOverdueTasks(data);
-          case 'alert_pending_approvals':
-            return this.alertPendingApprovals(data);
-          case 'detect_calendar_conflicts':
-            return this.detectCalendarConflicts(data);
-          case 'prepare_tomorrow_briefing':
-            return this.prepareTomorrowBriefing(data);
-          default:
-            return { ok: false, message: `Unknown job: ${name}` };
-        }
-      },
-      {
-        connection: this.connection,
-        concurrency: Number(process.env.CALENDAR_GUARDIAN_CONCURRENCY || 2),
-      },
-    );
-
-    this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        `[calendar-guardian] failed job=${job?.name} id=${job?.id} err=${String(err)}`,
-      );
-    });
-
     const intervalMs = Number(process.env.CALENDAR_GUARDIAN_INTERVAL_MS || 15 * 60 * 1000);
-    this.cronTimer = setInterval(() => {
-      void this.scheduleSweep().catch((e) => this.logger.warn(`scheduleSweep error: ${String(e)}`));
+
+    // Initial sweep after 30 s to let the pool stabilise
+    setTimeout(() => {
+      void this.scheduleSweep().catch((e) =>
+        this.logger.warn(`Initial sweep error: ${String(e)}`),
+      );
+    }, 30_000);
+
+    this.sweepTimer = setInterval(() => {
+      void this.scheduleSweep().catch((e) =>
+        this.logger.warn(`scheduleSweep error: ${String(e)}`),
+      );
     }, intervalMs);
+
+    this.logger.log(`CalendarGuardianJob started — interval ${intervalMs / 60_000} min`);
   }
 
-  /**
-   * Sweep all active users and enqueue per-user guardian jobs.
-   */
   async scheduleSweep() {
-    if (!this.queue) return;
     const triggeredAt = new Date().toISOString();
-
     const userIds = await this.listActiveUserIds();
+
     if (userIds.length === 0) {
       this.logger.debug('[calendar-guardian] no active users to sweep');
       return;
     }
 
-    const perUserJobs: CalendarGuardianJobName[] = [
-      'alert_upcoming_events',
-      'alert_overdue_tasks',
-      'alert_pending_approvals',
-      'detect_calendar_conflicts',
-    ];
     for (const userId of userIds) {
-      for (const name of perUserJobs) {
-        await this.queue.add(
-          name,
-          { userId, triggeredAt },
-          { removeOnComplete: 50, removeOnFail: 100 },
-        );
-      }
+      await Promise.allSettled([
+        this.alertUpcomingEvents({ userId, triggeredAt }),
+        this.alertOverdueTasks({ userId, triggeredAt }),
+        this.alertPendingApprovals({ userId, triggeredAt }),
+        this.detectCalendarConflicts({ userId, triggeredAt }),
+      ]);
     }
 
     const now = new Date();
     if (now.getHours() === 21 && now.getMinutes() < 15) {
       for (const userId of userIds) {
-        await this.queue.add(
-          'prepare_tomorrow_briefing',
-          { userId, triggeredAt },
-          { removeOnComplete: 20, removeOnFail: 50 },
+        await this.prepareTomorrowBriefing({ userId, triggeredAt }).catch((e) =>
+          this.logger.warn(`[calendar-guardian] briefing error user=${userId}: ${String(e)}`),
         );
       }
     }
@@ -129,7 +69,7 @@ export class CalendarGuardianJob implements OnModuleInit, OnModuleDestroy {
     const res = await this.db.query<{ id: string }>(
       `SELECT DISTINCT id FROM profiles
        WHERE id IN (
-         SELECT user_id FROM calendar_events WHERE start_time >= NOW() - INTERVAL '1 day'
+         SELECT user_id FROM calendar_events WHERE start_at >= NOW() - INTERVAL '1 day'
          UNION
          SELECT user_id FROM tasks WHERE status = 'pending'
          UNION
@@ -146,13 +86,13 @@ export class CalendarGuardianJob implements OnModuleInit, OnModuleDestroy {
     const res = await this.db.query<{
       id: string;
       title: string;
-      start_time: string;
+      start_at: string;
       location: string | null;
     }>(
-      `SELECT id, title, start_time, location FROM calendar_events
+      `SELECT id, title, start_at, location FROM calendar_events
        WHERE user_id = $1
-         AND start_time BETWEEN NOW() AND NOW() + INTERVAL '2 hours'
-       ORDER BY start_time ASC`,
+         AND start_at BETWEEN NOW() AND NOW() + INTERVAL '2 hours'
+       ORDER BY start_at ASC`,
       [userId],
     );
 
@@ -160,7 +100,7 @@ export class CalendarGuardianJob implements OnModuleInit, OnModuleDestroy {
     for (const ev of res.rows) {
       const minutesUntil = Math.max(
         0,
-        Math.round((new Date(ev.start_time).getTime() - Date.now()) / 60000),
+        Math.round((new Date(ev.start_at).getTime() - Date.now()) / 60000),
       );
 
       const dedup = await this.db.query(
@@ -180,7 +120,7 @@ export class CalendarGuardianJob implements OnModuleInit, OnModuleDestroy {
           JSON.stringify({
             event_id: ev.id,
             title: ev.title,
-            start_time: ev.start_time,
+            start_at: ev.start_at,
             location: ev.location,
             minutes_until: minutesUntil,
           }),
@@ -310,15 +250,15 @@ export class CalendarGuardianJob implements OnModuleInit, OnModuleDestroy {
       b_start: string;
       b_end: string;
     }>(
-      `SELECT a.id AS a_id, a.title AS a_title, a.start_time AS a_start, a.end_time AS a_end,
-              b.id AS b_id, b.title AS b_title, b.start_time AS b_start, b.end_time AS b_end
+      `SELECT a.id AS a_id, a.title AS a_title, a.start_at AS a_start, a.end_at AS a_end,
+              b.id AS b_id, b.title AS b_title, b.start_at AS b_start, b.end_at AS b_end
        FROM calendar_events a
        JOIN calendar_events b
          ON a.user_id = b.user_id AND a.id < b.id
-        AND a.start_time < b.end_time AND b.start_time < a.end_time
+        AND a.start_at < b.end_at AND b.start_at < a.end_at
        WHERE a.user_id = $1
-         AND a.start_time >= NOW() AND a.start_time < NOW() + INTERVAL '7 days'
-       ORDER BY a.start_time ASC
+         AND a.start_at >= NOW() AND a.start_at < NOW() + INTERVAL '7 days'
+       ORDER BY a.start_at ASC
        LIMIT 20`,
       [userId],
     );
@@ -373,13 +313,13 @@ export class CalendarGuardianJob implements OnModuleInit, OnModuleDestroy {
 
     const events = await this.db.query<{
       title: string;
-      start_time: string;
+      start_at: string;
       location: string | null;
     }>(
-      `SELECT title, start_time, location FROM calendar_events
+      `SELECT title, start_at, location FROM calendar_events
        WHERE user_id = $1
-         AND start_time::date = (NOW() + INTERVAL '1 day')::date
-       ORDER BY start_time ASC`,
+         AND start_at::date = (NOW() + INTERVAL '1 day')::date
+       ORDER BY start_at ASC`,
       [userId],
     );
 
@@ -398,7 +338,7 @@ export class CalendarGuardianJob implements OnModuleInit, OnModuleDestroy {
       lines.push('· Agenda libre.');
     } else {
       for (const ev of events.rows) {
-        const t = new Date(ev.start_time).toLocaleTimeString('es-ES', {
+        const t = new Date(ev.start_at).toLocaleTimeString('es-ES', {
           hour: '2-digit',
           minute: '2-digit',
         });
@@ -433,15 +373,9 @@ export class CalendarGuardianJob implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    if (this.cronTimer) {
-      clearInterval(this.cronTimer);
-      this.cronTimer = null;
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = null;
     }
-    await this.worker?.close();
-    this.worker = null;
-    await this.queue?.close();
-    this.queue = null;
-    await this.connection?.quit();
-    this.connection = null;
   }
 }

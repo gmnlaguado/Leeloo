@@ -1,6 +1,4 @@
 import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
-import { Worker, Queue, Job } from 'bullmq';
-import IORedis from 'ioredis';
 import { WorkerDbService } from './worker-db.service';
 import { NotificationsJob } from './notifications.job';
 
@@ -10,16 +8,12 @@ export interface MorningBriefingJobData {
   triggeredAt: string;
 }
 
-const QUEUE_NAME = 'morning-briefing';
-const BRIEFING_HOUR = 7; // 7:00am local time
+const BRIEFING_HOUR = 7;
 
 @Injectable()
 export class MorningBriefingJob implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('MorningBriefingJob');
-  private connection: IORedis | null = null;
-  private worker: Worker | null = null;
-  private queue: Queue | null = null;
-  private cronTimer: NodeJS.Timeout | null = null;
+  private checkTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly db: WorkerDbService,
@@ -27,46 +21,26 @@ export class MorningBriefingJob implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    const redisUrl = String(process.env.REDIS_URL || '').trim();
-    if (!redisUrl) {
-      this.logger.warn('REDIS_URL missing — MorningBriefingJob disabled');
-      return;
-    }
-    this.connection = new IORedis(redisUrl, {
-      maxRetriesPerRequest: null,
-      enableReadyCheck: false,
-    });
+    const checkMs = Number(process.env.MORNING_BRIEFING_CHECK_MS || 5 * 60 * 1000);
 
-    this.queue = new Queue(QUEUE_NAME, { connection: this.connection });
-
-    this.worker = new Worker(
-      QUEUE_NAME,
-      async (job: Job) => this.execute(job.data as MorningBriefingJobData),
-      {
-        connection: this.connection,
-        concurrency: Number(process.env.MORNING_BRIEFING_CONCURRENCY || 4),
-      },
+    // Initial check after 10 s to catch missed window at startup
+    setTimeout(
+      () => void this.dispatchPerTimezone().catch(() => {}),
+      10_000,
     );
 
-    this.worker.on('failed', (job, err) => {
-      this.logger.warn(`[morning-briefing] failed id=${job?.id} err=${String(err)}`);
-    });
-
-    const checkMs = Number(process.env.MORNING_BRIEFING_CHECK_MS || 5 * 60 * 1000);
-    this.cronTimer = setInterval(() => {
+    this.checkTimer = setInterval(() => {
       void this.dispatchPerTimezone().catch((e) =>
         this.logger.warn(`dispatchPerTimezone error: ${String(e)}`),
       );
     }, checkMs);
 
-    // Run once on startup to catch any missed window
-    setTimeout(() => void this.dispatchPerTimezone().catch(() => {}), 10_000);
+    this.logger.log(`MorningBriefingJob started — check interval ${checkMs / 60_000} min`);
   }
 
   async dispatchPerTimezone() {
-    if (!this.db.isReady() || !this.queue) return;
+    if (!this.db.isReady()) return;
 
-    // Find users whose current local hour = BRIEFING_HOUR and haven't been briefed today
     const res = await this.db.query<{
       id: string;
       timezone: string | null;
@@ -97,13 +71,12 @@ export class MorningBriefingJob implements OnModuleInit, OnModuleDestroy {
 
         if (localHour !== BRIEFING_HOUR) continue;
 
-        await this.enqueue({
+        await this.execute({
           userId: user.id,
           timezone: tz,
           triggeredAt: now.toISOString(),
         });
 
-        // Mark as sent for today so we don't double-send
         await this.db.query(
           `UPDATE profiles SET preferences = preferences || $1::jsonb WHERE id = $2`,
           [JSON.stringify({ morning_briefing_last_sent: now.toISOString() }), user.id],
@@ -123,19 +96,17 @@ export class MorningBriefingJob implements OnModuleInit, OnModuleDestroy {
   async execute(data: MorningBriefingJobData) {
     this.logger.log(`morningBriefing.execute user=${data.userId}`);
 
-    // Get today's agenda from calendar_events
     const today = new Date();
     const startOfDay = new Date(today);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(today);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const events = await this.db.query<{ title: string; starts_at: string | null }>(
-      `SELECT title, starts_at FROM calendar_events
+    const events = await this.db.query<{ title: string; start_at: string | null }>(
+      `SELECT title, start_at FROM calendar_events
        WHERE user_id = $1
-         AND starts_at >= $2 AND starts_at <= $3
-         AND deleted_at IS NULL
-       ORDER BY starts_at ASC
+         AND start_at >= $2 AND start_at <= $3
+       ORDER BY start_at ASC
        LIMIT 5`,
       [data.userId, startOfDay.toISOString(), endOfDay.toISOString()],
     );
@@ -147,54 +118,52 @@ export class MorningBriefingJob implements OnModuleInit, OnModuleDestroy {
       [data.userId],
     );
 
-    // Build greeting message
-    const greetingLines: string[] = ['Good morning! ☀️ Here is your day at a glance:'];
+    const greetingLines: string[] = ['¡Buenos días! ☀️ Aquí tu resumen del día:'];
 
     if (events.rows.length > 0) {
-      greetingLines.push('📅 Today:');
+      greetingLines.push('📅 Hoy:');
       for (const ev of events.rows) {
-        const time = ev.starts_at
-          ? new Date(ev.starts_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+        const time = ev.start_at
+          ? new Date(ev.start_at).toLocaleTimeString('es-ES', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })
           : '';
         greetingLines.push(`  • ${time ? `${time} — ` : ''}${ev.title}`);
       }
     } else {
-      greetingLines.push('📅 No events scheduled today.');
+      greetingLines.push('📅 No tienes eventos hoy.');
     }
 
     if (pendingTasks.rows.length > 0) {
-      greetingLines.push(`✅ Pending tasks: ${pendingTasks.rows.map((t) => t.title).join(', ')}`);
+      greetingLines.push(
+        `✅ Pendientes: ${pendingTasks.rows.map((t) => t.title).join(', ')}`,
+      );
     }
 
-    greetingLines.push("I'm here whenever you need me. Have an amazing day! 💪");
+    greetingLines.push('Estoy aquí cuando me necesites. ¡Que tengas un día increíble! 💪');
 
     await this.notifications.enqueue({
       userId: data.userId,
-      title: 'Good morning! Leeloo here 👋',
+      title: '¡Buenos días! Leeloo aquí 👋',
       body: greetingLines.join('\n'),
       data: { type: 'morning_briefing', triggeredAt: data.triggeredAt },
       sound: 'default',
       priority: 'high',
     });
 
-    return { ok: true, userId: data.userId, events: events.rows.length, tasks: pendingTasks.rows.length };
-  }
-
-  async enqueue(data: MorningBriefingJobData) {
-    if (!this.queue) return null;
-    return this.queue.add('execute', data, { removeOnComplete: 100, removeOnFail: 100 });
+    return {
+      ok: true,
+      userId: data.userId,
+      events: events.rows.length,
+      tasks: pendingTasks.rows.length,
+    };
   }
 
   async onModuleDestroy() {
-    if (this.cronTimer) {
-      clearInterval(this.cronTimer);
-      this.cronTimer = null;
+    if (this.checkTimer) {
+      clearInterval(this.checkTimer);
+      this.checkTimer = null;
     }
-    await this.worker?.close();
-    this.worker = null;
-    await this.queue?.close();
-    this.queue = null;
-    await this.connection?.quit();
-    this.connection = null;
   }
 }

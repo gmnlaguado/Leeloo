@@ -26,7 +26,6 @@ function failFastEnv() {
 
   assertOk('SUPABASE_URL', { notEquals: ['https://your-project.supabase.co'] });
   assertOk('SUPABASE_SERVICE_ROLE_KEY', { notEquals: ['your-service-key'] });
-  assertOk('REDIS_URL', { notEquals: ['redis://localhost:6379'] });
   assertOk('ENCRYPTION_KEY', { minLen: 64, notEquals: ['your-encryption-key-32-chars-min'] });
   if (!/^[0-9a-fA-F]{64}$/.test(must('ENCRYPTION_KEY'))) {
     throw new Error('ENCRYPTION_KEY must be 64 hex characters');
@@ -45,7 +44,7 @@ async function bootstrap() {
   app.enableShutdownHooks();
   await app.init();
 
-  console.log('🟣 Leeloo Worker running — listening for BullMQ jobs');
+  console.log('🟣 Leeloo Worker running — CalendarGuardian active');
 
   const shutdown = async (signal: string) => {
     console.log(`[worker] received ${signal}, draining and exiting…`);
