@@ -27,8 +27,6 @@ function failFastEnv() {
   assertOk('ANTHROPIC_API_KEY', { notEquals: ['sk-ant-your-key-here'] });
   assertOk('SUPABASE_URL', { notEquals: ['https://your-project.supabase.co'] });
   assertOk('SUPABASE_SERVICE_KEY', { notEquals: ['your-service-key'] });
-  assertOk('REDIS_URL', { notEquals: ['redis://localhost:6379'] });
-
   if (isProd) {
     assertOk('CLERK_JWKS_URL');
     assertOk('API_BASE_URL');
