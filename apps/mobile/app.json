@@ -2,7 +2,7 @@
   "expo": {
     "name": "Leeloo",
     "slug": "leeloo",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -11,15 +11,25 @@
       "resizeMode": "contain",
       "backgroundColor": "#8B5CF6"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.leeloo.app",
+      "bundleIdentifier": "com.hyperbyte.leeloo",
+      "buildNumber": "2",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Leeloo necesita el micrófono para escuchar tus comandos de voz.",
         "NSCalendarsUsageDescription": "Leeloo necesita acceso a tu calendario para programar eventos.",
         "NSSpeechRecognitionUsageDescription": "Leeloo usa reconocimiento de voz para entender tus comandos.",
-        "UIBackgroundModes": ["audio", "fetch", "processing"]
+        "UIBackgroundModes": [
+          "audio",
+          "fetch",
+          "processing"
+        ],
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.hyperbyte.leeloo.refresh"
+        ]
       },
       "config": {
         "usesNonExemptEncryption": false
@@ -28,9 +38,10 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#8B5CF6"
+        "backgroundColor": "#2D266C"
       },
       "package": "com.leeloo.app",
+      "versionCode": 7,
       "permissions": [
         "RECORD_AUDIO",
         "READ_CALENDAR",
@@ -38,7 +49,11 @@
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "FOREGROUND_SERVICE",
-        "WAKE_LOCK"
+        "WAKE_LOCK",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "plugins": [
@@ -69,10 +84,10 @@
         "origin": false
       },
       "eas": {
-        "projectId": "your-project-id-here"
+        "projectId": "b2e0fbb8-1cc1-4997-b6c9-83732a758597"
       },
       "EXPO_PUBLIC_LOG_AUTH_TOKEN": "false"
     },
-    "owner": "leeloo"
+    "owner": "mikezelda"
   }
 }

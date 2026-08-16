@@ -68,7 +68,9 @@ const tokenCache = {
 };
 
 const CLERK_PUBLISHABLE_KEY =
-  process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || process.env.CLERK_PUBLISHABLE_KEY || '';
+  process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ||
+  process.env.CLERK_PUBLISHABLE_KEY ||
+  'pk_live_Y2xlcmsubGVlbG9vLnVzJA';
 
 function ClerkBridge({ children }: { children: React.ReactNode }) {
   const { getToken, userId, isSignedIn, signOut } = useAuth();
