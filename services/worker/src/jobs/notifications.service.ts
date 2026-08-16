@@ -25,21 +25,7 @@ export class NotificationsService {
 
   async getActiveTokens(userId: string): Promise<string[]> {
     if (!this.db.isReady()) return [];
-    const res = await this.db.query<{ expo_push_token: string }>(
-      `SELECT expo_push_token FROM push_tokens
-       WHERE user_id = $1 AND is_active = true`,
-      [userId],
-    );
-    const tokens = res.rows.map((r) => r.expo_push_token).filter(Boolean);
-
-    if (tokens.length > 0) return tokens;
-
-    const fallback = await this.db.query<{ expo_push_token: string | null }>(
-      `SELECT expo_push_token FROM profiles WHERE id = $1`,
-      [userId],
-    );
-    const t = fallback.rows[0]?.expo_push_token;
-    return t ? [t] : [];
+    return this.db.getPushTokens(userId);
   }
 
   async sendPush(args: SendPushArgs): Promise<{ sent: number; tickets: ExpoPushTicket[] }> {
