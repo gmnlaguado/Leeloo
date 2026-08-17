@@ -1,0 +1,65 @@
+name: iOS Build & Submit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/mobile/**'
+      - '.github/workflows/ios-build.yml'
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies (root workspace)
+        run: npm install
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli@latest
+
+      - name: Write .env for build
+        working-directory: apps/mobile
+        run: |
+          cat > .env << 'EOF'
+          EXPO_PUBLIC_API_URL=https://leeloo-api-55i5.onrender.com
+          EXPO_PUBLIC_AI_ORCHESTRATOR_URL=https://leeloo-ai.onrender.com
+          EXPO_PUBLIC_SUPABASE_URL=https://gqilzzhzmxjjfpdmrmea.supabase.co
+          EOF
+
+      - name: Build iOS local (no EAS cloud credits)
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas build --local --platform ios --profile production --non-interactive
+
+      - name: Find IPA
+        id: ipa
+        run: |
+          IPA=$(find apps/mobile -name "*.ipa" 2>/dev/null | head -1)
+          echo "path=$IPA" >> $GITHUB_OUTPUT
+          echo "Found IPA: $IPA"
+
+      - name: Upload IPA as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: leeloo-ios-build-${{ github.run_number }}
+          path: ${{ steps.ipa.outputs.path }}
+          retention-days: 30
+
+      - name: Submit to App Store Connect
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas submit --platform ios --path ${{ steps.ipa.outputs.path }} --non-interactive
