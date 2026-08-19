@@ -33,33 +33,33 @@ jobs:
         run: npm install
 
       - name: Install EAS CLI
-        run: npm install -g eas-cli@latest
+        run: npm install -g eas-cli@12
 
       - name: Write .env for build
         working-directory: apps/mobile
         run: |
           cat > .env << 'EOF'
-          EXPO_PUBLIC_API_URL=https://leeloo-api-55i5.onrender.com
-          EXPO_PUBLIC_AI_ORCHESTRATOR_URL=https://leeloo-ai.onrender.com
-          EXPO_PUBLIC_SUPABASE_URL=https://gqilzzhzmxjjfpdmrmea.supabase.co
-          EOF
+EXPO_PUBLIC_API_URL=https://leeloo-api-55i5.onrender.com
+EXPO_PUBLIC_AI_ORCHESTRATOR_URL=https://leeloo-ai.onrender.com
+EXPO_PUBLIC_SUPABASE_URL=https://gqilzzhzmxjjfpdmrmea.supabase.co
+EOF
 
       - name: Build Android local (no EAS cloud credits)
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas build --local --platform android --profile production --non-interactive
+        run: eas build --local --platform android --profile production-ci --non-interactive
 
-      - name: Find AAB
-        id: aab
+      - name: Find APK
+        id: apk
         run: |
-          AAB=$(find apps/mobile -name "*.aab" 2>/dev/null | head -1)
-          echo "path=$AAB" >> $GITHUB_OUTPUT
-          echo "Found AAB: $AAB"
+          APK=$(find apps/mobile -name "*.apk" 2>/dev/null | head -1)
+          echo "path=$APK" >> $GITHUB_OUTPUT
+          echo "Found APK: $APK"
 
-      - name: Upload AAB as artifact
+      - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: leeloo-android-build-${{ github.run_number }}
-          path: ${{ steps.aab.outputs.path }}
+          name: leeloo-android-v9-run${{ github.run_number }}
+          path: ${{ steps.apk.outputs.path }}
           retention-days: 30

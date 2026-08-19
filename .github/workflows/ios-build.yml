@@ -27,16 +27,16 @@ jobs:
         run: npm install
 
       - name: Install EAS CLI
-        run: npm install -g eas-cli@latest
+        run: npm install -g eas-cli@12
 
       - name: Write .env for build
         working-directory: apps/mobile
         run: |
           cat > .env << 'EOF'
-          EXPO_PUBLIC_API_URL=https://leeloo-api-55i5.onrender.com
-          EXPO_PUBLIC_AI_ORCHESTRATOR_URL=https://leeloo-ai.onrender.com
-          EXPO_PUBLIC_SUPABASE_URL=https://gqilzzhzmxjjfpdmrmea.supabase.co
-          EOF
+EXPO_PUBLIC_API_URL=https://leeloo-api-55i5.onrender.com
+EXPO_PUBLIC_AI_ORCHESTRATOR_URL=https://leeloo-ai.onrender.com
+EXPO_PUBLIC_SUPABASE_URL=https://gqilzzhzmxjjfpdmrmea.supabase.co
+EOF
 
       - name: Build iOS local (no EAS cloud credits)
         working-directory: apps/mobile

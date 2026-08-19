@@ -25,16 +25,24 @@
         "resourceClass": "m-medium"
       },
       "android": {
-        "buildType": "aab"
+        "buildType": "app-bundle"
+      }
+    },
+    "production-ci": {
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "apk"
       }
     }
   },
   "submit": {
     "production": {
       "ios": {
-        "appleId": "your-apple-id@example.com",
-        "ascAppId": "your-asc-app-id",
-        "appleTeamId": "your-team-id"
+        "appleId": "support.leeloo@gmail.com",
+        "ascAppId": "6801880597",
+        "appleTeamId": "K92DF58RJ7"
       },
       "android": {
         "serviceAccountKeyPath": "./secrets/google-play-service-account.json",
