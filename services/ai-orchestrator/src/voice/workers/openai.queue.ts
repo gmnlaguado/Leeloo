@@ -88,7 +88,7 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
         assistant_text: String(parsed?.assistant_text || ''),
         needs_confirmation: Boolean(parsed?.needs_confirmation),
       };
-    } catch (err: any) {
+    } catch {
       return {
         intent: 'chat',
         confidence: 0.1,
