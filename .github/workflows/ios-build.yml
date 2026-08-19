@@ -27,7 +27,7 @@ jobs:
         run: npm install
 
       - name: Install EAS CLI
-        run: npm install -g eas-cli@12
+        run: npm install -g eas-cli@latest
 
       - name: Write .env for build
         working-directory: apps/mobile
