@@ -32,11 +32,9 @@ jobs:
       - name: Write .env for build
         working-directory: apps/mobile
         run: |
-          cat > .env << 'EOF'
-EXPO_PUBLIC_API_URL=https://leeloo-api-55i5.onrender.com
-EXPO_PUBLIC_AI_ORCHESTRATOR_URL=https://leeloo-ai.onrender.com
-EXPO_PUBLIC_SUPABASE_URL=https://gqilzzhzmxjjfpdmrmea.supabase.co
-EOF
+          echo 'EXPO_PUBLIC_API_URL=https://leeloo-api-55i5.onrender.com' > .env
+          echo 'EXPO_PUBLIC_AI_ORCHESTRATOR_URL=https://leeloo-ai.onrender.com' >> .env
+          echo 'EXPO_PUBLIC_SUPABASE_URL=https://gqilzzhzmxjjfpdmrmea.supabase.co' >> .env
 
       - name: Build iOS local (no EAS cloud credits)
         working-directory: apps/mobile
