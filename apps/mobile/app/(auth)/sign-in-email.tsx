@@ -157,7 +157,12 @@ export default function SignInEmailScreen() {
                 autoComplete="email"
                 autoFocus
               />
-              <PrimaryButton label="Continuar" onPress={handleEmailNext} loading={loading} disabled={!email.trim()} />
+              <PrimaryButton
+                label="Continuar"
+                onPress={handleEmailNext}
+                loading={loading}
+                disabled={!email.trim()}
+              />
             </>
           )}
 
@@ -172,7 +177,12 @@ export default function SignInEmailScreen() {
                 secureTextEntry
                 autoFocus
               />
-              <PrimaryButton label="Iniciar sesión" onPress={handleSignIn} loading={loading} disabled={!password.trim()} />
+              <PrimaryButton
+                label="Iniciar sesión"
+                onPress={handleSignIn}
+                loading={loading}
+                disabled={!password.trim()}
+              />
               <TouchableOpacity style={styles.forgotBtn}>
                 <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
               </TouchableOpacity>
@@ -197,7 +207,12 @@ export default function SignInEmailScreen() {
                 onChangeText={setPassword}
                 secureTextEntry
               />
-              <PrimaryButton label="Crear cuenta" onPress={handleRegister} loading={loading} disabled={!name.trim() || password.length < 8} />
+              <PrimaryButton
+                label="Crear cuenta"
+                onPress={handleRegister}
+                loading={loading}
+                disabled={!name.trim() || password.length < 8}
+              />
             </>
           )}
 
@@ -213,7 +228,12 @@ export default function SignInEmailScreen() {
                 maxLength={6}
                 autoFocus
               />
-              <PrimaryButton label="Verificar" onPress={handleVerify} loading={loading} disabled={code.length < 6} />
+              <PrimaryButton
+                label="Verificar"
+                onPress={handleVerify}
+                loading={loading}
+                disabled={code.length < 6}
+              />
             </>
           )}
         </ScrollView>
@@ -222,7 +242,17 @@ export default function SignInEmailScreen() {
   );
 }
 
-function PrimaryButton({ label, onPress, loading, disabled }: { label: string; onPress: () => void; loading: boolean; disabled: boolean }) {
+function PrimaryButton({
+  label,
+  onPress,
+  loading,
+  disabled,
+}: {
+  label: string;
+  onPress: () => void;
+  loading: boolean;
+  disabled: boolean;
+}) {
   return (
     <TouchableOpacity
       style={[styles.primaryBtn, (disabled || loading) && styles.disabled]}
@@ -230,7 +260,11 @@ function PrimaryButton({ label, onPress, loading, disabled }: { label: string; o
       disabled={disabled || loading}
       activeOpacity={0.8}
     >
-      {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>{label}</Text>}
+      {loading ? (
+        <ActivityIndicator color="#fff" />
+      ) : (
+        <Text style={styles.primaryBtnText}>{label}</Text>
+      )}
     </TouchableOpacity>
   );
 }

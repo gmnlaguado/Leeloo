@@ -264,7 +264,12 @@ export const voiceAPI = {
 
   processText: async (
     text: string,
-    opts?: { language?: string; confirmation?: 'confirmed' | 'cancel'; personality?: string; user_name?: string },
+    opts?: {
+      language?: string;
+      confirmation?: 'confirmed' | 'cancel';
+      personality?: string;
+      user_name?: string;
+    },
   ): Promise<AxiosResponse<unknown>> => {
     // The ai-orchestrator identifies the caller from the verified Clerk JWT
     // (AuthGuard), not from `user_id` in the body — that field is accepted but

@@ -107,13 +107,12 @@ export default function SignInScreen() {
             onPress={handleEmail}
             disabled={!!loading}
           >
-            <Text style={styles.emailButtonText}>📧  Continuar con Email</Text>
+            <Text style={styles.emailButtonText}>📧 Continuar con Email</Text>
           </TouchableOpacity>
         </View>
 
         <Text style={styles.terms}>
-          Al continuar aceptas nuestros{' '}
-          <Text style={styles.link}>Términos de Servicio</Text> y{' '}
+          Al continuar aceptas nuestros <Text style={styles.link}>Términos de Servicio</Text> y{' '}
           <Text style={styles.link}>Política de Privacidad</Text>
         </Text>
       </View>
@@ -158,7 +157,7 @@ function OAuthButton({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B0B14',
+    backgroundColor: '#FFFFFF',
   },
   inner: {
     flex: 1,
@@ -172,39 +171,39 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   logoCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#1E1735',
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: '#FFF0E8',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
     borderWidth: 2,
-    borderColor: '#7C3AED',
+    borderColor: '#FF6A29',
   },
   logoEmoji: {
-    fontSize: 48,
+    fontSize: 52,
   },
   appName: {
     fontSize: 42,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#2D266C',
     letterSpacing: -1,
   },
   tagline: {
     fontSize: 16,
-    color: '#A1A1AA',
+    color: '#6B6A8A',
     marginTop: 8,
     textAlign: 'center',
   },
   errorBox: {
-    backgroundColor: '#3B1219',
+    backgroundColor: '#FEE2E2',
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
   },
   errorText: {
-    color: '#F87171',
+    color: '#DC2626',
     fontSize: 14,
     textAlign: 'center',
   },
@@ -221,11 +220,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 10,
     minHeight: 52,
+    borderWidth: 1.5,
+    borderColor: '#E5E3F0',
+    shadowColor: '#2D266C',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   oauthButtonDark: {
-    backgroundColor: '#1C1C1E',
-    borderWidth: 1,
-    borderColor: '#3A3A3C',
+    backgroundColor: '#2D266C',
+    borderWidth: 0,
   },
   oauthEmoji: {
     fontSize: 20,
@@ -233,7 +238,7 @@ const styles = StyleSheet.create({
   oauthLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#111827',
+    color: '#2D266C',
   },
   oauthLabelDark: {
     color: '#FFFFFF',
@@ -247,37 +252,38 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#27272A',
+    backgroundColor: '#E5E3F0',
   },
   dividerText: {
-    color: '#71717A',
+    color: '#9CA3AF',
     fontSize: 14,
   },
   emailButton: {
     borderRadius: 14,
     paddingVertical: 15,
     paddingHorizontal: 20,
-    borderWidth: 1,
-    borderColor: '#3F3F46',
+    borderWidth: 1.5,
+    borderColor: '#FF6A29',
     alignItems: 'center',
     minHeight: 52,
+    backgroundColor: '#FFF7F3',
   },
   emailButtonText: {
-    color: '#E4E4E7',
+    color: '#FF6A29',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   disabled: {
     opacity: 0.5,
   },
   terms: {
     fontSize: 12,
-    color: '#71717A',
+    color: '#9CA3AF',
     textAlign: 'center',
     lineHeight: 18,
   },
   link: {
-    color: '#7C3AED',
+    color: '#FF6A29',
     textDecorationLine: 'underline',
   },
 });

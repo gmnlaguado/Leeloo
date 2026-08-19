@@ -1,12 +1,4 @@
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  Switch,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/auth';
@@ -99,12 +91,7 @@ export default function SettingsScreen() {
         </Section>
 
         <Section title="Cuenta">
-          <Row
-            emoji="👤"
-            label="Mi perfil"
-            subtitle={session?.userId ?? ''}
-            onPress={() => {}}
-          />
+          <Row emoji="👤" label="Mi perfil" subtitle={session?.userId ?? ''} onPress={() => {}} />
           <View style={styles.divider} />
           <Row
             emoji="🔔"
@@ -115,17 +102,9 @@ export default function SettingsScreen() {
         </Section>
 
         <Section title="Soporte">
-          <Row
-            emoji="❓"
-            label="Ayuda y FAQ"
-            onPress={() => {}}
-          />
+          <Row emoji="❓" label="Ayuda y FAQ" onPress={() => {}} />
           <View style={styles.divider} />
-          <Row
-            emoji="⭐"
-            label="Calificar Leeloo"
-            onPress={() => {}}
-          />
+          <Row emoji="⭐" label="Calificar Leeloo" onPress={() => {}} />
         </Section>
 
         <Section title="Sesión">
@@ -148,8 +127,22 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0B0B14', paddingHorizontal: 20 },
   pageTitle: { fontSize: 32, fontWeight: '800', color: '#FFFFFF', marginTop: 20, marginBottom: 24 },
   section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 12, fontWeight: '600', color: '#71717A', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8, marginLeft: 4 },
-  sectionCard: { backgroundColor: '#17172A', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#27272A' },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#71717A',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  sectionCard: {
+    backgroundColor: '#17172A',
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
   row: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 },
   rowEmoji: { fontSize: 22, width: 32, textAlign: 'center' },
   rowLabel: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },

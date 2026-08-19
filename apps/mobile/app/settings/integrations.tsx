@@ -81,30 +81,26 @@ export default function IntegrationsScreen() {
   };
 
   const handleDisconnect = (provider: IntegrationProvider) => {
-    Alert.alert(
-      'Desconectar',
-      '¿Segura que quieres desconectar esta integración?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Desconectar',
-          style: 'destructive',
-          onPress: async () => {
-            setActionLoading(provider);
-            try {
-              await integrationsAPI.disconnectIntegration(provider);
-              setIntegrations((prev) =>
-                prev.map((i) => (i.provider === provider ? { ...i, connected: false } : i)),
-              );
-            } catch {
-              Alert.alert('Error', 'No se pudo desconectar. Intenta de nuevo.');
-            } finally {
-              setActionLoading(null);
-            }
-          },
+    Alert.alert('Desconectar', '¿Segura que quieres desconectar esta integración?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Desconectar',
+        style: 'destructive',
+        onPress: async () => {
+          setActionLoading(provider);
+          try {
+            await integrationsAPI.disconnectIntegration(provider);
+            setIntegrations((prev) =>
+              prev.map((i) => (i.provider === provider ? { ...i, connected: false } : i)),
+            );
+          } catch {
+            Alert.alert('Error', 'No se pudo desconectar. Intenta de nuevo.');
+          } finally {
+            setActionLoading(null);
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const handleSync = async (provider: IntegrationProvider) => {
@@ -129,7 +125,12 @@ export default function IntegrationsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen
-        options={{ title: 'Integraciones', headerBackTitle: 'Atrás', headerStyle: { backgroundColor: '#0B0B14' }, headerTintColor: '#fff' }}
+        options={{
+          title: 'Integraciones',
+          headerBackTitle: 'Atrás',
+          headerStyle: { backgroundColor: '#0B0B14' },
+          headerTintColor: '#fff',
+        }}
       />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.sectionTitle}>Conecta tus servicios</Text>
@@ -141,9 +142,13 @@ export default function IntegrationsScreen() {
           <ActivityIndicator color="#7C3AED" style={{ marginTop: 40 }} />
         ) : (
           integrations.map((item) => {
-            const isActing = actionLoading === item.provider || actionLoading === `${item.provider}-sync`;
+            const isActing =
+              actionLoading === item.provider || actionLoading === `${item.provider}-sync`;
             return (
-              <View key={item.provider} style={[styles.card, item.connected && styles.cardConnected]}>
+              <View
+                key={item.provider}
+                style={[styles.card, item.connected && styles.cardConnected]}
+              >
                 <View style={styles.cardHeader}>
                   <Text style={styles.cardEmoji}>{item.emoji}</Text>
                   <View style={{ flex: 1 }}>
@@ -151,7 +156,9 @@ export default function IntegrationsScreen() {
                     <Text style={styles.cardDesc}>{item.description}</Text>
                   </View>
                   <View style={[styles.badge, item.connected ? styles.badgeOn : styles.badgeOff]}>
-                    <Text style={styles.badgeText}>{item.connected ? 'Conectado' : 'No conectado'}</Text>
+                    <Text style={styles.badgeText}>
+                      {item.connected ? 'Conectado' : 'No conectado'}
+                    </Text>
                   </View>
                 </View>
 
@@ -179,7 +186,11 @@ export default function IntegrationsScreen() {
                     </>
                   ) : (
                     <TouchableOpacity
-                      style={[styles.actionBtn, styles.actionBtnPrimary, !!actionLoading && styles.disabled]}
+                      style={[
+                        styles.actionBtn,
+                        styles.actionBtnPrimary,
+                        !!actionLoading && styles.disabled,
+                      ]}
                       onPress={() => handleConnect(item.provider)}
                       disabled={!!actionLoading}
                     >
@@ -223,7 +234,14 @@ const styles = StyleSheet.create({
   badgeOff: { backgroundColor: '#27272A' },
   badgeText: { fontSize: 11, fontWeight: '600', color: '#fff' },
   cardActions: { flexDirection: 'row', gap: 10 },
-  actionBtn: { flex: 1, borderRadius: 12, paddingVertical: 11, alignItems: 'center', justifyContent: 'center', minHeight: 42 },
+  actionBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 42,
+  },
   actionBtnPrimary: { backgroundColor: '#7C3AED' },
   actionBtnPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   actionBtnSecondary: { backgroundColor: '#1E1735', borderWidth: 1, borderColor: '#7C3AED' },

@@ -48,7 +48,15 @@ export default function Index() {
 
   if (timedOut) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0B0B14', padding: 32 }}>
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: '#0B0B14',
+          padding: 32,
+        }}
+      >
         <Text style={{ color: '#EF4444', fontSize: 16, textAlign: 'center', marginBottom: 8 }}>
           No se pudo conectar con el servidor de autenticación.
         </Text>
@@ -57,7 +65,12 @@ export default function Index() {
         </Text>
         <TouchableOpacity
           onPress={retry}
-          style={{ backgroundColor: '#7C3AED', paddingHorizontal: 28, paddingVertical: 12, borderRadius: 10 }}
+          style={{
+            backgroundColor: '#7C3AED',
+            paddingHorizontal: 28,
+            paddingVertical: 12,
+            borderRadius: 10,
+          }}
         >
           <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>Reintentar</Text>
         </TouchableOpacity>
@@ -66,7 +79,14 @@ export default function Index() {
   }
 
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0B0B14' }}>
+    <View
+      style={{
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#0B0B14',
+      }}
+    >
       <ActivityIndicator size="large" color="#7C3AED" />
     </View>
   );

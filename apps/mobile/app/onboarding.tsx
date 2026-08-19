@@ -28,7 +28,8 @@ const STEPS = [
     emoji: '👋',
     title: 'Bienvenida a Leeloo',
     subtitle: 'Tu asistente personal inteligente para mujeres que lo hacen todo.',
-    description: 'Leeloo te ayuda con tu agenda, tus hijos, tu hogar, tu trabajo y tu bienestar — todo por voz.',
+    description:
+      'Leeloo te ayuda con tu agenda, tus hijos, tu hogar, tu trabajo y tu bienestar — todo por voz.',
     action: null,
     actionLabel: 'Comenzar',
   },
@@ -36,7 +37,8 @@ const STEPS = [
     emoji: '🎤',
     title: 'Leeloo necesita escucharte',
     subtitle: 'Para funcionar por voz necesitamos acceso al micrófono.',
-    description: 'Tus grabaciones nunca se almacenan permanentemente. Solo se procesan para entenderte y responderte.',
+    description:
+      'Tus grabaciones nunca se almacenan permanentemente. Solo se procesan para entenderte y responderte.',
     action: 'microphone',
     actionLabel: 'Permitir micrófono',
   },
@@ -104,7 +106,14 @@ export default function OnboardingScreen() {
     try {
       await setLanguage(selectedLang as any);
       // Register device locale with backend
-      const locale = selectedLang === 'es' ? 'es-CO' : selectedLang === 'en' ? 'en-US' : selectedLang === 'pt' ? 'pt-BR' : 'fr-FR';
+      const locale =
+        selectedLang === 'es'
+          ? 'es-CO'
+          : selectedLang === 'en'
+            ? 'en-US'
+            : selectedLang === 'pt'
+              ? 'pt-BR'
+              : 'fr-FR';
       await profilesAPI.updateMe({ preferred_language: selectedLang as any }).catch(() => {});
       await setHasCompletedOnboarding(true);
       router.replace('/(tabs)/home');
@@ -154,7 +163,9 @@ export default function OnboardingScreen() {
                 onPress={() => setSelectedLang(lang.code)}
               >
                 <Text style={styles.langFlag}>{lang.flag}</Text>
-                <Text style={[styles.langLabel, selectedLang === lang.code && styles.langLabelActive]}>
+                <Text
+                  style={[styles.langLabel, selectedLang === lang.code && styles.langLabelActive]}
+                >
                   {lang.label}
                 </Text>
               </TouchableOpacity>
@@ -177,11 +188,7 @@ export default function OnboardingScreen() {
           </TouchableOpacity>
         ) : (
           <>
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={handleAction}
-              activeOpacity={0.85}
-            >
+            <TouchableOpacity style={styles.primaryBtn} onPress={handleAction} activeOpacity={0.85}>
               <Text style={styles.primaryBtnText}>{currentStep.actionLabel}</Text>
             </TouchableOpacity>
 

@@ -105,8 +105,7 @@ TaskManager.defineTask(WAKE_WORD_TASK, async () => {
     const data = (res?.data ?? {}) as Record<string, unknown>;
 
     const transcription = typeof data.transcription === 'string' ? data.transcription : '';
-    const wakeDetected =
-      data.wake_word_detected === true || matchesWakePhrase(transcription);
+    const wakeDetected = data.wake_word_detected === true || matchesWakePhrase(transcription);
 
     if (wakeDetected) {
       wakeListeners.forEach((cb) => {

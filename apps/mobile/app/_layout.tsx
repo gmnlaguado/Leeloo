@@ -60,17 +60,24 @@ async function registerNotificationCategories() {
 
 const tokenCache = {
   async getToken(key: string) {
-    try { return await SecureStore.getItemAsync(key); } catch { return null; }
+    try {
+      return await SecureStore.getItemAsync(key);
+    } catch {
+      return null;
+    }
   },
   async saveToken(key: string, value: string) {
-    try { return await SecureStore.setItemAsync(key, value); } catch { return undefined; }
+    try {
+      return await SecureStore.setItemAsync(key, value);
+    } catch {
+      return undefined;
+    }
   },
 };
 
-const CLERK_PUBLISHABLE_KEY =
-  process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ||
-  process.env.CLERK_PUBLISHABLE_KEY ||
-  'pk_live_Y2xlcmsubGVlbG9vLnVzJA';
+// Publishable keys are public by design — safe to embed in source.
+// Custom domain: clerk.leeloo.us
+const CLERK_PUBLISHABLE_KEY = 'pk_live_Y2xlcmsubGVlbG9vLnVzJA';
 
 function ClerkBridge({ children }: { children: React.ReactNode }) {
   const { getToken, userId, isSignedIn, signOut } = useAuth();
@@ -181,10 +188,6 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
-  if (!CLERK_PUBLISHABLE_KEY) {
-    console.warn('[RootLayout] EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY missing — Clerk auth will not work.');
-  }
-
   return (
     <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
       <ClerkBridge>

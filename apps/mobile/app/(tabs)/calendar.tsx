@@ -31,9 +31,11 @@ function formatTime(iso: string | null) {
 }
 
 function isSameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() &&
+  return (
+    a.getFullYear() === b.getFullYear() &&
     a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
+    a.getDate() === b.getDate()
+  );
 }
 
 export default function CalendarScreen() {
@@ -63,7 +65,8 @@ export default function CalendarScreen() {
       // Check integrations
       const intRes = await integrationsAPI.getIntegrations().catch(() => null);
       const connected: string[] = Array.isArray((intRes?.data as any)?.connected)
-        ? (intRes?.data as any).connected : [];
+        ? (intRes?.data as any).connected
+        : [];
       setHasIntegration(connected.length > 0);
 
       // Load events for the next 30 days
@@ -74,7 +77,9 @@ export default function CalendarScreen() {
       const res = await calendarAPI.getEvents(start.toISOString(), end.toISOString());
       const data = Array.isArray((res.data as any)?.events)
         ? (res.data as any).events
-        : Array.isArray(res.data) ? res.data : [];
+        : Array.isArray(res.data)
+          ? res.data
+          : [];
       setEvents(data);
     } catch {
       // no events
@@ -134,9 +139,7 @@ export default function CalendarScreen() {
         {weekDays.map((d, i) => {
           const isSelected = isSameDay(d, selectedDate);
           const isToday = isSameDay(d, today);
-          const hasEvents = events.some(
-            (e) => e.starts_at && isSameDay(new Date(e.starts_at), d),
-          );
+          const hasEvents = events.some((e) => e.starts_at && isSameDay(new Date(e.starts_at), d));
           return (
             <TouchableOpacity
               key={i}
@@ -146,7 +149,13 @@ export default function CalendarScreen() {
               <Text style={[styles.dayName, isSelected && styles.dayNameActive]}>
                 {DAYS[d.getDay()]}
               </Text>
-              <Text style={[styles.dayNum, isSelected && styles.dayNumActive, isToday && !isSelected && styles.dayNumToday]}>
+              <Text
+                style={[
+                  styles.dayNum,
+                  isSelected && styles.dayNumActive,
+                  isToday && !isSelected && styles.dayNumToday,
+                ]}
+              >
                 {d.getDate()}
               </Text>
               {hasEvents && <View style={[styles.eventDot, isSelected && styles.eventDotActive]} />}
@@ -158,7 +167,8 @@ export default function CalendarScreen() {
       {/* Events */}
       <ScrollView style={styles.eventList} contentContainerStyle={{ paddingBottom: 40 }}>
         <Text style={styles.selectedDateLabel}>
-          {DAYS[selectedDate.getDay()]}, {selectedDate.getDate()} de {MONTHS[selectedDate.getMonth()]}
+          {DAYS[selectedDate.getDay()]}, {selectedDate.getDate()} de{' '}
+          {MONTHS[selectedDate.getMonth()]}
           {isSameDay(selectedDate, today) && '  · Hoy'}
         </Text>
 
@@ -194,11 +204,11 @@ export default function CalendarScreen() {
               <View style={styles.eventBar} />
               <View style={styles.eventInfo}>
                 <Text style={styles.eventTitle}>{event.title}</Text>
-                {!!event.location && (
-                  <Text style={styles.eventMeta}>📍 {event.location}</Text>
-                )}
+                {!!event.location && <Text style={styles.eventMeta}>📍 {event.location}</Text>}
                 {!!event.description && (
-                  <Text style={styles.eventMeta} numberOfLines={2}>{event.description}</Text>
+                  <Text style={styles.eventMeta} numberOfLines={2}>
+                    {event.description}
+                  </Text>
                 )}
               </View>
             </View>
@@ -211,13 +221,36 @@ export default function CalendarScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0B0B14' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+  },
   monthYear: { fontSize: 13, color: '#71717A', fontWeight: '500' },
   pageTitle: { fontSize: 32, fontWeight: '800', color: '#FFFFFF' },
-  syncBtn: { backgroundColor: '#17172A', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 14, borderWidth: 1, borderColor: '#3F3F46', minWidth: 80, alignItems: 'center' },
+  syncBtn: {
+    backgroundColor: '#17172A',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#3F3F46',
+    minWidth: 80,
+    alignItems: 'center',
+  },
   syncBtnText: { color: '#A1A1AA', fontSize: 13, fontWeight: '600' },
   dayStrip: { paddingHorizontal: 16, gap: 8, paddingBottom: 16 },
-  dayCell: { alignItems: 'center', paddingVertical: 10, paddingHorizontal: 10, borderRadius: 14, minWidth: 52, gap: 4 },
+  dayCell: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    minWidth: 52,
+    gap: 4,
+  },
   dayCellActive: { backgroundColor: '#7C3AED' },
   dayName: { fontSize: 11, color: '#71717A', fontWeight: '600', textTransform: 'uppercase' },
   dayNameActive: { color: '#fff' },
@@ -232,7 +265,15 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 48 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF' },
   emptySub: { fontSize: 14, color: '#71717A', textAlign: 'center', lineHeight: 20 },
-  connectBtn: { marginTop: 12, backgroundColor: '#1E1735', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 20, borderWidth: 1, borderColor: '#7C3AED' },
+  connectBtn: {
+    marginTop: 12,
+    backgroundColor: '#1E1735',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#7C3AED',
+  },
   connectBtnText: { color: '#7C3AED', fontWeight: '700', fontSize: 14 },
   eventCard: { flexDirection: 'row', gap: 12, marginBottom: 16, alignItems: 'flex-start' },
   eventTime: { width: 48, alignItems: 'flex-end', paddingTop: 2 },

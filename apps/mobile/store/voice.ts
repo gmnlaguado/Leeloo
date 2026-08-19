@@ -143,7 +143,11 @@ export interface PendingReminder {
 
 // Local keyword matching — cero tokens
 export function matchReminderResponse(text: string): 'done' | 'postpone' | number | null {
-  const t = text.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+  const t = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .trim();
   if (/\b(listo|hecho|ok|ya lo hice|completado|ya|done)\b/.test(t)) return 'done';
   const minMatch = t.match(/(\d+)\s*(min|minuto|minutos)/);
   if (minMatch) return parseInt(minMatch[1], 10);
