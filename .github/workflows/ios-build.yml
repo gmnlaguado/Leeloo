@@ -46,7 +46,7 @@ jobs:
         id: ipa
         working-directory: apps/mobile
         run: |
-          IPA=$(find . -name "*.ipa" 2>/dev/null | head -1)
+          IPA=$(find . -name "*.ipa" 2>/dev/null | head -1 | sed 's|^\./||')
           echo "path=$IPA" >> $GITHUB_OUTPUT
           echo "Found IPA: $IPA"
 

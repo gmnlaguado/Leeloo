@@ -28,7 +28,7 @@ const NOTIFICATION_TASK = 'LEELOO_NOTIFICATION_HANDLER';
 
 TaskManager.defineTask(
   NOTIFICATION_TASK,
-  ({ data, error }: { data: any; error: TaskManager.TaskManagerError | null }) => {
+  async ({ data, error }: { data: any; error: TaskManager.TaskManagerError | null }) => {
     if (error) return;
     const kind = data?.notification?.request?.content?.data?.kind;
     console.log('[Leeloo] background notification received', { kind });
