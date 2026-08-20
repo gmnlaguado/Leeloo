@@ -26,12 +26,14 @@ const queryClient = new QueryClient();
 // ─── Background notification handler (fires when app is killed/background) ───
 const NOTIFICATION_TASK = 'LEELOO_NOTIFICATION_HANDLER';
 
-TaskManager.defineTask(NOTIFICATION_TASK, ({ data, error }: any) => {
-  if (error) return;
-  // Background: we can't speak, but we can log. Push notification already shows.
-  const kind = data?.notification?.request?.content?.data?.kind;
-  console.log('[Leeloo] background notification received', { kind });
-});
+TaskManager.defineTask(
+  NOTIFICATION_TASK,
+  ({ data, error }: { data: any; error: TaskManager.TaskManagerError | null }) => {
+    if (error) return;
+    const kind = data?.notification?.request?.content?.data?.kind;
+    console.log('[Leeloo] background notification received', { kind });
+  },
+);
 
 // ─── Foreground notification config ───
 Notifications.setNotificationHandler({
@@ -39,6 +41,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
