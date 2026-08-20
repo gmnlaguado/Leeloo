@@ -27,14 +27,8 @@ jobs:
         run: cd services/api && npm run build
       
       - name: Deploy to Render
+        if: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
         env:
-          # Store the FULL Render deploy-hook URL (including the ?key=...
-          # token) as one opaque secret. Render's deploy-hook endpoint is
-          # inherently query-string authenticated (no Authorization header
-          # alternative), so splicing a separate RENDER_API_KEY into a
-          # hardcoded URL pattern in this file made the secret's shape
-          # predictable/grep-able. Rotate by updating the
-          # RENDER_DEPLOY_HOOK_URL secret value in repo settings.
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"

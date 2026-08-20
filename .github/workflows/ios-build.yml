@@ -44,8 +44,9 @@ jobs:
 
       - name: Find IPA
         id: ipa
+        working-directory: apps/mobile
         run: |
-          IPA=$(find apps/mobile -name "*.ipa" 2>/dev/null | head -1)
+          IPA=$(find . -name "*.ipa" 2>/dev/null | head -1)
           echo "path=$IPA" >> $GITHUB_OUTPUT
           echo "Found IPA: $IPA"
 
@@ -53,10 +54,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: leeloo-ios-build-${{ github.run_number }}
-          path: ${{ steps.ipa.outputs.path }}
+          path: apps/mobile/${{ steps.ipa.outputs.path }}
           retention-days: 30
 
       - name: Submit to App Store Connect
+        working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas submit --platform ios --path ${{ steps.ipa.outputs.path }} --non-interactive
