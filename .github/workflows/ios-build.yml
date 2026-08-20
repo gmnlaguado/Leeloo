@@ -57,7 +57,6 @@ jobs:
           retention-days: 30
 
       - name: Submit to App Store Connect
-        working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas submit --platform ios --path ${{ steps.ipa.outputs.path }} --non-interactive
