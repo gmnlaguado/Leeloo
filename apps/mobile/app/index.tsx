@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@clerk/clerk-expo';
 import { useAuthStore } from '@/store/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { deviceLogger } from '@/services/device-logger';
 
 export default function Index() {
   const router = useRouter();
@@ -11,15 +12,27 @@ export default function Index() {
   const setHasCompletedOnboarding = useAuthStore((s) => s.setHasCompletedOnboarding);
   const [timedOut, setTimedOut] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  const [startTs] = useState(() => Date.now());
 
   const retry = useCallback(() => {
     setTimedOut(false);
     setRetryKey((k) => k + 1);
+    deviceLogger.log('Index: retry pressed');
   }, []);
+
+  // Log isLoaded transitions
+  useEffect(() => {
+    deviceLogger.log('Index: isLoaded changed', { isLoaded, isSignedIn, elapsedMs: Date.now() - startTs });
+  }, [isLoaded, isSignedIn]);
 
   useEffect(() => {
     if (isLoaded) return;
+    deviceLogger.log('Index: waiting for Clerk isLoaded=true, timeout=20s');
     const t = setTimeout(() => {
+      deviceLogger.error('Index: Clerk isLoaded timeout after 20s — showing error screen', {
+        isLoaded, isSignedIn, elapsedMs: Date.now() - startTs,
+      });
+      void deviceLogger.flush();
       setTimedOut(true);
     }, 20000);
     return () => clearTimeout(t);

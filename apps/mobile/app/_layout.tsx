@@ -20,6 +20,10 @@ import {
 import { useVoiceStore } from '@/store/voice';
 import type { PendingReminder } from '@/store/voice';
 import { tasksAPI } from '@/lib/api';
+import { deviceLogger } from '@/services/device-logger';
+
+// Activar logging ANTES de cualquier render — captura errores de Clerk desde el primer ms
+deviceLogger.init();
 
 const queryClient = new QueryClient();
 
@@ -89,8 +93,12 @@ const CLERK_PUBLISHABLE_KEY =
   process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? 'pk_live_Y2xlcmsubGVlbG9vLnVzJA';
 
 function ClerkBridge({ children }: { children: React.ReactNode }) {
-  const { getToken, userId, isSignedIn, signOut } = useAuth();
+  const { getToken, userId, isSignedIn, isLoaded, signOut } = useAuth();
   const setSession = useAuthStore((state) => state.setSession);
+
+  useEffect(() => {
+    deviceLogger.log('ClerkBridge: auth state changed', { isLoaded, isSignedIn, hasUserId: Boolean(userId) });
+  }, [isLoaded, isSignedIn, userId]);
 
   useEffect(() => {
     setClerkTokenGetter(() => getToken({ template: undefined as any }).catch(() => null));
@@ -197,6 +205,7 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  deviceLogger.log('RootLayout mounting', { publishableKey: CLERK_PUBLISHABLE_KEY?.slice(0, 20) + '...' });
   return (
     <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
       <ClerkBridge>

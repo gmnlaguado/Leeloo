@@ -1,9 +1,20 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { SkipThrottle } from '@nestjs/throttler';
 import axios from 'axios';
 import { AuthGuard } from '../auth/auth.guard';
 import { ProfilesService } from '../profiles/profiles.service';
+
+// In-memory ring buffer — holds the last 300 device log entries per process lifetime.
+// Visible in Render logs instantly and retrievable via GET /diagnostics/device-logs.
+const deviceLogs: Array<{
+  ts: string;
+  level: string;
+  message: string;
+  data?: unknown;
+  device?: unknown;
+}> = [];
 
 type AuthedRequest = {
   user: { id: string; claims?: any };
@@ -80,6 +91,45 @@ export class DiagnosticsController {
       };
     }
   }
+
+  // ─── Device logging (no auth — runs before Clerk is initialized on device) ──
+
+  @Post('device-log')
+  @SkipThrottle()
+  @ApiOperation({ summary: 'Device log ingestion — no auth, for pre-Clerk crash diagnosis' })
+  deviceLog(
+    @Body()
+    body: {
+      level?: string;
+      message: string;
+      data?: unknown;
+      ts?: number;
+      device?: { os?: string; version?: string; buildNum?: string | number };
+    },
+  ) {
+    const level = (body.level || 'LOG').toUpperCase();
+    const ts = body.ts ? new Date(body.ts).toISOString() : new Date().toISOString();
+    const d = body.device;
+    const deviceTag = d ? `[${d.os}/${d.version} build=${d.buildNum}]` : '[device?]';
+    const entry = { ts, level, message: body.message, data: body.data, device: body.device };
+
+    deviceLogs.push(entry);
+    if (deviceLogs.length > 300) deviceLogs.shift();
+
+    // eslint-disable-next-line no-console
+    console.log(`[DEVICE]${deviceTag}[${level}] ${body.message}`, body.data ?? '');
+    return { ok: true, ts };
+  }
+
+  @Get('device-logs')
+  @SkipThrottle()
+  @ApiOperation({ summary: 'Retrieve last N device log entries (no auth)' })
+  getDeviceLogs(@Query('last') last?: string) {
+    const n = Math.min(parseInt(last || '100', 10), 300);
+    return { total: deviceLogs.length, logs: deviceLogs.slice(-n) };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   @Get('email-public')
   @UseGuards(AuthGuard)
