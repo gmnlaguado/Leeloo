@@ -79,12 +79,18 @@ const tokenCache = {
   },
   async saveToken(key: string, value: string) {
     try {
-      await SecureStore.setItemAsync(key, value);
+      await Promise.race([
+        SecureStore.setItemAsync(key, value),
+        new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+      ]);
     } catch {}
   },
   async clearToken(key: string) {
     try {
-      await SecureStore.deleteItemAsync(key);
+      await Promise.race([
+        SecureStore.deleteItemAsync(key),
+        new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+      ]);
     } catch {}
   },
 };
