@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
-import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import * as Speech from 'expo-speech';
 import * as TaskManager from 'expo-task-manager';
@@ -62,35 +62,23 @@ async function registerNotificationCategories() {
   ]);
 }
 
-// SecureStore can hang indefinitely on MIUI/Xiaomi — always race with a 3s fallback.
-const secureGet = (key: string) =>
-  Promise.race([
-    SecureStore.getItemAsync(key),
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
-  ]);
-
+// AsyncStorage avoids Android Keystore hangs on MIUI 14 (SecureStore deadlocks on that device).
 const tokenCache = {
   async getToken(key: string) {
     try {
-      return await secureGet(key);
+      return await AsyncStorage.getItem(key);
     } catch {
       return null;
     }
   },
   async saveToken(key: string, value: string) {
     try {
-      await Promise.race([
-        SecureStore.setItemAsync(key, value),
-        new Promise<void>((resolve) => setTimeout(resolve, 3000)),
-      ]);
+      await AsyncStorage.setItem(key, value);
     } catch {}
   },
   async clearToken(key: string) {
     try {
-      await Promise.race([
-        SecureStore.deleteItemAsync(key),
-        new Promise<void>((resolve) => setTimeout(resolve, 3000)),
-      ]);
+      await AsyncStorage.removeItem(key);
     } catch {}
   },
 };

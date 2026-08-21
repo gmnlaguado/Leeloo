@@ -5,28 +5,43 @@ import { useAuth } from '@clerk/clerk-expo';
 import { useAuthStore } from '@/store/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const ENDPOINTS = [
-  'https://clerk.leeloo.us/v1/client',
-  'https://www.google.com',
-  'https://leeloo-api-55i5.onrender.com/health',
-];
+async function fetchWithTimeout(url: string, ms = 8000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
+}
 
 async function runNetworkDiag() {
-  const results: string[] = [];
-  for (const url of ENDPOINTS) {
-    try {
-      const res = await Promise.race([
-        fetch(url, { method: 'GET' }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('timeout 8s')), 8000),
-        ),
-      ]);
-      results.push(`✅ ${url.split('/')[2]} → ${(res as Response).status}`);
-    } catch (e: any) {
-      results.push(`❌ ${url.split('/')[2]} → ${e?.message ?? e}`);
-    }
+  const lines: string[] = [];
+
+  // 1. Clerk /v1/environment (first SDK call)
+  try {
+    const r = await fetchWithTimeout('https://clerk.leeloo.us/v1/environment');
+    const body = await r.text();
+    lines.push(`clerk /v1/environment → ${r.status}`);
+    lines.push(body.slice(0, 200));
+  } catch (e) {
+    lines.push(`clerk /v1/environment → ERROR: ${e instanceof Error ? e.message : String(e)}`);
   }
-  Alert.alert('Diagnóstico de red', results.join('\n\n'), [{ text: 'OK' }]);
+
+  // 2. Clerk /v1/client (second SDK call)
+  try {
+    const r = await fetchWithTimeout('https://clerk.leeloo.us/v1/client');
+    const body = await r.text();
+    lines.push(`\nclerk /v1/client → ${r.status}`);
+    lines.push(body.slice(0, 200));
+  } catch (e) {
+    lines.push(`\nclerk /v1/client → ERROR: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  Alert.alert('Diagnóstico Clerk', lines.join('\n'), [{ text: 'OK' }]);
 }
 
 export default function Index() {
@@ -37,7 +52,6 @@ export default function Index() {
   const [retryKey, setRetryKey] = useState(0);
   const [elapsed, setElapsed] = useState(0);
 
-  // Run network diagnostic 2 seconds after mount so user can see it
   useEffect(() => {
     const t = setTimeout(() => { void runNetworkDiag(); }, 2000);
     return () => clearTimeout(t);
