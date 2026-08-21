@@ -62,20 +62,30 @@ async function registerNotificationCategories() {
   ]);
 }
 
+// SecureStore can hang indefinitely on MIUI/Xiaomi — always race with a 3s fallback.
+const secureGet = (key: string) =>
+  Promise.race([
+    SecureStore.getItemAsync(key),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+  ]);
+
 const tokenCache = {
   async getToken(key: string) {
     try {
-      return await SecureStore.getItemAsync(key);
+      return await secureGet(key);
     } catch {
       return null;
     }
   },
   async saveToken(key: string, value: string) {
     try {
-      return await SecureStore.setItemAsync(key, value);
-    } catch {
-      return undefined;
-    }
+      await SecureStore.setItemAsync(key, value);
+    } catch {}
+  },
+  async clearToken(key: string) {
+    try {
+      await SecureStore.deleteItemAsync(key);
+    } catch {}
   },
 };
 
