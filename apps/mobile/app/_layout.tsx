@@ -83,9 +83,10 @@ const tokenCache = {
   },
 };
 
-// Publishable keys are public by design — safe to embed in source.
-// Custom domain: clerk.leeloo.us
-const CLERK_PUBLISHABLE_KEY = 'pk_live_Y2xlcmsubGVlbG9vLnVzJA';
+// Clerk requires EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY to be baked into the bundle at build time.
+// The hardcoded fallback ensures dev builds work without .env.
+const CLERK_PUBLISHABLE_KEY =
+  process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? 'pk_live_Y2xlcmsubGVlbG9vLnVzJA';
 
 function ClerkBridge({ children }: { children: React.ReactNode }) {
   const { getToken, userId, isSignedIn, signOut } = useAuth();
