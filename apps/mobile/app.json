@@ -41,7 +41,7 @@
         "backgroundColor": "#2D266C"
       },
       "package": "com.leeloo.app",
-      "versionCode": 11,
+      "versionCode": 12,
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE",

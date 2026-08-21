@@ -47,6 +47,10 @@ jobs:
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsubGVlbG9vLnVzJA
+          EXPO_PUBLIC_API_URL: https://leeloo-api-55i5.onrender.com
+          EXPO_PUBLIC_AI_ORCHESTRATOR_URL: https://leeloo-ai.onrender.com
+          EXPO_PUBLIC_SUPABASE_URL: https://gqilzzhzmxjjfpdmrmea.supabase.co
         run: eas build --local --platform android --profile production-ci --non-interactive
 
       - name: Find APK
