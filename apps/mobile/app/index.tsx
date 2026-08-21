@@ -1,9 +1,33 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
+import { View, ActivityIndicator, Text, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@clerk/clerk-expo';
 import { useAuthStore } from '@/store/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const ENDPOINTS = [
+  'https://clerk.leeloo.us/v1/client',
+  'https://www.google.com',
+  'https://leeloo-api-55i5.onrender.com/health',
+];
+
+async function runNetworkDiag() {
+  const results: string[] = [];
+  for (const url of ENDPOINTS) {
+    try {
+      const res = await Promise.race([
+        fetch(url, { method: 'GET' }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout 8s')), 8000),
+        ),
+      ]);
+      results.push(`✅ ${url.split('/')[2]} → ${(res as Response).status}`);
+    } catch (e: any) {
+      results.push(`❌ ${url.split('/')[2]} → ${e?.message ?? e}`);
+    }
+  }
+  Alert.alert('Diagnóstico de red', results.join('\n\n'), [{ text: 'OK' }]);
+}
 
 export default function Index() {
   const router = useRouter();
@@ -12,6 +36,12 @@ export default function Index() {
   const [timedOut, setTimedOut] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [elapsed, setElapsed] = useState(0);
+
+  // Run network diagnostic 2 seconds after mount so user can see it
+  useEffect(() => {
+    const t = setTimeout(() => { void runNetworkDiag(); }, 2000);
+    return () => clearTimeout(t);
+  }, []);
 
   const retry = useCallback(() => {
     setTimedOut(false);
@@ -42,7 +72,6 @@ export default function Index() {
         return;
       }
 
-      // Check if onboarding was completed
       const done = await AsyncStorage.getItem('hasCompletedOnboarding');
       if (done !== 'true') {
         router.replace('/onboarding');
@@ -74,7 +103,7 @@ export default function Index() {
           Verifica tu conexión a internet y vuelve a intentarlo.
         </Text>
         <TouchableOpacity
-          onPress={retry}
+          onPress={() => { void runNetworkDiag(); retry(); }}
           style={{
             backgroundColor: '#7C3AED',
             paddingHorizontal: 28,
