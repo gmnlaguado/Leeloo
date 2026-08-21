@@ -11,16 +11,26 @@ export default function Index() {
   const setHasCompletedOnboarding = useAuthStore((s) => s.setHasCompletedOnboarding);
   const [timedOut, setTimedOut] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
 
   const retry = useCallback(() => {
     setTimedOut(false);
+    setElapsed(0);
     setRetryKey((k) => k + 1);
   }, []);
 
   useEffect(() => {
     if (isLoaded) return;
-    const t = setTimeout(() => setTimedOut(true), 20000);
-    return () => clearTimeout(t);
+    setElapsed(0);
+    const ticker = setInterval(() => setElapsed((s) => s + 1), 1000);
+    const t = setTimeout(() => {
+      clearInterval(ticker);
+      setTimedOut(true);
+    }, 60000);
+    return () => {
+      clearTimeout(t);
+      clearInterval(ticker);
+    };
   }, [isLoaded, retryKey]);
 
   useEffect(() => {
@@ -88,6 +98,7 @@ export default function Index() {
       }}
     >
       <ActivityIndicator size="large" color="#7C3AED" />
+      <Text style={{ color: '#6B7280', fontSize: 11, marginTop: 12 }}>{elapsed}s</Text>
     </View>
   );
 }
