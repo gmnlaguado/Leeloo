@@ -13,7 +13,7 @@ const API_URL =
   (process.env.EXPO_PUBLIC_API_URL as string | undefined) ??
   'https://leeloo-api-55i5.onrender.com';
 
-const ENDPOINT = `${API_URL}/diagnostics/device-log`;
+const ENDPOINT = `${API_URL}/v1/diagnostics/device-log`;
 
 const deviceMeta = {
   os: Platform.OS,
