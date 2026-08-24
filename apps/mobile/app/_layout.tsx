@@ -20,6 +20,8 @@ import * as TaskManager from 'expo-task-manager';
 import { useAuthStore } from '@/store/auth';
 import { setClerkTokenGetter, setClerkUserId, setClerkSignOut } from '@/lib/clerkAuth';
 import { VoiceConfirmationModal } from '@/components/VoiceConfirmationModal';
+import { useSettingsStore } from '@/store/settings';
+import type { SupportedLanguage } from '@/store/settings';
 import { registerForPushNotificationsAsync } from '@/services/push.service';
 import {
   registerWakeWordDetection,
@@ -59,17 +61,60 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// ─── Register action categories (Posponer / Listo) ───
-async function registerNotificationCategories() {
+// ─── Notification strings per language ───
+const NOTIF = {
+  en: {
+    postpone_btn:     '⏱ Snooze 10 min',
+    done_btn:         '✅ Done',
+    marked_done:      'Done, marked as complete.',
+    could_not_mark:   "Couldn't mark it, try from the app.",
+    snoozed:          "Ok, I'll remind you in 10 minutes.",
+    could_not_snooze: "Couldn't snooze, try from the app.",
+    speech_lang:      'en-US',
+  },
+  es: {
+    postpone_btn:     '⏱ Posponer 10 min',
+    done_btn:         '✅ Listo',
+    marked_done:      'Listo, marcado como completado.',
+    could_not_mark:   'No pude marcarlo, intenta desde la app.',
+    snoozed:          'Ok, te recuerdo en 10 minutos.',
+    could_not_snooze: 'No pude posponer, intenta desde la app.',
+    speech_lang:      'es-ES',
+  },
+  pt: {
+    postpone_btn:     '⏱ Adiar 10 min',
+    done_btn:         '✅ Feito',
+    marked_done:      'Pronto, marcado como concluído.',
+    could_not_mark:   'Não consegui marcar, tente no app.',
+    snoozed:          'Ok, te lembro em 10 minutos.',
+    could_not_snooze: 'Não consegui adiar, tente no app.',
+    speech_lang:      'pt-BR',
+  },
+  fr: {
+    postpone_btn:     '⏱ Reporter 10 min',
+    done_btn:         '✅ Terminé',
+    marked_done:      "C'est fait, marqué comme terminé.",
+    could_not_mark:   "Je n'ai pas pu le marquer, essayez dans l'app.",
+    snoozed:          'Ok, je te rappelle dans 10 minutes.',
+    could_not_snooze: "Je n'ai pas pu reporter, essayez dans l'app.",
+    speech_lang:      'fr-FR',
+  },
+} as const satisfies Record<SupportedLanguage, { postpone_btn: string; done_btn: string; marked_done: string; could_not_mark: string; snoozed: string; could_not_snooze: string; speech_lang: string }>;
+
+const getNotif = () => NOTIF[useSettingsStore.getState().language] ?? NOTIF.en;
+
+// ─── Register action categories (Snooze / Done) ───
+async function registerNotificationCategories(lang: SupportedLanguage = 'en') {
+  const s = NOTIF[lang] ?? NOTIF.en;
   await Notifications.setNotificationCategoryAsync('reminder', [
     {
       identifier: 'postpone_10',
-      buttonTitle: '⏱ Posponer 10 min',
+      buttonTitle: s.postpone_btn,
       options: { isDestructive: false, isAuthenticationRequired: false },
     },
     {
       identifier: 'mark_done',
-      buttonTitle: '✅ Listo',
+      buttonTitle: s.done_btn,
       options: { isDestructive: false, isAuthenticationRequired: false },
     },
   ]);
@@ -104,6 +149,7 @@ const CLERK_PUBLISHABLE_KEY =
 function ClerkBridge({ children }: { children: React.ReactNode }) {
   const { getToken, userId, isSignedIn, isLoaded, signOut } = useAuth();
   const setSession = useAuthStore((state) => state.setSession);
+  const language = useSettingsStore((s) => s.language);
 
   useEffect(() => {
     deviceLogger.log('ClerkBridge: auth state changed', { isLoaded, isSignedIn, hasUserId: Boolean(userId) });
@@ -124,9 +170,9 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isSignedIn && userId) {
       void registerForPushNotificationsAsync();
-      void registerNotificationCategories();
+      void registerNotificationCategories(language);
     }
-  }, [isSignedIn, userId]);
+  }, [isSignedIn, userId, language]);
 
   // Wake word detection
   useEffect(() => {
@@ -144,7 +190,7 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
     };
   }, [isSignedIn]);
 
-  // Foreground notification: speak via TTS + abrir micrófono para respuesta por voz
+  // Foreground notification: speak via TTS + open mic for voice response
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener((notification) => {
       const data = notification.request.content.data as Record<string, unknown>;
@@ -155,18 +201,17 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
       if (!speakText) return;
 
       const isReminder = kind === 'task_reminder' || kind === 'calendar_reminder';
+      const n = getNotif();
 
       Speech.speak(speakText, {
-        language: 'es',
+        language: n.speech_lang,
         rate: 0.95,
         onDone: () => {
-          // Después de hablar, si es recordatorio, activa el micrófono automáticamente
           if (isReminder && taskId) {
             const reminder: PendingReminder = {
               taskId,
               title: typeof data?.title === 'string' ? data.title : '',
             };
-            // 800ms de pausa para que el usuario se prepare
             setTimeout(() => {
               const { isListening, isProcessing } = useVoiceStore.getState();
               if (!isListening && !isProcessing) {
@@ -181,19 +226,20 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, []);
 
-  // Handle action button taps (Posponer / Listo)
+  // Handle action button taps (Snooze / Done)
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener(async (response) => {
       const action = response.actionIdentifier;
       const data = response.notification.request.content.data as Record<string, unknown>;
       const taskId = typeof data?.task_id === 'string' ? data.task_id : null;
+      const n = getNotif();
 
       if (action === 'mark_done' && taskId) {
         try {
           await tasksAPI.updateTask(taskId, { status: 'done' });
-          Speech.speak('Listo, marcado como completado.', { language: 'es' });
+          Speech.speak(n.marked_done, { language: n.speech_lang });
         } catch {
-          Speech.speak('No pude marcarlo, intenta desde la app.', { language: 'es' });
+          Speech.speak(n.could_not_mark, { language: n.speech_lang });
         }
       }
 
@@ -201,9 +247,9 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
         try {
           const newDue = new Date(Date.now() + 10 * 60 * 1000).toISOString();
           await tasksAPI.updateTask(taskId, { due_at: newDue });
-          Speech.speak('Ok, te recuerdo en 10 minutos.', { language: 'es' });
+          Speech.speak(n.snoozed, { language: n.speech_lang });
         } catch {
-          Speech.speak('No pude posponer, intenta desde la app.', { language: 'es' });
+          Speech.speak(n.could_not_snooze, { language: n.speech_lang });
         }
       }
     });

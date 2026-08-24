@@ -4,6 +4,36 @@ import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from '../database/database.service';
 import { EmailService } from '../email/email.service';
 
+type Lang = 'en' | 'es' | 'pt' | 'fr';
+
+function toSafeLang(raw: unknown): Lang {
+  const s = (typeof raw === 'string' ? raw : '').toLowerCase().slice(0, 2);
+  return (['en', 'es', 'pt', 'fr'] as Lang[]).includes(s as Lang) ? (s as Lang) : 'en';
+}
+
+function getTimeHint(minsLeft: number, dueDate: Date, lang: Lang): string {
+  const locale = { en: 'en-US', es: 'es-ES', pt: 'pt-BR', fr: 'fr-FR' }[lang];
+  const timeStr = dueDate.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  if (minsLeft <= 1) return { en: 'right now', es: 'ahora mismo', pt: 'agora mesmo', fr: 'maintenant' }[lang];
+  if (minsLeft <= 60) return { en: `in ${minsLeft} min`, es: `en ${minsLeft} minutos`, pt: `em ${minsLeft} minutos`, fr: `dans ${minsLeft} minutes` }[lang];
+  return { en: `at ${timeStr}`, es: `a las ${timeStr}`, pt: `às ${timeStr}`, fr: `à ${timeStr}` }[lang];
+}
+
+function buildEventNotif(title: string, location: string | null, timeHint: string, lang: Lang) {
+  const loc = location
+    ? ` ${{ en: 'at', es: 'en', pt: 'em', fr: 'à' }[lang]} ${location}`
+    : '';
+  const body = `${title}${loc} — ${timeHint}`;
+  const speak = { en: `Hey, ${title}${loc} — ${timeHint}`, es: `Oye, ${title}${loc} — ${timeHint}`, pt: `Ei, ${title}${loc} — ${timeHint}`, fr: `Hé, ${title}${loc} — ${timeHint}` }[lang];
+  return { body, speak };
+}
+
+function buildTaskNotif(title: string, timeHint: string, lang: Lang) {
+  const body = `${{ en: 'Reminder:', es: 'Recuerda:', pt: 'Lembrete:', fr: 'Rappel:' }[lang]} ${title} — ${timeHint}`;
+  const speak = { en: `Hey, remember: ${title} — ${timeHint}`, es: `Oye, recuerda: ${title} — ${timeHint}`, pt: `Ei, lembra: ${title} — ${timeHint}`, fr: `Hé, rappelle-toi: ${title} — ${timeHint}` }[lang];
+  return { body, speak };
+}
+
 @Injectable()
 export class RemindersScheduler implements OnModuleInit {
   private timer: NodeJS.Timeout | null = null;
@@ -142,7 +172,8 @@ export class RemindersScheduler implements OnModuleInit {
           COALESCE(rs.expo_push_token, p.expo_push_token) as expo_push_token,
           rs.default_reminder_offset_minutes as default_offset,
           rs.quiet_hours as quiet_hours,
-          p.preferences as preferences
+          p.preferences as preferences,
+          p.preferred_language as preferred_language
         FROM calendar_events e
         LEFT JOIN reminder_settings rs ON rs.user_id = e.user_id
         LEFT JOIN profiles p ON p.id = e.user_id
@@ -159,7 +190,8 @@ export class RemindersScheduler implements OnModuleInit {
           COALESCE(rs.expo_push_token, p.expo_push_token) as expo_push_token,
           rs.default_reminder_offset_minutes as default_offset,
           rs.quiet_hours as quiet_hours,
-          p.preferences as preferences
+          p.preferences as preferences,
+          p.preferred_language as preferred_language
         FROM tasks t
         LEFT JOIN reminder_settings rs ON rs.user_id = t.user_id
         LEFT JOIN profiles p ON p.id = t.user_id
@@ -223,18 +255,25 @@ export class RemindersScheduler implements OnModuleInit {
           if ((already.rows || []).length > 0) continue;
 
           const minutesLeft = Math.round((startAt.getTime() - now.getTime()) / 60000);
-          const timeHint = minutesLeft <= 1 ? 'ahora mismo' : minutesLeft <= 60 ? `en ${minutesLeft} minutos` : `a las ${startAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}`;
+          const lang = toSafeLang(r.preferred_language);
+          const timeHint = getTimeHint(minutesLeft, startAt, lang);
+          const { body: notifBody, speak: speakText } = buildEventNotif(
+            String(r.title || ''),
+            r.location ? String(r.location) : null,
+            timeHint,
+            lang,
+          );
           const pushOk = token
             ? await this.sendExpoPush(token, {
                 title: '⏰ Leeloo',
-                body: `${r.title}${r.location ? ` · ${r.location}` : ''} — ${timeHint}`,
+                body: notifBody,
                 categoryId: 'reminder',
                 data: {
                   kind: 'calendar_reminder',
                   event_id: r.event_id,
                   start_at: toIso(startAt),
                   offset_minutes: off,
-                  speak_text: `Oye, ${r.title}${r.location ? ` en ${r.location}` : ''} ${timeHint}`,
+                  speak_text: speakText,
                 },
               })
             : false;
@@ -296,18 +335,24 @@ export class RemindersScheduler implements OnModuleInit {
           if ((already.rows || []).length > 0) continue;
 
           const minsLeft = Math.round((dueAt.getTime() - now.getTime()) / 60000);
-          const timeHint2 = minsLeft <= 1 ? 'ahora mismo' : minsLeft <= 60 ? `en ${minsLeft} minutos` : `a las ${dueAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}`;
+          const lang2 = toSafeLang(r.preferred_language);
+          const timeHint2 = getTimeHint(minsLeft, dueAt, lang2);
+          const { body: notifBody2, speak: speakText2 } = buildTaskNotif(
+            String(r.title || ''),
+            timeHint2,
+            lang2,
+          );
           const pushOk = token
             ? await this.sendExpoPush(token, {
                 title: '⏰ Leeloo',
-                body: `Recuerda: ${r.title} — ${timeHint2}`,
+                body: notifBody2,
                 categoryId: 'reminder',
                 data: {
                   kind: 'task_reminder',
                   task_id: r.task_id,
                   due_at: toIso(dueAt),
                   offset_minutes: off,
-                  speak_text: `Oye, recuerda: ${r.title} ${timeHint2}`,
+                  speak_text: speakText2,
                 },
               })
             : false;
