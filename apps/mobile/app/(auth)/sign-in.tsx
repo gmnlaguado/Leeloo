@@ -35,7 +35,7 @@ export default function SignInScreen() {
     setError(null);
     setLoading(provider);
     try {
-      const redirectUrl = Linking.createURL('/');
+      const redirectUrl = Linking.createURL('');
       const { createdSessionId, setActive } = await startFlow({ redirectUrl });
       if (createdSessionId && setActive) {
         await setActive({ session: createdSessionId });
