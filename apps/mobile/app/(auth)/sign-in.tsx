@@ -4,14 +4,17 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Image,
   Platform,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useOAuth, useSignIn, useSignUp } from '@clerk/clerk-expo';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useOAuth } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import * as WebBrowser from 'expo-web-browser';
+import { WaveBackground } from '@/components/WaveBackground';
+import { T } from '@/lib/theme';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -38,252 +41,297 @@ export default function SignInScreen() {
       }
     } catch (e: any) {
       setError('No se pudo iniciar sesión. Intenta de nuevo.');
-      console.error(`[sign-in] ${provider} OAuth error`, e);
     } finally {
       setLoading(null);
     }
   };
 
-  const handleEmail = () => {
-    router.push('/(auth)/sign-in-email');
-  };
-
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.inner}>
-        {/* Logo / Avatar */}
-        <View style={styles.logoContainer}>
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoEmoji}>🤖</Text>
-          </View>
+    <View style={{ flex: 1 }}>
+      <LinearGradient
+        colors={['#FFF9F6', '#F0EDFF', '#E8E0FF']}
+        locations={[0, 0.5, 1]}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <WaveBackground opacity={0.06} cellSize={38} />
+
+      <SafeAreaView style={styles.safe}>
+        {/* Logo */}
+        <View style={styles.logoArea}>
+          <LinearGradient
+            colors={['#F07040', '#C4507A', '#8375FA']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.logoCircle}
+          >
+            <Text style={styles.logoMark}>◎</Text>
+          </LinearGradient>
           <Text style={styles.appName}>Leeloo</Text>
-          <Text style={styles.tagline}>Tu asistente personal inteligente</Text>
+          <Text style={styles.tagline}>The element that holds it all together.</Text>
         </View>
 
-        {/* Error */}
-        {!!error && (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
+        {/* Card */}
+        <View style={styles.card}>
+          <Text style={styles.welcomeTitle}>Welcome</Text>
 
-        {/* Botones de login */}
-        <View style={styles.buttonsContainer}>
-          <OAuthButton
-            label="Continuar con Google"
-            emoji="🔵"
-            onPress={() => handleOAuth('google', googleOAuth)}
-            loading={loading === 'google'}
-            disabled={!!loading}
-          />
-
-          {Platform.OS === 'ios' && (
-            <OAuthButton
-              label="Continuar con Apple"
-              emoji="🍎"
-              onPress={() => handleOAuth('apple', appleOAuth)}
-              loading={loading === 'apple'}
-              disabled={!!loading}
-              dark
-            />
+          {!!error && (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
           )}
 
-          <OAuthButton
-            label="Continuar con GitHub"
-            emoji="⚫"
-            onPress={() => handleOAuth('github', githubOAuth)}
-            loading={loading === 'github'}
+          {/* Email login */}
+          <TouchableOpacity
+            style={[styles.loginBtn, !!loading && styles.disabled]}
+            onPress={() => router.push('/(auth)/sign-in-email')}
             disabled={!!loading}
-          />
+            activeOpacity={0.85}
+          >
+            <LinearGradient
+              colors={['#FFB59E', '#F07040']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.loginBtnGradient}
+            >
+              <Text style={styles.loginBtnText}>Login  →</Text>
+            </LinearGradient>
+          </TouchableOpacity>
 
-          <View style={styles.divider}>
+          {/* Divider */}
+          <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>o</Text>
+            <Text style={styles.dividerText}>- OR Continue with -</Text>
             <View style={styles.dividerLine} />
           </View>
 
+          {/* Social buttons */}
+          <View style={styles.socialRow}>
+            <SocialBtn
+              label="G"
+              color="#DB4437"
+              onPress={() => handleOAuth('google', googleOAuth)}
+              loading={loading === 'google'}
+              disabled={!!loading}
+            />
+            {Platform.OS === 'ios' && (
+              <SocialBtn
+                label="🍎"
+                color={T.colors.black}
+                onPress={() => handleOAuth('apple', appleOAuth)}
+                loading={loading === 'apple'}
+                disabled={!!loading}
+                emoji
+              />
+            )}
+            <SocialBtn
+              label="⬛"
+              color={T.colors.navy}
+              onPress={() => handleOAuth('github', githubOAuth)}
+              loading={loading === 'github'}
+              disabled={!!loading}
+              emoji
+            />
+          </View>
+
+          {/* Sign up link */}
           <TouchableOpacity
-            style={[styles.emailButton, !!loading && styles.disabled]}
-            onPress={handleEmail}
+            onPress={() => router.push('/(auth)/sign-in-email')}
             disabled={!!loading}
+            style={styles.signupRow}
           >
-            <Text style={styles.emailButtonText}>📧 Continuar con Email</Text>
+            <Text style={styles.signupText}>
+              Create An Account{' '}
+              <Text style={styles.signupLink}>Sign Up</Text>
+            </Text>
           </TouchableOpacity>
         </View>
 
         <Text style={styles.terms}>
-          Al continuar aceptas nuestros <Text style={styles.link}>Términos de Servicio</Text> y{' '}
-          <Text style={styles.link}>Política de Privacidad</Text>
+          By continuing, you agree to Leeloo's{' '}
+          <Text style={styles.termsLink}>Terms & Conditions.</Text>
         </Text>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
-function OAuthButton({
-  label,
-  emoji,
-  onPress,
-  loading,
-  disabled,
-  dark,
+function SocialBtn({
+  label, color, onPress, loading, disabled, emoji,
 }: {
-  label: string;
-  emoji: string;
-  onPress: () => void;
-  loading: boolean;
-  disabled: boolean;
-  dark?: boolean;
+  label: string; color: string; onPress: () => void;
+  loading: boolean; disabled: boolean; emoji?: boolean;
 }) {
   return (
     <TouchableOpacity
-      style={[styles.oauthButton, dark && styles.oauthButtonDark, disabled && styles.disabled]}
+      style={[styles.socialBtn, disabled && styles.disabled]}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.8}
     >
       {loading ? (
-        <ActivityIndicator color={dark ? '#fff' : '#374151'} size="small" />
+        <ActivityIndicator color={color} size="small" />
       ) : (
-        <>
-          <Text style={styles.oauthEmoji}>{emoji}</Text>
-          <Text style={[styles.oauthLabel, dark && styles.oauthLabelDark]}>{label}</Text>
-        </>
+        <Text style={[styles.socialBtnText, emoji && { fontSize: 22 }, { color }]}>{label}</Text>
       )}
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  inner: {
-    flex: 1,
-    paddingHorizontal: 24,
-    justifyContent: 'space-between',
-    paddingTop: 40,
-    paddingBottom: 32,
-  },
-  logoContainer: {
     alignItems: 'center',
-    marginBottom: 8,
+    justifyContent: 'space-between',
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+  },
+  logoArea: {
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 24,
   },
   logoCircle: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: '#FFF0E8',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: '#FF6A29',
+    shadowColor: T.colors.orange,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 10,
   },
-  logoEmoji: {
-    fontSize: 52,
+  logoMark: {
+    fontSize: 40,
+    color: T.colors.white,
+    fontWeight: '700',
   },
   appName: {
-    fontSize: 42,
-    fontWeight: '800',
-    color: '#2D266C',
-    letterSpacing: -1,
+    fontSize: 36,
+    fontWeight: '700',
+    fontFamily: T.fonts.bold,
+    color: T.colors.navy,
+    letterSpacing: -0.5,
   },
   tagline: {
-    fontSize: 16,
-    color: '#6B6A8A',
-    marginTop: 8,
-    textAlign: 'center',
+    fontSize: 13,
+    color: '#8F8BB8',
+    fontStyle: 'italic',
+    fontFamily: T.fonts.regular,
+  },
+  card: {
+    width: '100%',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 24,
+    padding: 28,
+    gap: 16,
+    shadowColor: T.colors.navy,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  welcomeTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    fontFamily: T.fonts.bold,
+    color: T.colors.navy,
+    marginBottom: 4,
   },
   errorBox: {
     backgroundColor: '#FEE2E2',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
+    borderRadius: 10,
+    padding: 10,
   },
   errorText: {
-    color: '#DC2626',
-    fontSize: 14,
+    color: T.colors.error,
+    fontSize: 13,
     textAlign: 'center',
   },
-  buttonsContainer: {
-    gap: 12,
+  loginBtn: {
+    borderRadius: T.radius.md,
+    overflow: 'hidden',
+    shadowColor: T.colors.orange,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  oauthButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+  loginBtnGradient: {
     paddingVertical: 15,
-    paddingHorizontal: 20,
-    gap: 10,
-    minHeight: 52,
-    borderWidth: 1.5,
-    borderColor: '#E5E3F0',
-    shadowColor: '#2D266C',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    alignItems: 'center',
   },
-  oauthButtonDark: {
-    backgroundColor: '#2D266C',
-    borderWidth: 0,
+  loginBtnText: {
+    color: T.colors.white,
+    fontSize: 17,
+    fontWeight: '700',
+    fontFamily: T.fonts.bold,
+    letterSpacing: 0.3,
   },
-  oauthEmoji: {
-    fontSize: 20,
-  },
-  oauthLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2D266C',
-  },
-  oauthLabelDark: {
-    color: '#FFFFFF',
-  },
-  divider: {
+  dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginVertical: 4,
+    gap: 8,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#E5E3F0',
+    backgroundColor: '#E8E4F0',
   },
   dividerText: {
+    fontSize: 12,
     color: '#9CA3AF',
-    fontSize: 14,
+    fontFamily: T.fonts.regular,
   },
-  emailButton: {
-    borderRadius: 14,
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    borderWidth: 1.5,
-    borderColor: '#FF6A29',
+  socialRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  socialBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: T.colors.white,
     alignItems: 'center',
-    minHeight: 52,
-    backgroundColor: '#FFF7F3',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E8E4F0',
+    shadowColor: T.colors.navy,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  emailButtonText: {
-    color: '#FF6A29',
-    fontSize: 16,
+  socialBtnText: {
+    fontSize: 18,
     fontWeight: '700',
   },
-  disabled: {
-    opacity: 0.5,
+  signupRow: {
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+  signupText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontFamily: T.fonts.regular,
+  },
+  signupLink: {
+    color: T.colors.purple,
+    fontWeight: '700',
+    fontFamily: T.fonts.bold,
+    textDecorationLine: 'underline',
   },
   terms: {
     fontSize: 12,
     color: '#9CA3AF',
     textAlign: 'center',
     lineHeight: 18,
+    fontFamily: T.fonts.regular,
   },
-  link: {
-    color: '#FF6A29',
-    textDecorationLine: 'underline',
+  termsLink: {
+    color: T.colors.purple,
   },
+  disabled: { opacity: 0.5 },
 });

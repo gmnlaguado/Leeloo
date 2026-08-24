@@ -1,6 +1,15 @@
 import { Stack } from 'expo-router';
 import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import {
+  useFonts,
+  Raleway_400Regular,
+  Raleway_600SemiBold,
+  Raleway_700Bold,
+} from '@expo-google-fonts/raleway';
+import * as SplashScreen from 'expo-splash-screen';
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
@@ -205,6 +214,12 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({ Raleway_400Regular, Raleway_600SemiBold, Raleway_700Bold });
+
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
+  }, [fontsLoaded]);
+
   deviceLogger.log('RootLayout mounting', { publishableKey: CLERK_PUBLISHABLE_KEY?.slice(0, 20) + '...' });
   return (
     <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>

@@ -13,13 +13,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSignIn, useSignUp } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import { WaveBackground } from '@/components/WaveBackground';
+import { T } from '@/lib/theme';
 
 type Step = 'email' | 'password' | 'verify' | 'register';
 
 export default function SignInEmailScreen() {
   const router = useRouter();
-  const { signIn, setActive: setActiveSignIn, isLoaded: signInLoaded } = useSignIn();
-  const { signUp, setActive: setActiveSignUp, isLoaded: signUpLoaded } = useSignUp();
+  const { signIn, setActive: setActiveSignIn } = useSignIn();
+  const { signUp, setActive: setActiveSignUp } = useSignUp();
 
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
@@ -28,21 +31,17 @@ export default function SignInEmailScreen() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isNewUser, setIsNewUser] = useState(false);
 
   const handleEmailNext = async () => {
     if (!email.trim()) return;
     setError(null);
     setLoading(true);
     try {
-      // Try to find if user exists
-      const res = await signIn!.create({ identifier: email.trim() });
-      setIsNewUser(false);
+      await signIn!.create({ identifier: email.trim() });
       setStep('password');
     } catch (e: any) {
-      const code = e?.errors?.[0]?.code || '';
-      if (code === 'form_identifier_not_found') {
-        setIsNewUser(true);
+      const errCode = e?.errors?.[0]?.code || '';
+      if (errCode === 'form_identifier_not_found') {
         setStep('register');
       } else {
         setError('Verifica tu email e intenta de nuevo.');
@@ -65,7 +64,7 @@ export default function SignInEmailScreen() {
         await setActiveSignIn!({ session: result.createdSessionId });
         router.replace('/');
       }
-    } catch (e: any) {
+    } catch {
       setError('Contraseña incorrecta. Intenta de nuevo.');
     } finally {
       setLoading(false);
@@ -103,7 +102,7 @@ export default function SignInEmailScreen() {
         await setActiveSignUp!({ session: result.createdSessionId });
         router.replace('/');
       }
-    } catch (e: any) {
+    } catch {
       setError('Código incorrecto. Revisa tu email.');
     } finally {
       setLoading(false);
@@ -119,186 +118,263 @@ export default function SignInEmailScreen() {
 
   const subtitles: Record<Step, string> = {
     email: 'Ingresa tu email para continuar',
-    password: `Ingresa tu contraseña para ${email}`,
+    password: `Contraseña para ${email}`,
     register: 'Completa tu registro en Leeloo',
     verify: `Enviamos un código a ${email}`,
   };
 
+  const stepEmoji: Record<Step, string> = {
+    email: '📧', password: '🔐', register: '✨', verify: '📩',
+  };
+
+  const handlePrimary = () => {
+    if (step === 'email') return handleEmailNext();
+    if (step === 'password') return handleSignIn();
+    if (step === 'register') return handleRegister();
+    if (step === 'verify') return handleVerify();
+  };
+
+  const isPrimaryDisabled = () => {
+    if (step === 'email') return !email.trim();
+    if (step === 'password') return !password.trim();
+    if (step === 'register') return !name.trim() || password.length < 8;
+    if (step === 'verify') return code.length < 6;
+    return false;
+  };
+
+  const primaryLabel: Record<Step, string> = {
+    email: 'Continuar →',
+    password: 'Iniciar sesión',
+    register: 'Crear cuenta',
+    verify: 'Verificar código',
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
-          <TouchableOpacity style={styles.back} onPress={() => router.back()}>
-            <Text style={styles.backText}>← Volver</Text>
-          </TouchableOpacity>
+    <View style={{ flex: 1, backgroundColor: T.colors.cream }}>
+      <WaveBackground opacity={0.055} cellSize={38} />
+      <SafeAreaView style={{ flex: 1 }}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <ScrollView
+            contentContainerStyle={s.scroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Back */}
+            <TouchableOpacity style={s.back} onPress={() => router.back()}>
+              <Text style={s.backText}>← Volver</Text>
+            </TouchableOpacity>
 
-          <Text style={styles.title}>{titles[step]}</Text>
-          <Text style={styles.subtitle}>{subtitles[step]}</Text>
+            {/* Header card */}
+            <LinearGradient
+              colors={['#F07040', '#C4507A', '#8375FA']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={s.headerCard}
+            >
+              <WaveBackground opacity={0.12} cellSize={30} />
+              <Text style={s.headerEmoji}>{stepEmoji[step]}</Text>
+              <Text style={s.headerTitle}>{titles[step]}</Text>
+              <Text style={s.headerSub}>{subtitles[step]}</Text>
+            </LinearGradient>
 
-          {!!error && (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          )}
+            {/* Form card */}
+            <View style={s.formCard}>
+              {!!error && (
+                <View style={s.errorBox}>
+                  <Text style={s.errorText}>{error}</Text>
+                </View>
+              )}
 
-          {step === 'email' && (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder="correo@ejemplo.com"
-                placeholderTextColor="#71717A"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoComplete="email"
-                autoFocus
-              />
-              <PrimaryButton
-                label="Continuar"
-                onPress={handleEmailNext}
-                loading={loading}
-                disabled={!email.trim()}
-              />
-            </>
-          )}
+              {step === 'email' && (
+                <TextInput
+                  style={s.input}
+                  placeholder="correo@ejemplo.com"
+                  placeholderTextColor={T.colors.muted}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  autoFocus
+                />
+              )}
 
-          {step === 'password' && (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder="Contraseña"
-                placeholderTextColor="#71717A"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoFocus
-              />
-              <PrimaryButton
-                label="Iniciar sesión"
-                onPress={handleSignIn}
-                loading={loading}
-                disabled={!password.trim()}
-              />
-              <TouchableOpacity style={styles.forgotBtn}>
-                <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
+              {step === 'password' && (
+                <>
+                  <TextInput
+                    style={s.input}
+                    placeholder="Contraseña"
+                    placeholderTextColor={T.colors.muted}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                    autoFocus
+                  />
+                  <TouchableOpacity style={s.forgotBtn}>
+                    <Text style={s.forgotText}>¿Olvidaste tu contraseña?</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {step === 'register' && (
+                <>
+                  <TextInput
+                    style={s.input}
+                    placeholder="Tu nombre completo"
+                    placeholderTextColor={T.colors.muted}
+                    value={name}
+                    onChangeText={setName}
+                    autoFocus
+                  />
+                  <TextInput
+                    style={s.input}
+                    placeholder="Contraseña (mínimo 8 caracteres)"
+                    placeholderTextColor={T.colors.muted}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                  />
+                </>
+              )}
+
+              {step === 'verify' && (
+                <TextInput
+                  style={[s.input, s.codeInput]}
+                  placeholder="000000"
+                  placeholderTextColor={T.colors.muted}
+                  value={code}
+                  onChangeText={setCode}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  autoFocus
+                />
+              )}
+
+              {/* Primary button */}
+              <TouchableOpacity
+                style={[s.primaryBtn, (isPrimaryDisabled() || loading) && s.disabled]}
+                onPress={handlePrimary}
+                disabled={isPrimaryDisabled() || loading}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#8375FA', '#2D266C']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={s.primaryBtnGradient}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={T.colors.white} />
+                  ) : (
+                    <Text style={s.primaryBtnText}>{primaryLabel[step]}</Text>
+                  )}
+                </LinearGradient>
               </TouchableOpacity>
-            </>
-          )}
-
-          {step === 'register' && (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder="Tu nombre completo"
-                placeholderTextColor="#71717A"
-                value={name}
-                onChangeText={setName}
-                autoFocus
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Contraseña (mínimo 8 caracteres)"
-                placeholderTextColor="#71717A"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
-              <PrimaryButton
-                label="Crear cuenta"
-                onPress={handleRegister}
-                loading={loading}
-                disabled={!name.trim() || password.length < 8}
-              />
-            </>
-          )}
-
-          {step === 'verify' && (
-            <>
-              <TextInput
-                style={[styles.input, styles.codeInput]}
-                placeholder="Código de 6 dígitos"
-                placeholderTextColor="#71717A"
-                value={code}
-                onChangeText={setCode}
-                keyboardType="number-pad"
-                maxLength={6}
-                autoFocus
-              />
-              <PrimaryButton
-                label="Verificar"
-                onPress={handleVerify}
-                loading={loading}
-                disabled={code.length < 6}
-              />
-            </>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 }
 
-function PrimaryButton({
-  label,
-  onPress,
-  loading,
-  disabled,
-}: {
-  label: string;
-  onPress: () => void;
-  loading: boolean;
-  disabled: boolean;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.primaryBtn, (disabled || loading) && styles.disabled]}
-      onPress={onPress}
-      disabled={disabled || loading}
-      activeOpacity={0.8}
-    >
-      {loading ? (
-        <ActivityIndicator color="#fff" />
-      ) : (
-        <Text style={styles.primaryBtnText}>{label}</Text>
-      )}
-    </TouchableOpacity>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B0B14' },
-  inner: { padding: 24, paddingTop: 16, gap: 16 },
-  back: { marginBottom: 8 },
-  backText: { color: '#7C3AED', fontSize: 16 },
-  title: { fontSize: 28, fontWeight: '700', color: '#FFFFFF' },
-  subtitle: { fontSize: 15, color: '#A1A1AA', marginBottom: 8 },
-  errorBox: { backgroundColor: '#3B1219', borderRadius: 12, padding: 12 },
-  errorText: { color: '#F87171', fontSize: 14 },
+const s = StyleSheet.create({
+  scroll: { padding: 20, paddingBottom: 60, gap: 16 },
+  back: { marginBottom: 4 },
+  backText: {
+    color: T.colors.purple,
+    fontSize: 15,
+    fontFamily: T.fonts.semiBold,
+    fontWeight: '600',
+  },
+  headerCard: {
+    borderRadius: T.radius.lg,
+    padding: 24,
+    overflow: 'hidden',
+    gap: 6,
+  },
+  headerEmoji: { fontSize: 32, marginBottom: 4 },
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    fontFamily: T.fonts.bold,
+    color: T.colors.white,
+  },
+  headerSub: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.75)',
+    fontFamily: T.fonts.regular,
+  },
+  formCard: {
+    backgroundColor: T.colors.white,
+    borderRadius: T.radius.lg,
+    padding: 20,
+    gap: 14,
+    borderWidth: 1,
+    borderColor: '#EDE9F8',
+    shadowColor: T.colors.navy,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.07,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  errorBox: {
+    backgroundColor: '#FEE2E2',
+    borderRadius: T.radius.sm,
+    padding: 12,
+  },
+  errorText: {
+    color: T.colors.error,
+    fontSize: 13,
+    fontFamily: T.fonts.regular,
+    textAlign: 'center',
+  },
   input: {
-    backgroundColor: '#17172A',
-    borderRadius: 14,
-    paddingVertical: 15,
+    backgroundColor: '#F8F6FF',
+    borderRadius: T.radius.md,
+    paddingVertical: 14,
     paddingHorizontal: 16,
     fontSize: 16,
-    color: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#3F3F46',
+    color: T.colors.navy,
+    borderWidth: 1.5,
+    borderColor: '#E8E4F0',
+    fontFamily: T.fonts.regular,
   },
-  codeInput: { textAlign: 'center', letterSpacing: 8, fontSize: 24 },
+  codeInput: {
+    textAlign: 'center',
+    letterSpacing: 10,
+    fontSize: 28,
+    fontFamily: T.fonts.bold,
+    fontWeight: '700',
+  },
+  forgotBtn: { alignItems: 'center' },
+  forgotText: {
+    color: T.colors.purple,
+    fontSize: 13,
+    fontFamily: T.fonts.semiBold,
+    fontWeight: '600',
+  },
   primaryBtn: {
-    backgroundColor: '#7C3AED',
-    borderRadius: 14,
+    borderRadius: T.radius.md,
+    overflow: 'hidden',
+    shadowColor: T.colors.purple,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  primaryBtnGradient: {
     paddingVertical: 15,
     alignItems: 'center',
-    minHeight: 52,
-    justifyContent: 'center',
   },
-  primaryBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  primaryBtnText: {
+    color: T.colors.white,
+    fontSize: 16,
+    fontWeight: '700',
+    fontFamily: T.fonts.bold,
+  },
   disabled: { opacity: 0.5 },
-  forgotBtn: { alignItems: 'center', paddingVertical: 8 },
-  forgotText: { color: '#7C3AED', fontSize: 14 },
 });
