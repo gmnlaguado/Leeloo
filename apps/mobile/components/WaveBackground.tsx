@@ -12,19 +12,19 @@ function WaveCell({ x, y, size = 32 }: { x: number; y: number; size?: number }) 
       {/* 4 wavy lines stacked, mimicking the brand pattern */}
       <Path
         d={`M2,${s * 0.2} Q${s * 0.25},${s * 0.08} ${s * 0.5},${s * 0.2} Q${s * 0.75},${s * 0.32} ${s - 2},${s * 0.2}`}
-        stroke="#2D266C" strokeWidth="1.5" fill="none" strokeLinecap="round"
+        stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round"
       />
       <Path
         d={`M2,${s * 0.38} Q${s * 0.25},${s * 0.26} ${s * 0.5},${s * 0.38} Q${s * 0.75},${s * 0.5} ${s - 2},${s * 0.38}`}
-        stroke="#2D266C" strokeWidth="1.5" fill="none" strokeLinecap="round"
+        stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round"
       />
       <Path
         d={`M2,${s * 0.56} Q${s * 0.25},${s * 0.44} ${s * 0.5},${s * 0.56} Q${s * 0.75},${s * 0.68} ${s - 2},${s * 0.56}`}
-        stroke="#2D266C" strokeWidth="1.5" fill="none" strokeLinecap="round"
+        stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round"
       />
       <Path
         d={`M2,${s * 0.74} Q${s * 0.25},${s * 0.62} ${s * 0.5},${s * 0.74} Q${s * 0.75},${s * 0.86} ${s - 2},${s * 0.74}`}
-        stroke="#2D266C" strokeWidth="1.5" fill="none" strokeLinecap="round"
+        stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round"
       />
     </G>
   );
@@ -33,9 +33,10 @@ function WaveCell({ x, y, size = 32 }: { x: number; y: number; size?: number }) 
 interface WaveBackgroundProps {
   opacity?: number;
   cellSize?: number;
+  color?: string;
 }
 
-export function WaveBackground({ opacity = 0.08, cellSize = 36 }: WaveBackgroundProps) {
+export function WaveBackground({ opacity = 0.13, cellSize = 44, color = '#2D266C' }: WaveBackgroundProps) {
   const cols = Math.ceil(W / cellSize) + 1;
   const rows = Math.ceil(H / cellSize) + 1;
   const cells: { x: number; y: number; key: string }[] = [];

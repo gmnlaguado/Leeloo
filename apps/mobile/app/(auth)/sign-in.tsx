@@ -13,6 +13,7 @@ import { useOAuth } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { WaveBackground } from '@/components/WaveBackground';
 import { T } from '@/lib/theme';
 
@@ -34,12 +35,14 @@ export default function SignInScreen() {
     setError(null);
     setLoading(provider);
     try {
-      const { createdSessionId, setActive } = await startFlow();
+      const redirectUrl = Linking.createURL('/');
+      const { createdSessionId, setActive } = await startFlow({ redirectUrl });
       if (createdSessionId && setActive) {
         await setActive({ session: createdSessionId });
         router.replace('/');
       }
     } catch (e: any) {
+      console.log('[oauth] error', e?.message ?? e);
       setError('No se pudo iniciar sesión. Intenta de nuevo.');
     } finally {
       setLoading(null);
@@ -58,14 +61,13 @@ export default function SignInScreen() {
       <SafeAreaView style={styles.safe}>
         {/* Logo */}
         <View style={styles.logoArea}>
-          <LinearGradient
-            colors={['#F07040', '#C4507A', '#8375FA']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.logoCircle}
-          >
-            <Text style={styles.logoMark}>◎</Text>
-          </LinearGradient>
+          <View style={styles.logoCircle}>
+            <Image
+              source={require('../../assets/icon.png')}
+              style={styles.logoImage}
+              resizeMode="cover"
+            />
+          </View>
           <Text style={styles.appName}>Leeloo</Text>
           <Text style={styles.tagline}>The element that holds it all together.</Text>
         </View>
@@ -191,21 +193,20 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   logoCircle: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: T.colors.orange,
+    width: 100,
+    height: 100,
+    borderRadius: 28,
+    overflow: 'hidden',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.25,
     shadowRadius: 12,
     elevation: 10,
   },
-  logoMark: {
-    fontSize: 40,
-    color: T.colors.white,
-    fontWeight: '700',
+  logoImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 28,
   },
   appName: {
     fontSize: 36,

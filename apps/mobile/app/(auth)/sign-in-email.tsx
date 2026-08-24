@@ -21,8 +21,8 @@ type Step = 'email' | 'password' | 'verify' | 'register';
 
 export default function SignInEmailScreen() {
   const router = useRouter();
-  const { signIn, setActive: setActiveSignIn } = useSignIn();
-  const { signUp, setActive: setActiveSignUp } = useSignUp();
+  const { signIn, setActive: setActiveSignIn, isLoaded: signInLoaded } = useSignIn();
+  const { signUp, setActive: setActiveSignUp, isLoaded: signUpLoaded } = useSignUp();
 
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
@@ -33,7 +33,7 @@ export default function SignInEmailScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const handleEmailNext = async () => {
-    if (!email.trim()) return;
+    if (!email.trim() || !signInLoaded) return;
     setError(null);
     setLoading(true);
     try {
@@ -52,7 +52,7 @@ export default function SignInEmailScreen() {
   };
 
   const handleSignIn = async () => {
-    if (!password.trim()) return;
+    if (!password.trim() || !signInLoaded) return;
     setError(null);
     setLoading(true);
     try {
@@ -72,7 +72,7 @@ export default function SignInEmailScreen() {
   };
 
   const handleRegister = async () => {
-    if (!password.trim() || !name.trim()) return;
+    if (!password.trim() || !name.trim() || !signUpLoaded) return;
     setError(null);
     setLoading(true);
     try {
