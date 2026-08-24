@@ -5,11 +5,10 @@ import Svg, { G, Path, Rect, Defs, Pattern } from 'react-native-svg';
 const { width: W, height: H } = Dimensions.get('window');
 
 // Single wave cell — replicates the Leeloo brand motif from the Figma pattern sheet
-function WaveCell({ x, y, size = 32 }: { x: number; y: number; size?: number }) {
+function WaveCell({ x, y, size = 32, color }: { x: number; y: number; size?: number; color: string }) {
   const s = size;
   return (
     <G transform={`translate(${x},${y})`}>
-      {/* 4 wavy lines stacked, mimicking the brand pattern */}
       <Path
         d={`M2,${s * 0.2} Q${s * 0.25},${s * 0.08} ${s * 0.5},${s * 0.2} Q${s * 0.75},${s * 0.32} ${s - 2},${s * 0.2}`}
         stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round"
@@ -50,7 +49,7 @@ export function WaveBackground({ opacity = 0.13, cellSize = 44, color = '#2D266C
     <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
       <Svg width={W} height={H} style={{ opacity }}>
         {cells.map(({ x, y, key }) => (
-          <WaveCell key={key} x={x} y={y} size={cellSize - 4} />
+          <WaveCell key={key} x={x} y={y} size={cellSize - 4} color={color} />
         ))}
       </Svg>
     </View>
