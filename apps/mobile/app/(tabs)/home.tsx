@@ -17,6 +17,83 @@ import { Search } from 'lucide-react-native';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { profilesAPI, verseAPI } from '@/lib/api';
+import { useSettingsStore } from '@/store/settings';
+
+// ─── Minimal UI translations (4 languages) ────────────────────────────────────
+const UI_STRINGS = {
+  en: {
+    greeting_morning: 'Good morning',
+    greeting_afternoon: 'Good afternoon',
+    greeting_evening: 'Good evening',
+    ask_leeloo: 'How can I help you today?',
+    plan_title: "Today's plan",
+    ask_plan: 'Ask Leeloo what you have today →',
+    actions_title: 'Quick actions',
+    action_agenda: 'My agenda',
+    action_emails: 'Emails',
+    action_tasks: 'Tasks',
+    action_mode: 'Leeloo mode',
+    tag_home: 'HOME',
+    tag_work: 'WORK',
+    no_date: 'No date',
+    write_here: 'Write here...',
+    calendar_title: 'Calendar',
+  },
+  es: {
+    greeting_morning: 'Buenos días',
+    greeting_afternoon: 'Buenas tardes',
+    greeting_evening: 'Buenas noches',
+    ask_leeloo: '¿En qué te ayudo hoy?',
+    plan_title: 'Tu plan de hoy',
+    ask_plan: 'Pregúntale a Leeloo qué tienes hoy →',
+    actions_title: 'Acciones rápidas',
+    action_agenda: 'Mi agenda',
+    action_emails: 'Correos',
+    action_tasks: 'Tareas',
+    action_mode: 'Modo Leeloo',
+    tag_home: 'HOGAR',
+    tag_work: 'TRABAJO',
+    no_date: 'Sin fecha',
+    write_here: 'Escribe aquí...',
+    calendar_title: 'Calendario',
+  },
+  pt: {
+    greeting_morning: 'Bom dia',
+    greeting_afternoon: 'Boa tarde',
+    greeting_evening: 'Boa noite',
+    ask_leeloo: 'Como posso te ajudar hoje?',
+    plan_title: 'Seu plano de hoje',
+    ask_plan: 'Pergunte à Leeloo o que você tem hoje →',
+    actions_title: 'Ações rápidas',
+    action_agenda: 'Minha agenda',
+    action_emails: 'E-mails',
+    action_tasks: 'Tarefas',
+    action_mode: 'Modo Leeloo',
+    tag_home: 'CASA',
+    tag_work: 'TRABALHO',
+    no_date: 'Sem data',
+    write_here: 'Escreva aqui...',
+    calendar_title: 'Calendário',
+  },
+  fr: {
+    greeting_morning: 'Bonjour',
+    greeting_afternoon: 'Bon après-midi',
+    greeting_evening: 'Bonsoir',
+    ask_leeloo: 'Comment puis-je t\'aider aujourd\'hui ?',
+    plan_title: 'Votre plan du jour',
+    ask_plan: 'Demandez à Leeloo ce que vous avez aujourd\'hui →',
+    actions_title: 'Actions rapides',
+    action_agenda: 'Mon agenda',
+    action_emails: 'E-mails',
+    action_tasks: 'Tâches',
+    action_mode: 'Mode Leeloo',
+    tag_home: 'MAISON',
+    tag_work: 'TRAVAIL',
+    no_date: 'Sans date',
+    write_here: 'Écrivez ici...',
+    calendar_title: 'Calendrier',
+  },
+} as const;
 
 const { width: W } = Dimensions.get('window');
 const DAY_W = (W - 48) / 7;
@@ -201,15 +278,17 @@ export default function HomeScreen() {
   const router = useRouter();
   const [draft, setDraft] = useState('');
   const { personality, verseText, leelooName } = usePersonalityWidget();
+  const language = useSettingsStore((s) => s.language);
+  const t = UI_STRINGS[language] ?? UI_STRINGS.en;
 
   useEffect(() => { hydrateTasks(); }, [hydrateTasks]);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
-    if (h < 12) return 'Buenos días';
-    if (h < 18) return 'Buenas tardes';
-    return 'Buenas noches';
-  }, []);
+    if (h < 12) return t.greeting_morning;
+    if (h < 18) return t.greeting_afternoon;
+    return t.greeting_evening;
+  }, [t]);
 
   const userMetadata = ((session as any)?.user?.user_metadata || undefined) as
     | Record<string, unknown> | undefined;
@@ -282,14 +361,14 @@ export default function HomeScreen() {
           >
             <WaveBackground opacity={0.12} cellSize={32} />
             <Text style={styles.greetTitle}>{greeting}, {name}</Text>
-            <Text style={styles.greetSub}>¿En qué te ayudo hoy?</Text>
+            <Text style={styles.greetSub}>{t.ask_leeloo}</Text>
 
             {/* Chat input inside card */}
             <View style={styles.chatRow}>
               <TextInput
                 value={draft}
                 onChangeText={setDraft}
-                placeholder="Write here..."
+                placeholder={t.write_here}
                 placeholderTextColor="rgba(255,255,255,0.6)"
                 editable={!isProcessing}
                 style={styles.chatInput}
@@ -325,20 +404,20 @@ export default function HomeScreen() {
 
           {/* ── CALENDAR STRIP ────────────────────────── */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Calendar</Text>
+            <Text style={styles.sectionTitle}>{t.calendar_title}</Text>
             <CalendarStrip />
           </View>
 
           {/* ── TU PLAN HOY ───────────────────────────── */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Tu plan de hoy</Text>
+            <Text style={styles.sectionTitle}>{t.plan_title}</Text>
             {upcoming.length === 0 ? (
               <TouchableOpacity
                 style={styles.planEmpty}
-                onPress={() => sendText('qué tengo para hoy')}
+                onPress={() => sendText('what do I have today')}
                 activeOpacity={0.8}
               >
-                <Text style={styles.planEmptyText}>Pregúntale a Leeloo qué tienes hoy →</Text>
+                <Text style={styles.planEmptyText}>{t.ask_plan}</Text>
               </TouchableOpacity>
             ) : (
               <View style={{ gap: 10 }}>
@@ -349,7 +428,7 @@ export default function HomeScreen() {
                     <View key={t.id} style={styles.planCard}>
                       <View style={[styles.planCardTag, { backgroundColor: isHome ? '#FEF3C7' : '#EDE9FE' }]}>
                         <Text style={{ fontSize: 10, color: isHome ? '#92400E' : '#5B21B6', fontWeight: '700' }}>
-                          {isHome ? 'HOGAR' : 'TRABAJO'}
+                          {isHome ? t.tag_home : t.tag_work}
                         </Text>
                       </View>
                       <View style={styles.planCardLeft}>
