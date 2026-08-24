@@ -61,4 +61,20 @@ export class MemoriesController {
     const key = `note_${Date.now()}`;
     return this.memoriesService.createMemory(req.user.id, category, key, { content });
   }
+
+  @Post('turn')
+  @ApiOperation({ summary: 'Append a conversation turn (called fire-and-forget by orchestrator)' })
+  async appendTurn(
+    @Req() req: AuthedRequest,
+    @Body() body: { user: string; assistant: string; language?: string },
+  ) {
+    const user = String(body?.user || '').trim().slice(0, 500);
+    const assistant = String(body?.assistant || '').trim().slice(0, 1000);
+    if (!user && !assistant) return { ok: false };
+    return this.memoriesService.appendTurn(req.user.id, {
+      user,
+      assistant,
+      language: typeof body?.language === 'string' ? body.language : undefined,
+    });
+  }
 }

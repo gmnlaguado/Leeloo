@@ -277,7 +277,29 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
             return `contact:${name} = ${parts.join(', ')}`;
           });
 
-        return [...memLines, ...contactLines].join('\n');
+        // Last 3 conversation turns for session continuity
+        let turnLines: string[] = [];
+        try {
+          const turnRes = await this.pool.query(
+            `SELECT value FROM memories
+             WHERE user_id = $1 AND key LIKE 'turn_%'
+             ORDER BY created_at DESC LIMIT 3`,
+            [profileId],
+          );
+          turnLines = (turnRes.rows || [])
+            .reverse()
+            .map((r: any) => {
+              const v = r?.value;
+              if (!v) return null;
+              const u = typeof v.user === 'string' ? v.user : '';
+              const a = typeof v.assistant === 'string' ? v.assistant : '';
+              if (!u && !a) return null;
+              return `[prev] user: ${u.slice(0, 200)} | leeloo: ${a.slice(0, 300)}`;
+            })
+            .filter(Boolean) as string[];
+        } catch { /* turns table may not have rows yet */ }
+
+        return [...turnLines, ...memLines, ...contactLines].join('\n');
       } catch {
         return '';
       }

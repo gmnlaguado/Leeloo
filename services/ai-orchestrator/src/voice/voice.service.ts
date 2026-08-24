@@ -193,6 +193,12 @@ export class VoiceService {
       });
       const confirmedText = this.buildAssistantText(intent, confirmedAction);
       const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: confirmedText });
+      this.saveTurnFireAndForget({
+        authorization: input.authorization,
+        transcription,
+        assistantText: confirmedText,
+        language,
+      });
       return {
         ok: true,
         status: 'executed',
@@ -253,6 +259,14 @@ export class VoiceService {
       text: assistantText,
     });
 
+    // Persist this exchange so Leeloo remembers it in future sessions
+    this.saveTurnFireAndForget({
+      authorization: input.authorization,
+      transcription,
+      assistantText,
+      language,
+    });
+
     return {
       ok: true,
       status: 'ok',
@@ -268,6 +282,29 @@ export class VoiceService {
           }
         : null,
     };
+  }
+
+  private saveTurnFireAndForget(opts: {
+    authorization: string | undefined;
+    transcription: string;
+    assistantText: string;
+    language: string;
+  }) {
+    const apiBaseUrl = String(process.env.API_BASE_URL || process.env.API_URL || '').trim();
+    if (!apiBaseUrl || !opts.transcription || !opts.assistantText) return;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (opts.authorization) headers['Authorization'] = opts.authorization;
+    axios
+      .post(
+        `${apiBaseUrl.replace(/\/+$/, '')}/v1/memories/turn`,
+        {
+          user: opts.transcription.slice(0, 500),
+          assistant: opts.assistantText.slice(0, 1000),
+          language: opts.language,
+        },
+        { headers, timeout: 5000 },
+      )
+      .catch(() => { /* fire-and-forget — never blocks the response */ });
   }
 
   private async safeTts(input: { userId: string; text: string }) {
