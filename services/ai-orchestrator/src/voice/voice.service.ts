@@ -809,6 +809,51 @@ export class VoiceService {
         return { ok: true, provider: 'none', endpoint: null, data: null };
       }
 
+      if (intent === 'make_call') {
+        const contactName = String(slots.contact_name || '').trim();
+        const directNumber = String(slots.phone_number || '').trim();
+
+        if (directNumber) {
+          const clean = directNumber.replace(/[^\d+]/g, '');
+          return { ok: true, provider: 'phone', phone_number: clean, contact_name: contactName || directNumber };
+        }
+
+        if (!contactName) {
+          return {
+            ok: false,
+            fallback_text: input.language === 'es' ? '¿A quién quieres llamar?' : 'Who would you like to call?',
+          };
+        }
+
+        try {
+          const searchRes = await axios.get(
+            `${apiBaseUrl.replace(/\/+$/, '')}/v1/contacts/search`,
+            { headers, params: { q: contactName }, timeout: 10000 },
+          );
+          const contacts: any[] = Array.isArray(searchRes.data?.contacts) ? searchRes.data.contacts : [];
+          const match = contacts.find((c: any) => c?.phone);
+          if (match?.phone) {
+            const clean = String(match.phone).replace(/[^\d+]/g, '');
+            return { ok: true, provider: 'phone', phone_number: clean, contact_name: match.name || contactName };
+          }
+          const errMsg = contacts.length > 0
+            ? (input.language === 'es'
+                ? `Encontré a ${contactName} pero no tengo su número. ¿Me lo dictas?`
+                : `I found ${contactName} but don't have their number. What is it?`)
+            : (input.language === 'es'
+                ? `No encontré a ${contactName} en tus contactos. ¿Me das el número?`
+                : `I couldn't find ${contactName} in your contacts. What's their number?`);
+          return { ok: false, fallback_text: errMsg };
+        } catch {
+          return {
+            ok: false,
+            fallback_text: input.language === 'es'
+              ? `No pude encontrar el número de ${contactName}.`
+              : `Couldn't find ${contactName}'s number.`,
+          };
+        }
+      }
+
       if (intent === 'agenda_today') {
         const res = await axios.get(`${apiBaseUrl.replace(/\/+$/, '')}/v1/calendar/agenda/today`, {
           headers,

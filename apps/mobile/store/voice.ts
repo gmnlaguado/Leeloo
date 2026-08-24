@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Audio } from 'expo-av';
+import { Linking } from 'react-native';
 import type { AVPlaybackStatus } from 'expo-av';
 import type { AudioMode } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -51,6 +52,12 @@ type RawVoiceApiResponse = VoiceResponse & {
   audio_url?: string;
   audioUrl?: string;
   tts_url?: string;
+  action?: {
+    provider?: string;
+    phone_number?: string;
+    contact_name?: string;
+    [key: string]: unknown;
+  };
 };
 
 export type { VoiceStatus, MemoryItem, VoiceResponse };
@@ -423,6 +430,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         set({ isSpeaking: true, status: 'speaking' });
         await speakTextAndWait(assistantText, language);
         set({ isSpeaking: false, status: 'idle' });
+      }
+
+      // Open native phone dialer when Leeloo resolved a call intent
+      if (data.action?.provider === 'phone' && typeof data.action?.phone_number === 'string') {
+        const tel = `tel:${data.action.phone_number}`;
+        Linking.openURL(tel).catch(() => {
+          console.log('[voice] could not open phone dialer for', tel);
+        });
       }
     } catch (e: unknown) {
       const err = e as {
