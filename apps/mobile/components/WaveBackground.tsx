@@ -35,12 +35,15 @@ interface WaveBackgroundProps {
   color?: string;
 }
 
+const MAX_WAVE_CELLS = 120; // Cap to avoid memory pressure with many SVG nodes
+
 export function WaveBackground({ opacity = 0.13, cellSize = 44, color = '#2D266C' }: WaveBackgroundProps) {
   const cols = Math.ceil(W / cellSize) + 1;
   const rows = Math.ceil(H / cellSize) + 1;
   const cells: { x: number; y: number; key: string }[] = [];
-  for (let r = 0; r < rows; r++) {
+  outer: for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
+      if (cells.length >= MAX_WAVE_CELLS) break outer;
       cells.push({ x: c * cellSize, y: r * cellSize, key: `${r}-${c}` });
     }
   }

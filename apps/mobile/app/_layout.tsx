@@ -105,19 +105,23 @@ const getNotif = () => NOTIF[useSettingsStore.getState().language] ?? NOTIF.en;
 
 // ─── Register action categories (Snooze / Done) ───
 async function registerNotificationCategories(lang: SupportedLanguage = 'en') {
-  const s = NOTIF[lang] ?? NOTIF.en;
-  await Notifications.setNotificationCategoryAsync('reminder', [
-    {
-      identifier: 'postpone_10',
-      buttonTitle: s.postpone_btn,
-      options: { isDestructive: false, isAuthenticationRequired: false },
-    },
-    {
-      identifier: 'mark_done',
-      buttonTitle: s.done_btn,
-      options: { isDestructive: false, isAuthenticationRequired: false },
-    },
-  ]);
+  try {
+    const s = NOTIF[lang] ?? NOTIF.en;
+    await Notifications.setNotificationCategoryAsync('reminder', [
+      {
+        identifier: 'postpone_10',
+        buttonTitle: s.postpone_btn,
+        options: { isDestructive: false, isAuthenticationRequired: false },
+      },
+      {
+        identifier: 'mark_done',
+        buttonTitle: s.done_btn,
+        options: { isDestructive: false, isAuthenticationRequired: false },
+      },
+    ]);
+  } catch (e) {
+    console.warn('[Leeloo] setNotificationCategoryAsync error:', String(e));
+  }
 }
 
 // AsyncStorage avoids Android Keystore hangs on MIUI 14 (SecureStore deadlocks on that device).
@@ -169,8 +173,10 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isSignedIn && userId) {
-      void registerForPushNotificationsAsync();
-      void registerNotificationCategories(language);
+      void registerForPushNotificationsAsync().catch(() => {});
+      void registerNotificationCategories(language).catch((e) => {
+        console.warn('[Leeloo] registerNotificationCategories failed:', String(e));
+      });
     }
   }, [isSignedIn, userId, language]);
 

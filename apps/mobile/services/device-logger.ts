@@ -106,12 +106,28 @@ export const deviceLogger = {
     if (ErrorUtils) {
       const prevHandler = ErrorUtils.getGlobalHandler();
       ErrorUtils.setGlobalHandler((error: Error, isFatal: boolean) => {
-        enqueue(isFatal ? 'FATAL' : 'UNCAUGHT', error?.message ?? String(error), {
-          name: error?.name,
-          stack: error?.stack?.slice(0, 600),
-        });
-        // Flush inmediatamente en un fatal — no esperar el timer
-        void flushQueue();
+        const level = isFatal ? 'FATAL' : 'UNCAUGHT';
+        const message = error?.message ?? String(error);
+        const data = { name: error?.name, stack: error?.stack?.slice(0, 800) };
+
+        if (isFatal) {
+          // Fatal errors: use synchronous XHR so the log arrives before the app process dies.
+          // async fetch would never complete since prevHandler terminates the process immediately.
+          try {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', ENDPOINT, false); // false = synchronous
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.send(JSON.stringify({ level, message, data, ts: Date.now(), device: deviceMeta }));
+          } catch {
+            // Sync XHR failed — at least enqueue so it might flush later
+            enqueue(level, message, data);
+            void flushQueue();
+          }
+        } else {
+          enqueue(level, message, data);
+          void flushQueue();
+        }
+
         prevHandler?.(error, isFatal);
       });
     }

@@ -13,7 +13,7 @@ interface AuthState {
   session: ClerkSessionLike;
   hasCompletedOnboarding: boolean;
   setSession: (session: ClerkSessionLike) => void;
-  setHasCompletedOnboarding: (value: boolean) => void;
+  setHasCompletedOnboarding: (value: boolean) => Promise<void>;
   signOut: () => Promise<void>;
 }
 

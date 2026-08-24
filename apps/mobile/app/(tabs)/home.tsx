@@ -18,6 +18,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { profilesAPI, verseAPI } from '@/lib/api';
 import { useSettingsStore } from '@/store/settings';
+import { deviceLogger } from '@/services/device-logger';
 
 // ─── Minimal UI translations (4 languages) ────────────────────────────────────
 const UI_STRINGS = {
@@ -270,6 +271,7 @@ const cs = StyleSheet.create({
 });
 
 export default function HomeScreen() {
+  deviceLogger.log('[Home] HomeScreen mounting');
   const { transcription, response, isProcessing, lastError, sendText } = useVoiceStore();
   const isSpeaking = useVoiceStore((s) => s.isSpeaking);
   const session = useAuthStore((s) => s.session);
@@ -281,7 +283,7 @@ export default function HomeScreen() {
   const language = useSettingsStore((s) => s.language);
   const t = UI_STRINGS[language] ?? UI_STRINGS.en;
 
-  useEffect(() => { hydrateTasks(); }, [hydrateTasks]);
+  useEffect(() => { void hydrateTasks(); }, [hydrateTasks]);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -421,20 +423,20 @@ export default function HomeScreen() {
               </TouchableOpacity>
             ) : (
               <View style={{ gap: 10 }}>
-                {upcoming.map((t) => {
-                  const isHome = String(t.category || t.metadata?.category || '').toLowerCase().includes('hogar') ||
-                    String(t.tags || '').toLowerCase().includes('hogar');
+                {upcoming.map((task) => {
+                  const isHome = String(task.category || task.metadata?.category || '').toLowerCase().includes('hogar') ||
+                    String((task as any).tags || '').toLowerCase().includes('hogar');
                   return (
-                    <View key={t.id} style={styles.planCard}>
+                    <View key={task.id} style={styles.planCard}>
                       <View style={[styles.planCardTag, { backgroundColor: isHome ? '#FEF3C7' : '#EDE9FE' }]}>
                         <Text style={{ fontSize: 10, color: isHome ? '#92400E' : '#5B21B6', fontWeight: '700' }}>
                           {isHome ? t.tag_home : t.tag_work}
                         </Text>
                       </View>
                       <View style={styles.planCardLeft}>
-                        <Text style={styles.planCardTitle}>{t.title}</Text>
+                        <Text style={styles.planCardTitle}>{task.title}</Text>
                         <Text style={styles.planCardSub}>
-                          {t.due_at ? new Date(t.due_at).toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Sin fecha'}
+                          {task.due_at ? new Date(task.due_at).toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short' }) : t.no_date}
                         </Text>
                       </View>
                       <Text style={styles.planCardDots}>⋮</Text>

@@ -16,9 +16,8 @@ const TAB_ICONS: Record<string, (active: boolean) => React.ReactNode> = {
 export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const visibleRoutes = state.routes.filter(
-    (r) => descriptors[r.key].options.tabBarButton !== (() => null) &&
-           !descriptors[r.key].options.href === false &&
-           r.name !== 'dashboard',
+    (r) => r.name !== 'dashboard' &&
+           (descriptors[r.key].options as any).href !== null,
   );
 
   // Split into left 2 and right 2 for center button
