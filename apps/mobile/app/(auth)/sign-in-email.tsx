@@ -17,7 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { WaveBackground } from '@/components/WaveBackground';
 import { T } from '@/lib/theme';
 
-type Step = 'email' | 'password' | 'verify' | 'register';
+type Step = 'email' | 'password' | 'verify' | 'register' | 'forgot' | 'reset_code' | 'new_password';
 
 export default function SignInEmailScreen() {
   const router = useRouter();
@@ -29,9 +29,12 @@ export default function SignInEmailScreen() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ─── Sign in: step 1 — check if email exists ──────────────────────────────
   const handleEmailNext = async () => {
     if (!email.trim() || !signInLoaded) return;
     setError(null);
@@ -51,6 +54,7 @@ export default function SignInEmailScreen() {
     }
   };
 
+  // ─── Sign in: step 2 — password ───────────────────────────────────────────
   const handleSignIn = async () => {
     if (!password.trim() || !signInLoaded) return;
     setError(null);
@@ -64,15 +68,31 @@ export default function SignInEmailScreen() {
         await setActiveSignIn!({ session: result.createdSessionId });
         router.replace('/');
       }
-    } catch {
-      setError('Contraseña incorrecta. Intenta de nuevo.');
+    } catch (e: any) {
+      const errCode = e?.errors?.[0]?.code || '';
+      if (errCode === 'form_password_incorrect') {
+        setError('Contraseña incorrecta. Intenta de nuevo.');
+      } else if (errCode === 'strategy_for_user_invalid') {
+        setError('Esta cuenta usa Google o GitHub. Inicia sesión con esos botones.');
+      } else {
+        setError(e?.errors?.[0]?.message || 'No se pudo iniciar sesión.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // ─── Sign up ──────────────────────────────────────────────────────────────
   const handleRegister = async () => {
-    if (!password.trim() || !name.trim() || !signUpLoaded) return;
+    if (!name.trim()) {
+      setError('Escribe tu nombre para continuar.');
+      return;
+    }
+    if (password.length < 8) {
+      setError('La contraseña debe tener al menos 8 caracteres.');
+      return;
+    }
+    if (!signUpLoaded) return;
     setError(null);
     setLoading(true);
     try {
@@ -92,6 +112,7 @@ export default function SignInEmailScreen() {
     }
   };
 
+  // ─── Email verification ───────────────────────────────────────────────────
   const handleVerify = async () => {
     if (!code.trim()) return;
     setError(null);
@@ -109,11 +130,89 @@ export default function SignInEmailScreen() {
     }
   };
 
+  // ─── Forgot password: step 1 — send reset code ────────────────────────────
+  const handleForgotPassword = async () => {
+    if (!email.trim() || !signInLoaded) return;
+    setError(null);
+    setLoading(true);
+    try {
+      await signIn!.create({
+        strategy: 'reset_password_email_code',
+        identifier: email.trim(),
+      });
+      setStep('reset_code');
+    } catch (e: any) {
+      setError(e?.errors?.[0]?.message || 'No se pudo enviar el código. Verifica tu email.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Forgot password: step 2 — verify reset code ─────────────────────────
+  const handleResetCode = async () => {
+    if (!resetCode.trim() || !signInLoaded) return;
+    setError(null);
+    setLoading(true);
+    try {
+      await signIn!.attemptFirstFactor({
+        strategy: 'reset_password_email_code',
+        code: resetCode.trim(),
+      });
+      setStep('new_password');
+    } catch {
+      setError('Código incorrecto. Revisa tu email.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Forgot password: step 3 — set new password ───────────────────────────
+  const handleNewPassword = async () => {
+    if (newPassword.length < 8 || !signInLoaded) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await (signIn! as any).resetPassword({ password: newPassword.trim() });
+      if (result.status === 'complete') {
+        await setActiveSignIn!({ session: result.createdSessionId });
+        router.replace('/');
+      }
+    } catch (e: any) {
+      setError(e?.errors?.[0]?.message || 'No se pudo cambiar la contraseña.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Step config ──────────────────────────────────────────────────────────
+  const handlePrimary = () => {
+    if (step === 'email') return handleEmailNext();
+    if (step === 'password') return handleSignIn();
+    if (step === 'register') return handleRegister();
+    if (step === 'verify') return handleVerify();
+    if (step === 'reset_code') return handleResetCode();
+    if (step === 'new_password') return handleNewPassword();
+  };
+
+  const isPrimaryDisabled = () => {
+    if (step === 'email') return !email.trim();
+    if (step === 'password') return !password.trim();
+    if (step === 'register') return false; // allow tap — validate on submit
+    if (step === 'verify') return code.length < 6;
+    if (step === 'forgot') return !email.trim();
+    if (step === 'reset_code') return resetCode.length < 6;
+    if (step === 'new_password') return newPassword.length < 8;
+    return false;
+  };
+
   const titles: Record<Step, string> = {
     email: 'Tu email',
     password: 'Bienvenida de vuelta',
     register: 'Crear cuenta',
     verify: 'Verifica tu email',
+    forgot: 'Recuperar contraseña',
+    reset_code: 'Código de recuperación',
+    new_password: 'Nueva contraseña',
   };
 
   const subtitles: Record<Step, string> = {
@@ -121,25 +220,19 @@ export default function SignInEmailScreen() {
     password: `Contraseña para ${email}`,
     register: 'Completa tu registro en Leeloo',
     verify: `Enviamos un código a ${email}`,
+    forgot: `Te enviamos un código a ${email}`,
+    reset_code: `Ingresa el código que enviamos a ${email}`,
+    new_password: 'Elige una nueva contraseña segura',
   };
 
   const stepEmoji: Record<Step, string> = {
-    email: '📧', password: '🔐', register: '✨', verify: '📩',
-  };
-
-  const handlePrimary = () => {
-    if (step === 'email') return handleEmailNext();
-    if (step === 'password') return handleSignIn();
-    if (step === 'register') return handleRegister();
-    if (step === 'verify') return handleVerify();
-  };
-
-  const isPrimaryDisabled = () => {
-    if (step === 'email') return !email.trim();
-    if (step === 'password') return !password.trim();
-    if (step === 'register') return !name.trim() || password.length < 8;
-    if (step === 'verify') return code.length < 6;
-    return false;
+    email: '📧',
+    password: '🔐',
+    register: '✨',
+    verify: '📩',
+    forgot: '🔑',
+    reset_code: '📩',
+    new_password: '🔐',
   };
 
   const primaryLabel: Record<Step, string> = {
@@ -147,6 +240,9 @@ export default function SignInEmailScreen() {
     password: 'Iniciar sesión',
     register: 'Crear cuenta',
     verify: 'Verificar código',
+    forgot: 'Enviar código',
+    reset_code: 'Verificar',
+    new_password: 'Cambiar contraseña',
   };
 
   return (
@@ -163,7 +259,14 @@ export default function SignInEmailScreen() {
             showsVerticalScrollIndicator={false}
           >
             {/* Back */}
-            <TouchableOpacity style={s.back} onPress={() => router.back()}>
+            <TouchableOpacity
+              style={s.back}
+              onPress={() => {
+                if (step === 'password' || step === 'register') setStep('email');
+                else if (step === 'forgot' || step === 'reset_code' || step === 'new_password') setStep('password');
+                else router.back();
+              }}
+            >
               <Text style={s.backText}>← Volver</Text>
             </TouchableOpacity>
 
@@ -199,6 +302,8 @@ export default function SignInEmailScreen() {
                   autoCapitalize="none"
                   autoComplete="email"
                   autoFocus
+                  onSubmitEditing={handleEmailNext}
+                  returnKeyType="next"
                 />
               )}
 
@@ -212,8 +317,10 @@ export default function SignInEmailScreen() {
                     onChangeText={setPassword}
                     secureTextEntry
                     autoFocus
+                    onSubmitEditing={handleSignIn}
+                    returnKeyType="done"
                   />
-                  <TouchableOpacity style={s.forgotBtn}>
+                  <TouchableOpacity style={s.forgotBtn} onPress={handleForgotPassword} disabled={loading}>
                     <Text style={s.forgotText}>¿Olvidaste tu contraseña?</Text>
                   </TouchableOpacity>
                 </>
@@ -223,19 +330,22 @@ export default function SignInEmailScreen() {
                 <>
                   <TextInput
                     style={s.input}
-                    placeholder="Tu nombre completo"
+                    placeholder="Tu nombre completo *"
                     placeholderTextColor={T.colors.muted}
                     value={name}
-                    onChangeText={setName}
+                    onChangeText={(v) => { setName(v); setError(null); }}
                     autoFocus
+                    returnKeyType="next"
                   />
                   <TextInput
                     style={s.input}
-                    placeholder="Contraseña (mínimo 8 caracteres)"
+                    placeholder="Contraseña (mínimo 8 caracteres) *"
                     placeholderTextColor={T.colors.muted}
                     value={password}
-                    onChangeText={setPassword}
+                    onChangeText={(v) => { setPassword(v); setError(null); }}
                     secureTextEntry
+                    onSubmitEditing={handleRegister}
+                    returnKeyType="done"
                   />
                 </>
               )}
@@ -250,6 +360,48 @@ export default function SignInEmailScreen() {
                   keyboardType="number-pad"
                   maxLength={6}
                   autoFocus
+                />
+              )}
+
+              {step === 'forgot' && (
+                <TextInput
+                  style={s.input}
+                  placeholder="correo@ejemplo.com"
+                  placeholderTextColor={T.colors.muted}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoFocus
+                  onSubmitEditing={handleForgotPassword}
+                  returnKeyType="done"
+                />
+              )}
+
+              {step === 'reset_code' && (
+                <TextInput
+                  style={[s.input, s.codeInput]}
+                  placeholder="000000"
+                  placeholderTextColor={T.colors.muted}
+                  value={resetCode}
+                  onChangeText={setResetCode}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  autoFocus
+                />
+              )}
+
+              {step === 'new_password' && (
+                <TextInput
+                  style={s.input}
+                  placeholder="Nueva contraseña (mínimo 8 caracteres)"
+                  placeholderTextColor={T.colors.muted}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  secureTextEntry
+                  autoFocus
+                  onSubmitEditing={handleNewPassword}
+                  returnKeyType="done"
                 />
               )}
 
