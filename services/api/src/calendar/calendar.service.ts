@@ -74,6 +74,8 @@ export class CalendarService implements OnModuleInit {
       await ensureColumn('external_id', 'text NULL');
       await ensureColumn('external_updated_at', 'timestamptz NULL');
       await ensureColumn('external_etag', 'text NULL');
+      await ensureColumn('attendees', 'jsonb NULL');
+      await ensureColumn('meet_link', 'text NULL');
 
       // Best-effort backfill from common legacy column names.
       // This runs only when start_at/end_at were missing.
@@ -309,15 +311,22 @@ export class CalendarService implements OnModuleInit {
       if (!hasExternal) {
         const { token } = await this.integrationsService.getValidAccessToken(clerkUserId, 'google');
         if (token) {
-          const google = await this.googleCalendarService.createGoogleEvent(token, created);
+          const googlePayload = { ...created, attendees: dto.attendees || [] };
+          const google = await this.googleCalendarService.createGoogleEvent(token, googlePayload);
           const googleId = String(google?.id || '').trim();
+          const meetLink = String(
+            google?.conferenceData?.entryPoints?.find((e: any) => e.entryPointType === 'video')?.uri ||
+            google?.hangoutLink ||
+            '',
+          ).trim() || null;
+
           if (googleId) {
             const updated = await this.db.query(
               `UPDATE calendar_events
-               SET external_provider = 'google', external_id = $1, updated_at = NOW()
-               WHERE id = $2 AND user_id = $3
+               SET external_provider = 'google', external_id = $1, meet_link = $2, updated_at = NOW()
+               WHERE id = $3 AND user_id = $4
                RETURNING *`,
-              [googleId, created.id, profileId],
+              [googleId, meetLink, created.id, profileId],
             );
             created = updated.rows?.[0] || created;
           }
@@ -515,6 +524,84 @@ export class CalendarService implements OnModuleInit {
     );
 
     return result.rows?.[0] || null;
+  }
+
+  async addAttendees(
+    clerkUserId: string,
+    eventId: string,
+    attendees: Array<{ name: string; email: string }>,
+  ) {
+    const profileId = await this.getProfileId(clerkUserId);
+
+    const valid = attendees.filter(
+      (a) => typeof a?.email === 'string' && a.email.includes('@'),
+    );
+
+    if (!valid.length) {
+      return { ok: true, updated: false, reason: 'no_valid_attendees' };
+    }
+
+    const current = await this.db.query(
+      `SELECT * FROM calendar_events WHERE id = $1 AND user_id = $2`,
+      [eventId, profileId],
+    );
+    const event = current.rows?.[0];
+    if (!event) return { ok: false, reason: 'event_not_found' };
+
+    const existing: Array<{ name: string; email: string }> =
+      Array.isArray(event.attendees) ? event.attendees : [];
+    const existingEmails = new Set(existing.map((a: any) => String(a.email || '').toLowerCase()));
+    const toAdd = valid.filter((a) => !existingEmails.has(a.email.toLowerCase()));
+    const merged = [...existing, ...toAdd];
+
+    const updated = await this.db.query(
+      `UPDATE calendar_events
+       SET attendees = $1::jsonb, updated_at = NOW()
+       WHERE id = $2 AND user_id = $3
+       RETURNING *`,
+      [JSON.stringify(merged), eventId, profileId],
+    );
+
+    const updatedEvent = updated.rows?.[0] || event;
+
+    // Push attendees to Google if event is linked.
+    try {
+      if (event.external_provider === 'google' && event.external_id && toAdd.length > 0) {
+        const { token } = await this.integrationsService.getValidAccessToken(clerkUserId, 'google');
+        if (token) {
+          const googleResult = await this.googleCalendarService.addAttendeesToGoogleEvent(
+            token,
+            String(event.external_id),
+            toAdd,
+          );
+          // Update meet_link if we now have one
+          const meetLink = String(
+            googleResult?.conferenceData?.entryPoints?.find(
+              (e: any) => e.entryPointType === 'video',
+            )?.uri ||
+            googleResult?.hangoutLink ||
+            event.meet_link ||
+            '',
+          ).trim() || null;
+
+          if (meetLink && meetLink !== event.meet_link) {
+            await this.db.query(
+              `UPDATE calendar_events SET meet_link = $1 WHERE id = $2`,
+              [meetLink, eventId],
+            );
+            updatedEvent.meet_link = meetLink;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[LeelooApi] calendar.google_push.attendees.failed', {
+        userId: clerkUserId,
+        event_id: eventId,
+        error: String(e),
+      });
+    }
+
+    return { ok: true, updated: true, event: updatedEvent };
   }
 
   async deleteEvent(clerkUserId: string, id: string) {

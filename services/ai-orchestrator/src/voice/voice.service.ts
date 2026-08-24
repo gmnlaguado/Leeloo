@@ -33,6 +33,8 @@ export class VoiceService {
     confirmation?: 'confirmed' | 'cancel';
     personality?: string;
     userName?: string;
+    pending_event_id?: string;
+    pending_attendee_name?: string;
   }) {
     const language = this.normalizeLanguage(input.language);
 
@@ -128,6 +130,9 @@ export class VoiceService {
       userId: input.userId,
       authorization: input.authorization,
       confirmation: input.confirmation,
+      pendingEventId: input.pending_event_id,
+      pendingAttendeeName: input.pending_attendee_name,
+      language,
     });
 
     const assistantText = this.buildAssistantText(intent, actionResult);
@@ -182,6 +187,9 @@ export class VoiceService {
         userId: input.userId,
         authorization: input.authorization,
         confirmation: 'confirmed',
+        pendingEventId: input.pending_event_id,
+        pendingAttendeeName: input.pending_attendee_name,
+        language,
       });
       const confirmedText = this.buildAssistantText(intent, confirmedAction);
       const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: confirmedText });
@@ -199,6 +207,44 @@ export class VoiceService {
               audio_base64: ttsAudioBase64,
             }
           : null,
+      };
+    }
+
+    // After creating an event, ask if the user wants to invite someone.
+    if (actionResult?.status === 'awaiting_attendees' && actionResult?.event_id) {
+      const askText =
+        language === 'es'
+          ? `${assistantText} ¿Quieres invitar a alguien?`
+          : `${assistantText} Would you like to invite someone?`;
+      const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: askText });
+      return {
+        ok: true,
+        status: 'awaiting_attendees',
+        event_id: actionResult.event_id,
+        transcription,
+        intent,
+        action: actionResult,
+        assistant_text: askText,
+        tts: ttsAudioBase64 ? { model: 'tts-1-hd', voice: 'nova', audio_base64: ttsAudioBase64 } : null,
+      };
+    }
+
+    // If waiting for an attendee email, return the unresolved state.
+    if (actionResult?.status === 'awaiting_attendee_email' && actionResult?.event_id) {
+      const askText = actionResult.fallback_text || assistantText;
+      const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: askText });
+      return {
+        ok: true,
+        status: 'awaiting_attendee_email',
+        event_id: actionResult.event_id,
+        resolved: actionResult.resolved || [],
+        unresolved: actionResult.unresolved || [],
+        pending_attendee_name: (actionResult.unresolved || [])[0] || '',
+        transcription,
+        intent,
+        action: actionResult,
+        assistant_text: askText,
+        tts: ttsAudioBase64 ? { model: 'tts-1-hd', voice: 'nova', audio_base64: ttsAudioBase64 } : null,
       };
     }
 
@@ -281,6 +327,9 @@ export class VoiceService {
     userId: string;
     authorization?: string;
     confirmation?: 'confirmed' | 'cancel';
+    pendingEventId?: string;
+    pendingAttendeeName?: string;
+    language?: string;
   }) {
     const apiBaseUrl = String(process.env.API_BASE_URL || process.env.API_URL || '').trim();
     if (!apiBaseUrl) {
@@ -385,9 +434,9 @@ export class VoiceService {
         const title = String(slots.title || '').trim();
         const date = String(slots.date || '').trim();
         const time = String(slots.time || '').trim();
-        if (!title) return { ok: false, fallback_text: 'What is the event title?' };
-        if (!date) return { ok: false, fallback_text: 'What date is it?' };
-        if (!time) return { ok: false, fallback_text: 'What time is it?' };
+        if (!title) return { ok: false, fallback_text: '¿Cuál es el título del evento?' };
+        if (!date) return { ok: false, fallback_text: '¿Para qué fecha es el evento?' };
+        if (!time) return { ok: false, fallback_text: '¿A qué hora es el evento?' };
 
         const startAt = `${date}T${time}`;
         const durationMinutesRaw = String(slots.duration || '').trim();
@@ -403,11 +452,134 @@ export class VoiceService {
             start_at: startAt,
             ...(endAt ? { end_at: endAt } : {}),
             location: slots.location || undefined,
-            notes: undefined,
           },
           { headers },
         );
-        return { ok: true, provider: 'api', endpoint: '/v1/calendar/events', data: res.data };
+        return {
+          ok: true,
+          provider: 'api',
+          endpoint: '/v1/calendar/events',
+          data: res.data,
+          status: 'awaiting_attendees',
+          event_id: res.data?.id,
+        };
+      }
+
+      if (intent === 'add_attendees') {
+        const eventId = String(input.pendingEventId || '').trim();
+        if (!eventId) return { ok: false, fallback_text: '¿A qué evento quieres agregar invitados?' };
+
+        const rawAttendees = String(slots.attendees || '').trim();
+        if (!rawAttendees) return { ok: false, fallback_text: '¿A quién quieres invitar?' };
+
+        const names = rawAttendees
+          .split(/[,;]/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const resolved: Array<{ name: string; email: string }> = [];
+        const unresolved: string[] = [];
+
+        for (const nameOrEmail of names) {
+          if (EMAIL_RE.test(nameOrEmail)) {
+            resolved.push({ name: nameOrEmail.split('@')[0], email: nameOrEmail });
+            continue;
+          }
+          // Look up contact by name in the API
+          try {
+            const searchRes = await axios.get(
+              `${apiBaseUrl.replace(/\/+$/, '')}/v1/contacts/search`,
+              { headers, params: { q: nameOrEmail }, timeout: 10000 },
+            );
+            const contacts: any[] = Array.isArray(searchRes.data?.contacts)
+              ? searchRes.data.contacts
+              : [];
+            const match = contacts.find((c: any) => c?.email);
+            if (match?.email) {
+              resolved.push({ name: match.name || nameOrEmail, email: match.email });
+            } else {
+              unresolved.push(nameOrEmail);
+            }
+          } catch {
+            unresolved.push(nameOrEmail);
+          }
+        }
+
+        if (unresolved.length > 0) {
+          const firstUnresolved = unresolved[0];
+          return {
+            ok: true,
+            status: 'awaiting_attendee_email',
+            event_id: eventId,
+            resolved,
+            unresolved,
+            fallback_text:
+              input.language === 'es' || !input.language
+                ? `No tengo el correo de ${firstUnresolved}. ¿Me lo dictas?`
+                : `I don't have an email for ${firstUnresolved}. Can you give it to me?`,
+          };
+        }
+
+        // All resolved — add them
+        const addRes = await axios.post(
+          `${apiBaseUrl.replace(/\/+$/, '')}/v1/calendar/events/${eventId}/attendees`,
+          { attendees: resolved },
+          { headers },
+        );
+
+        const meetLink = addRes.data?.event?.meet_link || null;
+        const nameList = resolved.map((a) => a.name).join(', ');
+        return {
+          ok: true,
+          provider: 'api',
+          endpoint: `/v1/calendar/events/${eventId}/attendees`,
+          data: addRes.data,
+          resolved,
+          fallback_text:
+            input.language === 'es' || !input.language
+              ? `Listo. Invité a ${nameList}.${meetLink ? ` El link de Meet es ${meetLink}` : ''}`
+              : `Done. I invited ${nameList}.${meetLink ? ` Meet link: ${meetLink}` : ''}`,
+        };
+      }
+
+      if (intent === 'resolve_attendee_email') {
+        const eventId = String(input.pendingEventId || '').trim();
+        const email = String(slots.email || '').trim();
+        const attendeeName = String(slots.attendee_name || input.pendingAttendeeName || '').trim();
+
+        const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!email || !EMAIL_RE.test(email)) {
+          return {
+            ok: false,
+            fallback_text:
+              input.language === 'es' || !input.language
+                ? `"${email}" no parece un correo válido. ¿Me lo dictas letra por letra?`
+                : `"${email}" doesn't look like a valid email. Can you spell it out?`,
+          };
+        }
+
+        if (!eventId) {
+          return { ok: false, fallback_text: '¿A qué evento pertenece este invitado?' };
+        }
+
+        const attendee = { name: attendeeName || email.split('@')[0], email };
+        const addRes = await axios.post(
+          `${apiBaseUrl.replace(/\/+$/, '')}/v1/calendar/events/${eventId}/attendees`,
+          { attendees: [attendee] },
+          { headers },
+        );
+        const meetLink = addRes.data?.event?.meet_link || null;
+        return {
+          ok: true,
+          provider: 'api',
+          endpoint: `/v1/calendar/events/${eventId}/attendees`,
+          data: addRes.data,
+          fallback_text:
+            input.language === 'es' || !input.language
+              ? `Listo, agregué a ${attendee.name} (${email}).${meetLink ? ` Meet: ${meetLink}` : ''}`
+              : `Done, added ${attendee.name} (${email}).${meetLink ? ` Meet: ${meetLink}` : ''}`,
+        };
       }
 
       if (intent === 'add_to_cart') {

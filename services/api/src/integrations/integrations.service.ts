@@ -5,6 +5,7 @@ import { createHash, randomBytes, randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 import { ProfilesService } from '../profiles/profiles.service';
 import { CryptoService, CryptoEnvelope } from '../common/crypto/crypto.service';
+import { GoogleContactsService } from './google-contacts.service';
 
 type IntegrationProvider = 'google' | 'microsoft';
 
@@ -46,6 +47,7 @@ export class IntegrationsService {
     private readonly profilesService: ProfilesService,
     private readonly config: ConfigService,
     private readonly crypto: CryptoService,
+    private readonly googleContactsService: GoogleContactsService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -73,7 +75,7 @@ export class IntegrationsService {
         tokenUrl: 'https://oauth2.googleapis.com/token',
         scope:
           this.config.get<string>('GOOGLE_OAUTH_SCOPE') ||
-          'openid email profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.readonly',
+          'openid email profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/contacts.readonly',
       };
     }
 
@@ -233,6 +235,17 @@ export class IntegrationsService {
 
     // 5. Persist tokens encrypted.
     const saved = await this.upsertIntegration(profileId, provider, tokenResData);
+
+    // 6. Fire-and-forget: auto-sync Google Contacts immediately after connecting.
+    if (provider === 'google') {
+      const accessToken = this.decryptToken(saved, 'access').trim();
+      if (accessToken) {
+        this.googleContactsService
+          .syncContactsForUser(accessToken, profileId)
+          .catch((e) => this.logger.warn(`Auto contacts sync failed: ${String(e)}`));
+      }
+    }
+
     return {
       ok: true,
       provider,

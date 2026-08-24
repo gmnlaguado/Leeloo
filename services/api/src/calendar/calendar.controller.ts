@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
@@ -67,6 +68,18 @@ export class CalendarController {
   @ApiOperation({ summary: 'Get unified agenda (events + tasks) for a given day' })
   async getUnifiedAgendaForDay(@Req() req: AuthedRequest, @Query('day') day: string) {
     return this.calendarService.getUnifiedAgendaForDay(req.user.id, day);
+  }
+
+  @Post('events/:id/attendees')
+  @ApiOperation({ summary: 'Add attendees to an existing calendar event' })
+  async addAttendees(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() body: { attendees: Array<{ name: string; email: string }> },
+  ) {
+    const attendees = Array.isArray(body?.attendees) ? body.attendees : [];
+    if (!attendees.length) throw new BadRequestException('attendees array is required');
+    return this.calendarService.addAttendees(req.user.id, id, attendees);
   }
 
   @Put('reminder-settings')

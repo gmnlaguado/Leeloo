@@ -99,6 +99,22 @@ export class ContactsService implements OnModuleInit {
     return { synced, skipped };
   }
 
+  async searchContacts(clerkUserId: string, query: string): Promise<Contact[]> {
+    const profileId = await this.getProfileId(clerkUserId);
+    const q = String(query || '').trim();
+    if (!q) return [];
+    const like = `%${q}%`;
+    const res = await this.db.query<Contact>(
+      `SELECT id, user_id, name, email, phone, nickname, relation, source, created_at, updated_at
+       FROM contacts
+       WHERE user_id = $1 AND (name ILIKE $2 OR nickname ILIKE $2 OR email ILIKE $2)
+       ORDER BY name ASC
+       LIMIT 10`,
+      [profileId, like],
+    );
+    return res.rows;
+  }
+
   async findByName(clerkUserId: string, query: string): Promise<Contact | null> {
     const profileId = await this.getProfileId(clerkUserId);
     const q = String(query || '').trim().toLowerCase();

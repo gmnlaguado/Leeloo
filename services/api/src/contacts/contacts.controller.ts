@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -21,6 +22,12 @@ type AuthedRequest = { user: { id: string } };
 @ApiBearerAuth()
 export class ContactsController {
   constructor(private readonly contactsService: ContactsService) {}
+
+  @Get('search')
+  @ApiOperation({ summary: 'Search contacts by name, nickname or email' })
+  async search(@Req() req: AuthedRequest, @Query('q') q: string) {
+    return { contacts: await this.contactsService.searchContacts(req.user.id, q || '') };
+  }
 
   @Get()
   @ApiOperation({ summary: 'List all contacts for current user' })

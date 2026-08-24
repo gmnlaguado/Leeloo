@@ -50,6 +50,9 @@ export class VoiceController {
         .toLowerCase() === 'true';
     const personality = typeof body?.personality === 'string' ? body.personality : undefined;
     const userName = typeof body?.user_name === 'string' ? body.user_name : undefined;
+    const pendingEventId = typeof body?.pending_event_id === 'string' ? body.pending_event_id : undefined;
+    const pendingAttendeeName =
+      typeof body?.pending_attendee_name === 'string' ? body.pending_attendee_name : undefined;
 
     if (!audio && !text)
       throw new BadRequestException('Either audio file or text must be provided');
@@ -64,6 +67,8 @@ export class VoiceController {
       confirmation,
       personality,
       userName,
+      pending_event_id: pendingEventId,
+      pending_attendee_name: pendingAttendeeName,
     });
   }
 

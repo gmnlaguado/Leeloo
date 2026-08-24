@@ -5,6 +5,7 @@ import { AuthModule } from '../auth/auth.module';
 import { IntegrationsController } from './integrations.controller';
 import { IntegrationsService } from './integrations.service';
 import { GoogleCalendarService } from './google-calendar.service';
+import { GoogleContactsService } from './google-contacts.service';
 import { GoogleGmailService } from './google-gmail.service';
 import { MicrosoftCalendarService } from './microsoft-calendar.service';
 
@@ -14,12 +15,14 @@ import { MicrosoftCalendarService } from './microsoft-calendar.service';
   providers: [
     IntegrationsService,
     GoogleCalendarService,
+    GoogleContactsService,
     GoogleGmailService,
     MicrosoftCalendarService,
   ],
   exports: [
     IntegrationsService,
     GoogleCalendarService,
+    GoogleContactsService,
     GoogleGmailService,
     MicrosoftCalendarService,
   ],

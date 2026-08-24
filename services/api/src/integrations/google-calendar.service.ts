@@ -40,11 +40,70 @@ export class GoogleCalendarService {
   async createGoogleEvent(accessToken: string, localEvent: any) {
     const calendarId = 'primary';
     const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
-    const payload = this.mapLocalToGoogleEvent(localEvent);
+
+    const attendees: Array<{ email: string; displayName?: string }> =
+      Array.isArray(localEvent?.attendees)
+        ? localEvent.attendees
+            .filter((a: any) => typeof a?.email === 'string' && a.email.includes('@'))
+            .map((a: any) => ({
+              email: String(a.email).trim(),
+              ...(a.name ? { displayName: String(a.name) } : {}),
+            }))
+        : [];
+
+    const payload: Record<string, any> = {
+      ...this.mapLocalToGoogleEvent(localEvent),
+      conferenceData: {
+        createRequest: {
+          requestId: randomUUID(),
+          conferenceSolutionKey: { type: 'hangoutsMeet' },
+        },
+      },
+      ...(attendees.length ? { attendees } : {}),
+    };
+
     const res = await axios.post(url, payload, {
       headers: { Authorization: `Bearer ${accessToken}` },
+      params: { conferenceDataVersion: '1' },
       timeout: 30000,
     });
+    return res.data;
+  }
+
+  async addAttendeesToGoogleEvent(
+    accessToken: string,
+    googleEventId: string,
+    attendees: Array<{ email: string; name?: string }>,
+  ) {
+    const calendarId = 'primary';
+    const getUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(googleEventId)}`;
+
+    const existing = await axios.get(getUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      timeout: 15000,
+    });
+
+    const currentAttendees: Array<{ email: string; displayName?: string }> =
+      Array.isArray(existing.data?.attendees) ? existing.data.attendees : [];
+
+    const newEmails = new Set(attendees.map((a) => a.email.toLowerCase()));
+    const merged = [
+      ...currentAttendees,
+      ...attendees
+        .filter((a) => !currentAttendees.some((c) => c.email.toLowerCase() === a.email.toLowerCase()))
+        .map((a) => ({ email: a.email, ...(a.name ? { displayName: a.name } : {}) })),
+    ];
+
+    const res = await axios.patch(
+      getUrl,
+      { attendees: merged },
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        params: { conferenceDataVersion: '1' },
+        timeout: 20000,
+      },
+    );
+    void newEmails;
     return res.data;
   }
 
