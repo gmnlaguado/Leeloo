@@ -49,9 +49,14 @@ const getDefaultAiOrchestratorBaseUrl = () => {
   return host ? `http://${host}:3002` : 'http://localhost:3002';
 };
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || getDefaultApiBaseUrl();
+// Hardcoded production fallbacks — same pattern as CLERK_PUBLISHABLE_KEY.
+// EXPO_PUBLIC_* vars must be baked into the bundle by Metro at build time.
+// If the CI env injection fails, these ensure the production APK still reaches
+// the real servers instead of falling back to http://localhost.
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL ?? 'https://leeloo-api-55i5.onrender.com';
 const AI_ORCHESTRATOR_BASE_URL =
-  process.env.EXPO_PUBLIC_AI_ORCHESTRATOR_URL || getDefaultAiOrchestratorBaseUrl();
+  process.env.EXPO_PUBLIC_AI_ORCHESTRATOR_URL ?? 'https://leeloo-ai.onrender.com';
 // Dev-only convenience: lets local dev clients call the API without a real
 // Clerk session by supplying a static bearer token via env/app config.
 // Hard-gated behind __DEV__ so Metro dead-code-eliminates this from release
@@ -117,6 +122,7 @@ const resolveBearerToken = async (): Promise<{ token?: string; source: string }>
 };
 
 console.log('[api] API_BASE_URL =', API_BASE_URL);
+console.log('[api] AI_ORCHESTRATOR_BASE_URL =', AI_ORCHESTRATOR_BASE_URL);
 console.log('[api] Has EXPO_PUBLIC_BEARER_TOKEN =', Boolean(FALLBACK_BEARER_TOKEN));
 
 const api: AxiosInstance = axios.create({

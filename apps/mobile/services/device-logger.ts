@@ -92,7 +92,7 @@ export const deviceLogger = {
     console.log = (...args: unknown[]) => {
       origLog(...args);
       const msg = args.map(String).join(' ');
-      if (/clerk|auth|token|\[Leeloo\]|isLoaded/i.test(msg)) {
+      if (/clerk|auth|token|\[Leeloo\]|isLoaded|\[api\]/i.test(msg)) {
         enqueue('LOG', msg);
       }
     };
