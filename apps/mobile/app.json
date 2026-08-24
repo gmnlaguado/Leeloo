@@ -2,7 +2,7 @@
   "expo": {
     "name": "Leeloo",
     "slug": "leeloo",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.hyperbyte.leeloo",
-      "buildNumber": "9",
+      "buildNumber": "10",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Leeloo necesita el micrófono para escuchar tus comandos de voz.",
         "NSCalendarsUsageDescription": "Leeloo necesita acceso a tu calendario para programar eventos.",
@@ -41,7 +41,7 @@
         "backgroundColor": "#2D266C"
       },
       "package": "com.leeloo.app",
-      "versionCode": 16,
+      "versionCode": 17,
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE",

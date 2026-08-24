@@ -63,6 +63,6 @@ jobs:
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: leeloo-android-v9-run${{ github.run_number }}
+          name: leeloo-android-v0.3.0-run${{ github.run_number }}
           path: ${{ steps.apk.outputs.path }}
           retention-days: 30
