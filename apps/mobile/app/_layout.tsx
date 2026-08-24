@@ -135,7 +135,7 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
     const unsub = subscribeWakeWord(() => {
       const { isListening, isProcessing } = useVoiceStore.getState();
       if (!isListening && !isProcessing) {
-        void useVoiceStore.getState().startListening();
+        void useVoiceStore.getState().startListeningFromWakeWord();
       }
     });
     return () => {

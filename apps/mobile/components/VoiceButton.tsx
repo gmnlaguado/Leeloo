@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 export function VoiceButton() {
   const { isListening, isProcessing, startListening, stopListening } = useVoiceStore();
   const isSpeaking = useVoiceStore((s) => s.isSpeaking);
+  const isWakeActivated = useVoiceStore((s) => s.isWakeActivated);
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -73,12 +74,14 @@ export function VoiceButton() {
 
       <Text style={styles.label}>
         {isSpeaking
-          ? 'Speaking...'
+          ? 'Hablando...'
           : isProcessing
-            ? 'Processing...'
-            : isListening
-              ? 'Recording...'
-              : 'Hey Leeloo'}
+            ? 'Procesando...'
+            : isWakeActivated
+              ? 'Escuchando...'
+              : isListening
+                ? 'Grabando...'
+                : 'Hey Leeloo'}
       </Text>
     </View>
   );

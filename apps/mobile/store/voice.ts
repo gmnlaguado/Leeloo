@@ -3,6 +3,7 @@ import { Audio } from 'expo-av';
 import type { AVPlaybackStatus } from 'expo-av';
 import type { AudioMode } from 'expo-av';
 import * as Speech from 'expo-speech';
+import * as Haptics from 'expo-haptics';
 import { voiceAPI, profilesAPI, tasksAPI } from '@/lib/api';
 import { useSettingsStore } from '@/store/settings';
 
@@ -19,7 +20,7 @@ const getProfileOpts = async (): Promise<{ personality?: string; user_name?: str
   }
 };
 
-type VoiceStatus = 'idle' | 'recording' | 'processing' | 'speaking' | 'awaiting_confirmation';
+type VoiceStatus = 'idle' | 'recording' | 'processing' | 'speaking' | 'awaiting_confirmation' | 'wake_activated';
 
 type MemoryItem = {
   id: string;
@@ -159,6 +160,7 @@ interface VoiceState {
   isListening: boolean;
   isProcessing: boolean;
   isSpeaking: boolean;
+  isWakeActivated: boolean;
   status: VoiceStatus;
   transcription: string;
   response: string;
@@ -167,7 +169,10 @@ interface VoiceState {
   pendingConfirmationText: string;
   pendingOriginalText: string;
   pendingReminder: PendingReminder | null;
+  pendingEventId: string | null;
+  pendingAttendeeName: string | null;
   startListening: () => Promise<void>;
+  startListeningFromWakeWord: () => Promise<void>;
   stopListening: () => Promise<void>;
   sendText: (text: string) => Promise<void>;
   confirm: () => Promise<void>;
@@ -178,12 +183,20 @@ interface VoiceState {
   setPendingReminder: (r: PendingReminder | null) => void;
   reset: () => void;
   _recording: Audio.Recording | null;
+  _silenceTimer: ReturnType<typeof setInterval> | null;
 }
 
-export const useVoiceStore = create<VoiceState>((set) => ({
+// Silence VAD constants — tuned to feel like Alexa
+const SILENCE_THRESHOLD_DB = -45;   // below this = silence
+const SILENCE_DURATION_MS  = 1500;  // 1.5s of silence → auto-stop
+const MAX_RECORD_MS        = 30000; // hard cap 30s
+const METERING_INTERVAL_MS = 150;   // poll rate
+
+export const useVoiceStore = create<VoiceState>((set, get) => ({
   isListening: false,
   isProcessing: false,
   isSpeaking: false,
+  isWakeActivated: false,
   status: 'idle',
   transcription: '',
   response: '',
@@ -192,7 +205,10 @@ export const useVoiceStore = create<VoiceState>((set) => ({
   pendingConfirmationText: '',
   pendingOriginalText: '',
   pendingReminder: null,
+  pendingEventId: null,
+  pendingAttendeeName: null,
   _recording: null,
+  _silenceTimer: null,
 
   startListening: async () => {
     try {
@@ -217,6 +233,92 @@ export const useVoiceStore = create<VoiceState>((set) => ({
     } catch (e: unknown) {
       const msg = (e as { message?: unknown } | null)?.message;
       set({ lastError: typeof msg === 'string' ? msg : 'Failed to start recording.' });
+    }
+  },
+
+  startListeningFromWakeWord: async () => {
+    try {
+      set({ lastError: null });
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) {
+        set({ lastError: 'Microphone permission denied.' });
+        return;
+      }
+
+      // Haptic chime — signals Leeloo is listening (replaces Alexa's tone)
+      try {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      } catch { /* device may not support haptics */ }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+      } as AudioMode);
+
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync({
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        isMeteringEnabled: true,
+      });
+      await recording.startAsync();
+
+      set({
+        isListening: true,
+        isWakeActivated: true,
+        status: 'wake_activated',
+        _recording: recording,
+      });
+
+      // VAD — auto-stop on silence (Alexa-style: stops when user finishes speaking)
+      let silenceMs = 0;
+      const startedAt = Date.now();
+
+      const timer = setInterval(async () => {
+        try {
+          const state = useVoiceStore.getState();
+          if (!state.isListening) {
+            clearInterval(timer);
+            set({ _silenceTimer: null });
+            return;
+          }
+
+          if (Date.now() - startedAt >= MAX_RECORD_MS) {
+            clearInterval(timer);
+            set({ _silenceTimer: null, isWakeActivated: false });
+            await useVoiceStore.getState().stopListening();
+            return;
+          }
+
+          const recStatus = await recording.getStatusAsync();
+          const db =
+            recStatus.isRecording && 'metering' in recStatus
+              ? ((recStatus as unknown as { metering?: number }).metering ?? 0)
+              : 0;
+
+          if (db < SILENCE_THRESHOLD_DB) {
+            silenceMs += METERING_INTERVAL_MS;
+            if (silenceMs >= SILENCE_DURATION_MS) {
+              clearInterval(timer);
+              set({ _silenceTimer: null, isWakeActivated: false });
+              await useVoiceStore.getState().stopListening();
+            }
+          } else {
+            silenceMs = 0;
+          }
+        } catch {
+          clearInterval(timer);
+          set({ _silenceTimer: null, isWakeActivated: false });
+        }
+      }, METERING_INTERVAL_MS);
+
+      set({ _silenceTimer: timer });
+    } catch (e: unknown) {
+      const msg = (e as { message?: unknown } | null)?.message;
+      set({
+        lastError: typeof msg === 'string' ? msg : 'Failed to start wake word recording.',
+        isWakeActivated: false,
+      });
     }
   },
 
@@ -576,11 +678,15 @@ export const useVoiceStore = create<VoiceState>((set) => ({
   setTranscription: (text: string) => set({ transcription: text }),
   setResponse: (text: string) => set({ response: text }),
   setPendingReminder: (r) => set({ pendingReminder: r }),
-  reset: () =>
+  reset: () => {
+    const timer = useVoiceStore.getState()._silenceTimer;
+    if (timer) clearInterval(timer);
     set({
       isListening: false,
       isProcessing: false,
       isSpeaking: false,
+      isWakeActivated: false,
+      status: 'idle',
       transcription: '',
       response: '',
       lastError: null,
@@ -588,6 +694,10 @@ export const useVoiceStore = create<VoiceState>((set) => ({
       pendingConfirmationText: '',
       pendingOriginalText: '',
       pendingReminder: null,
+      pendingEventId: null,
+      pendingAttendeeName: null,
       _recording: null,
-    }),
+      _silenceTimer: null,
+    });
+  },
 }));
