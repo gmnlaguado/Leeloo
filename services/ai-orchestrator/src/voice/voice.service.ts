@@ -135,7 +135,17 @@ export class VoiceService {
       language,
     });
 
-    const assistantText = this.buildAssistantText(intent, actionResult);
+    let assistantText = this.buildAssistantText(intent, actionResult);
+
+    // Personality-aware agenda brief — override static text with real formatted data
+    if (intent.intent === 'agenda_today' && actionResult?._agendaData) {
+      assistantText = this.formatAgendaForVoice(
+        actionResult._agendaData,
+        personality,
+        language,
+        input.userName || '',
+      );
+    }
 
     const needsConfirmation = Boolean(intent?.needs_confirmation);
     if (needsConfirmation && !input.confirmation) {
@@ -282,6 +292,85 @@ export class VoiceService {
           }
         : null,
     };
+  }
+
+  private formatAgendaForVoice(
+    data: any,
+    personality: string,
+    language: string,
+    userName: string,
+  ): string {
+    const name = (userName || 'amiga').split(' ')[0];
+    const isEs = String(language || 'es').startsWith('es');
+
+    const events: any[] = Array.isArray(data?.events) ? data.events : [];
+    const tasks: any[] = Array.isArray(data?.tasks) ? data.tasks : [];
+    const now = data?.now ? new Date(data.now) : new Date();
+
+    const formatTime = (iso: string) => {
+      try {
+        return new Date(iso).toLocaleTimeString(isEs ? 'es-CO' : 'en-US', {
+          hour: '2-digit', minute: '2-digit', hour12: true,
+        });
+      } catch { return ''; }
+    };
+
+    // Build event lines (upcoming only, max 3)
+    const upcomingEvents = events
+      .filter((e) => e.start_at && new Date(e.start_at).getTime() >= now.getTime() - 30 * 60 * 1000)
+      .slice(0, 3)
+      .map((e) => `${e.title}${e.start_at ? ` a las ${formatTime(e.start_at)}` : ''}${e.location ? ` en ${e.location}` : ''}`);
+
+    // Build task lines (pending only, max 3)
+    const pendingTasks = tasks
+      .filter((t) => t.status === 'pending' || t.status === 'in_progress')
+      .slice(0, 3)
+      .map((t) => t.title);
+
+    const totalEvents = events.length;
+    const totalTasks = tasks.filter((t) => t.status === 'pending' || t.status === 'in_progress').length;
+    const hasNothing = totalEvents === 0 && totalTasks === 0;
+
+    if (hasNothing) {
+      const empty: Record<string, string> = {
+        christian: `¡Buenos días, ${name}! Tienes el día libre. Usa este tiempo para descansar y recargar energía. Dios tiene algo especial para ti hoy.`,
+        coach: `¡${name}, tienes el calendario libre! Es el momento perfecto para trabajar en ese proyecto que has estado postergando. ¿Cuál es tu próximo paso más importante?`,
+        business: `${name}, sin reuniones programadas hoy. Día ideal para estrategia y trabajo profundo. ¿Qué iniciativa avanzas?`,
+        counselor: `${name}, hoy tienes el día abierto. Eso es un regalo. ¿Cómo quieres usarlo para ti misma?`,
+        mentor: `${name}, sin compromisos externos hoy. Los días libres son para construir lo que importa. ¿Qué meta avanzas?`,
+        faith: `${name}, el día está abierto. Cada hora es un regalo. ¿Qué harás con ella?`,
+        default: `Hola ${name}, hoy tienes el calendario libre. ¡El día es tuyo!`,
+      };
+      return empty[personality] ?? empty.default;
+    }
+
+    const listLine = [
+      ...(upcomingEvents.length ? (isEs ? [`Eventos: ${upcomingEvents.join(', ')}`] : [`Events: ${upcomingEvents.join(', ')}`]) : []),
+      ...(pendingTasks.length ? (isEs ? [`Tareas: ${pendingTasks.join(', ')}`] : [`Tasks: ${pendingTasks.join(', ')}`]) : []),
+    ].join('. ');
+
+    const summaryEs = `${totalEvents > 0 ? `${totalEvents} evento${totalEvents > 1 ? 's' : ''}` : ''}${totalEvents > 0 && totalTasks > 0 ? ' y ' : ''}${totalTasks > 0 ? `${totalTasks} tarea${totalTasks > 1 ? 's' : ''}` : ''}`;
+
+    const prefixes: Record<string, string> = {
+      christian: `Buenos días, ${name}. Hoy tienes ${summaryEs}. Que Dios guíe cada uno. `,
+      coach: `¡Vamos ${name}! Son ${summaryEs} para hoy. Foco total. `,
+      business: `${name}, briefing de hoy: ${summaryEs}. `,
+      counselor: `${name}, veamos tu día juntas. Tienes ${summaryEs}. `,
+      mentor: `${name}, hoy son ${summaryEs}. Que cada uno te acerque a tus metas. `,
+      faith: `${name}, hoy tienes ${summaryEs}. Cada compromiso es un propósito. `,
+      default: `Hola ${name}, para hoy tienes ${summaryEs}. `,
+    };
+
+    const suffix: Record<string, string> = {
+      coach: ' ¿Por cuál arrancamos?',
+      business: ' ¿Quieres que prepare algo para la primera reunión?',
+      counselor: ' ¿Cómo te sientes al verlos?',
+      default: '',
+    };
+
+    const prefix = prefixes[personality] ?? prefixes.default;
+    const end = suffix[personality] ?? suffix.default;
+    return `${prefix}${listLine}.${end}`;
   }
 
   private saveTurnFireAndForget(opts: {
@@ -724,7 +813,13 @@ export class VoiceService {
         const res = await axios.get(`${apiBaseUrl.replace(/\/+$/, '')}/v1/calendar/agenda/today`, {
           headers,
         });
-        return { ok: true, provider: 'api', endpoint: '/v1/calendar/agenda/today', data: res.data };
+        return {
+          ok: true,
+          provider: 'api',
+          endpoint: '/v1/calendar/agenda/today',
+          data: res.data,
+          _agendaData: res.data,
+        };
       }
 
       return { ok: true, provider: 'none', endpoint: null, data: null };

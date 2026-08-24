@@ -16,9 +16,133 @@ import { T } from '@/lib/theme';
 import { Search } from 'lucide-react-native';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { profilesAPI, verseAPI } from '@/lib/api';
 
 const { width: W } = Dimensions.get('window');
 const DAY_W = (W - 48) / 7;
+
+// ─── Personality-aware daily widget ───────────────────────────────────────────
+const PERSONALITY_WIDGETS: Record<string, { emoji: string; label: string; color: [string, string] }> = {
+  christian:  { emoji: '✝️',  label: 'Versículo del día',     color: ['#6366F1', '#8B5CF6'] },
+  coach:      { emoji: '🏆',  label: 'Desafío de hoy',        color: ['#F59E0B', '#EF4444'] },
+  business:   { emoji: '📊',  label: 'Briefing ejecutivo',    color: ['#0F172A', '#334155'] },
+  mentor:     { emoji: '🧭',  label: 'Reflexión del mentor',  color: ['#0891B2', '#0E7490'] },
+  counselor:  { emoji: '💜',  label: 'Tu espacio',            color: ['#7C3AED', '#A855F7'] },
+  faith:      { emoji: '🌿',  label: 'Propósito del día',     color: ['#059669', '#10B981'] },
+  default:    { emoji: '⭐',  label: 'Tu día',                color: ['#F07040', '#8375FA'] },
+};
+
+const COACH_CHALLENGES = [
+  '¿Cuál es el UNA cosa que, si la haces hoy, todo lo demás se vuelve más fácil?',
+  'Identifica tu tarea de mayor impacto antes de revisar el teléfono.',
+  'Bloquea 90 minutos de trabajo profundo sin interrupciones hoy.',
+  '¿Qué compromiso de la semana pasada aún no cumpliste? Hazlo hoy.',
+];
+
+const MENTOR_REFLECTIONS = [
+  'El progreso constante supera al perfeccionismo esporádico.',
+  'Lo que siembras en tus hábitos, lo cosechas en tus resultados.',
+  'Cada día es una oportunidad de ser quien quieres ser.',
+  'La claridad viene de la acción, no de la contemplación.',
+];
+
+const FAITH_PURPOSES = [
+  'Hoy tienes la oportunidad de servir a alguien inesperadamente.',
+  'Cada tarea cumplida es un acto de amor hacia tu familia.',
+  'La gratitud abre puertas que el esfuerzo solo no puede abrir.',
+  'Tu presencia plena es el regalo más grande que puedes dar.',
+];
+
+const dayIndex = new Date().getDay();
+
+function usePersonalityWidget() {
+  const [personality, setPersonality] = useState<string>('default');
+  const [verseText, setVerseText] = useState<string>('');
+  const [leelooName, setLeelooName] = useState<string>('');
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    profilesAPI.getMe().then((res: any) => {
+      const p = res?.data as any;
+      const pers = typeof p?.leeloo_personality === 'string' ? p.leeloo_personality : 'default';
+      const name = typeof p?.leeloo_name === 'string' ? p.leeloo_name : '';
+      setPersonality(pers);
+      setLeelooName(name);
+      if (pers === 'christian') {
+        verseAPI.daily().then((vRes: any) => {
+          const v = vRes?.data;
+          const text = typeof v?.verse === 'string' ? v.verse : typeof v?.text === 'string' ? v.text : '';
+          const ref = typeof v?.reference === 'string' ? v.reference : '';
+          setVerseText(ref ? `"${text}" — ${ref}` : text);
+        }).catch(() => {});
+      }
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+
+  return { personality, verseText, leelooName, loaded };
+}
+
+function PersonalityWidget({ personality, verseText, userName }: {
+  personality: string;
+  verseText: string;
+  userName: string;
+}) {
+  const cfg = PERSONALITY_WIDGETS[personality] ?? PERSONALITY_WIDGETS.default;
+
+  const content = (() => {
+    if (personality === 'christian') {
+      return verseText || 'Cargando versículo...';
+    }
+    if (personality === 'coach') {
+      return COACH_CHALLENGES[dayIndex % COACH_CHALLENGES.length];
+    }
+    if (personality === 'business') {
+      const h = new Date().getHours();
+      const shift = h < 12 ? 'mañana' : h < 18 ? 'tarde' : 'noche';
+      return `${userName ? `${userName}, b` : 'B'}uenas. Optimiza tu ${shift}: define tu próxima decisión de mayor impacto.`;
+    }
+    if (personality === 'mentor') {
+      return MENTOR_REFLECTIONS[dayIndex % MENTOR_REFLECTIONS.length];
+    }
+    if (personality === 'counselor') {
+      return '¿Cómo estás hoy realmente? Leeloo está aquí para escucharte.';
+    }
+    if (personality === 'faith') {
+      return FAITH_PURPOSES[dayIndex % FAITH_PURPOSES.length];
+    }
+    return userName ? `¡Hola ${userName}! ¿Qué quieres lograr hoy?` : '¿Cómo puedo ayudarte hoy?';
+  })();
+
+  return (
+    <LinearGradient
+      colors={cfg.color}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={pw.card}
+    >
+      <Text style={pw.emoji}>{cfg.emoji}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={pw.label}>{cfg.label}</Text>
+        <Text style={pw.content} numberOfLines={3}>{content}</Text>
+      </View>
+    </LinearGradient>
+  );
+}
+
+const pw = StyleSheet.create({
+  card: {
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 8,
+  },
+  emoji: { fontSize: 28, lineHeight: 36 },
+  label: { fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: '600', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.8 },
+  content: { fontSize: 14, color: '#fff', lineHeight: 20, fontWeight: '500' },
+});
 
 function CalendarStrip() {
   const today = new Date();
@@ -76,22 +200,25 @@ export default function HomeScreen() {
   const tasks = useTasksStore((s) => s.tasks);
   const router = useRouter();
   const [draft, setDraft] = useState('');
+  const { personality, verseText, leelooName } = usePersonalityWidget();
 
   useEffect(() => { hydrateTasks(); }, [hydrateTasks]);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
-    if (h < 12) return 'Good morning';
-    if (h < 18) return 'Good afternoon';
-    return 'Good evening';
+    if (h < 12) return 'Buenos días';
+    if (h < 18) return 'Buenas tardes';
+    return 'Buenas noches';
   }, []);
 
   const userMetadata = ((session as any)?.user?.user_metadata || undefined) as
     | Record<string, unknown> | undefined;
-  const name =
+  const clerkName =
     (typeof userMetadata?.full_name === 'string' && userMetadata.full_name.split(' ')[0]) ||
     (typeof userMetadata?.name === 'string' && userMetadata.name.split(' ')[0]) ||
-    'Alice';
+    '';
+  // Use Leeloo name from profile if set, else fallback to Clerk name
+  const name = leelooName || clerkName || 'amiga';
 
   const upcoming = useMemo(() => {
     return (tasks || [])
@@ -131,7 +258,7 @@ export default function HomeScreen() {
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={styles.headerDate}>{todayStr}</Text>
-              <Text style={styles.headerName}>Hello {name}</Text>
+              <Text style={styles.headerName}>Hola, {name}</Text>
             </View>
             <TouchableOpacity style={styles.searchBtn}>
               <Search size={20} color={T.colors.navy} strokeWidth={2} />
@@ -143,6 +270,9 @@ export default function HomeScreen() {
             onPress={() => router.push('/(tabs)/dashboard?tab=approvals')}
           />
 
+          {/* ── PERSONALITY WIDGET ────────────────────── */}
+          <PersonalityWidget personality={personality} verseText={verseText} userName={name} />
+
           {/* ── VOICE + GREETING CARD ─────────────────── */}
           <LinearGradient
             colors={['#F07040', '#C4507A', '#8375FA']}
@@ -151,8 +281,8 @@ export default function HomeScreen() {
             style={styles.greetCard}
           >
             <WaveBackground opacity={0.12} cellSize={32} />
-            <Text style={styles.greetTitle}>{greeting}</Text>
-            <Text style={styles.greetSub}>How can I help today?</Text>
+            <Text style={styles.greetTitle}>{greeting}, {name}</Text>
+            <Text style={styles.greetSub}>¿En qué te ayudo hoy?</Text>
 
             {/* Chat input inside card */}
             <View style={styles.chatRow}>
@@ -199,39 +329,52 @@ export default function HomeScreen() {
             <CalendarStrip />
           </View>
 
-          {/* ── YOUR PLAN ─────────────────────────────── */}
+          {/* ── TU PLAN HOY ───────────────────────────── */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Your Plan</Text>
+            <Text style={styles.sectionTitle}>Tu plan de hoy</Text>
             {upcoming.length === 0 ? (
-              <View style={styles.planEmpty}>
-                <Text style={styles.planEmptyText}>How can I help today?</Text>
-              </View>
+              <TouchableOpacity
+                style={styles.planEmpty}
+                onPress={() => sendText('qué tengo para hoy')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.planEmptyText}>Pregúntale a Leeloo qué tienes hoy →</Text>
+              </TouchableOpacity>
             ) : (
               <View style={{ gap: 10 }}>
-                {upcoming.map((t) => (
-                  <View key={t.id} style={styles.planCard}>
-                    <View style={styles.planCardLeft}>
-                      <Text style={styles.planCardTitle}>{t.title}</Text>
-                      <Text style={styles.planCardSub}>
-                        {t.due_at ? new Date(t.due_at).toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Sin fecha'}
-                      </Text>
+                {upcoming.map((t) => {
+                  const isHome = String(t.category || t.metadata?.category || '').toLowerCase().includes('hogar') ||
+                    String(t.tags || '').toLowerCase().includes('hogar');
+                  return (
+                    <View key={t.id} style={styles.planCard}>
+                      <View style={[styles.planCardTag, { backgroundColor: isHome ? '#FEF3C7' : '#EDE9FE' }]}>
+                        <Text style={{ fontSize: 10, color: isHome ? '#92400E' : '#5B21B6', fontWeight: '700' }}>
+                          {isHome ? 'HOGAR' : 'TRABAJO'}
+                        </Text>
+                      </View>
+                      <View style={styles.planCardLeft}>
+                        <Text style={styles.planCardTitle}>{t.title}</Text>
+                        <Text style={styles.planCardSub}>
+                          {t.due_at ? new Date(t.due_at).toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Sin fecha'}
+                        </Text>
+                      </View>
+                      <Text style={styles.planCardDots}>⋮</Text>
                     </View>
-                    <Text style={styles.planCardDots}>⋮</Text>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             )}
           </View>
 
-          {/* ── QUICK ACTIONS ─────────────────────────── */}
+          {/* ── ACCIONES RÁPIDAS ──────────────────────── */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Acciones rápidas</Text>
             <View style={styles.quickActions}>
               {[
+                { emoji: '🗓️', label: 'Mi agenda', action: () => sendText('qué tengo para hoy') },
                 { emoji: '📧', label: 'Correos', action: () => sendText('revisa mis correos') },
-                { emoji: '📅', label: 'Agenda', action: () => router.push('/(tabs)/calendar') },
                 { emoji: '✅', label: 'Tareas', action: () => router.push('/(tabs)/tasks') },
-                { emoji: '🧠', label: 'Personalidad', action: () => router.push('/settings/personality') },
+                { emoji: '🧠', label: 'Modo Leeloo', action: () => router.push('/settings/personality') },
               ].map((a) => (
                 <TouchableOpacity key={a.label} style={styles.actionCard} onPress={a.action} activeOpacity={0.75}>
                   <Text style={styles.actionEmoji}>{a.emoji}</Text>
@@ -386,6 +529,13 @@ const styles = StyleSheet.create({
     padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  planCardTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginRight: 10,
+    alignSelf: 'flex-start',
   },
   planCardLeft: { flex: 1, gap: 4 },
   planCardTitle: {

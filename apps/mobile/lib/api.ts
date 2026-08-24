@@ -418,4 +418,8 @@ export const profilesAPI = {
   },
 };
 
+export const verseAPI = {
+  daily: async () => api.get('/verse/daily'),
+};
+
 export default api;

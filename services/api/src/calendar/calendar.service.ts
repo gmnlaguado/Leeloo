@@ -446,7 +446,8 @@ export class CalendarService implements OnModuleInit {
     const timezone = await this.getUserTimezone(clerkUserId);
     const now = new Date();
     const day = this.formatDayInTimezone(now, timezone);
-    return this.getEventsForDay(clerkUserId, day);
+    const unified = await this.getUnifiedAgendaForDay(clerkUserId, day);
+    return { ...unified, now: now.toISOString(), timezone };
   }
 
   async getUnifiedAgendaForDay(clerkUserId: string, day: string) {
