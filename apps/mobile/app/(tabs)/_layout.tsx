@@ -10,7 +10,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="home" options={{ title: 'Inicio' }} />
       <Tabs.Screen name="calendar" options={{ title: 'Agenda' }} />
       <Tabs.Screen name="tasks" options={{ title: 'Tareas' }} />
-      <Tabs.Screen name="dashboard" options={{ tabBarButton: () => null, href: null }} />
+      <Tabs.Screen name="dashboard" options={{ href: null }} />
       <Tabs.Screen name="settings" options={{ title: 'Config' }} />
     </Tabs>
   );
