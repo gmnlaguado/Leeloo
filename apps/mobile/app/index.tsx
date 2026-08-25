@@ -8,7 +8,7 @@ import { deviceLogger } from '@/services/device-logger';
 
 export default function Index() {
   const router = useRouter();
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, userId } = useAuth();
   const setHasCompletedOnboarding = useAuthStore((s) => s.setHasCompletedOnboarding);
   const [timedOut, setTimedOut] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
@@ -47,13 +47,22 @@ export default function Index() {
         return;
       }
 
-      const done = await AsyncStorage.getItem('hasCompletedOnboarding');
+      // Check user-specific key first; fall back to global key for existing users (migration)
+      let done = userId ? await AsyncStorage.getItem(`hasCompletedOnboarding_${userId}`) : null;
+      if (done === null) {
+        const legacy = await AsyncStorage.getItem('hasCompletedOnboarding');
+        if (legacy === 'true' && userId) {
+          await AsyncStorage.setItem(`hasCompletedOnboarding_${userId}`, 'true');
+        }
+        done = legacy;
+      }
+
       if (done !== 'true') {
         router.replace('/onboarding');
         return;
       }
 
-      setHasCompletedOnboarding(true);
+      setHasCompletedOnboarding(true, userId ?? undefined);
       router.replace('/(tabs)/home');
     };
 

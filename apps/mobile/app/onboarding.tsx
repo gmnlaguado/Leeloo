@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useAuth } from '@clerk/clerk-expo';
 import { useEffect, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { Audio } from 'expo-av';
@@ -67,6 +68,7 @@ const LANGUAGES = [
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const { userId } = useAuth();
   const setHasCompletedOnboarding = useAuthStore((s) => s.setHasCompletedOnboarding);
   const setLanguage = useSettingsStore((s) => s.setLanguage);
   const [step, setStep] = useState<Step>(0);
@@ -104,10 +106,10 @@ export default function OnboardingScreen() {
     try {
       await setLanguage(selectedLang as any);
       await profilesAPI.updateMe({ preferred_language: selectedLang as any }).catch(() => {});
-      await setHasCompletedOnboarding(true);
+      await setHasCompletedOnboarding(true, userId ?? undefined);
       router.replace('/(tabs)/home');
     } catch {
-      await setHasCompletedOnboarding(true);
+      await setHasCompletedOnboarding(true, userId ?? undefined);
       router.replace('/(tabs)/home');
     } finally {
       setLoading(false);

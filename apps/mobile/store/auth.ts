@@ -13,7 +13,7 @@ interface AuthState {
   session: ClerkSessionLike;
   hasCompletedOnboarding: boolean;
   setSession: (session: ClerkSessionLike) => void;
-  setHasCompletedOnboarding: (value: boolean) => Promise<void>;
+  setHasCompletedOnboarding: (value: boolean, userId?: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -23,8 +23,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setSession: (session) => set({ session }),
 
-  setHasCompletedOnboarding: async (value) => {
-    await AsyncStorage.setItem('hasCompletedOnboarding', String(value));
+  setHasCompletedOnboarding: async (value, userId?) => {
+    const key = userId ? `hasCompletedOnboarding_${userId}` : 'hasCompletedOnboarding';
+    await AsyncStorage.setItem(key, String(value));
     set({ hasCompletedOnboarding: value });
   },
 
