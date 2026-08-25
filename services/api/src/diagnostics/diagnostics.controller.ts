@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { SkipThrottle } from '@nestjs/throttler';
 import axios from 'axios';
+import { createClient } from '@supabase/supabase-js';
 import { AuthGuard } from '../auth/auth.guard';
 import { ProfilesService } from '../profiles/profiles.service';
 
@@ -304,6 +305,63 @@ export class DiagnosticsController {
       model,
       apiKey,
     });
+  }
+
+  @Get('health')
+  @SkipThrottle()
+  @ApiOperation({ summary: 'Full dependency health check — no auth required' })
+  async health() {
+    const cfg = this.configService;
+    const t = () => Date.now();
+
+    const probe = async (label: string, fn: () => Promise<void>) => {
+      const t0 = t();
+      try {
+        await fn();
+        return { label, ok: true, ms: t() - t0 };
+      } catch (err: any) {
+        return { label, ok: false, ms: t() - t0, error: String(err?.message || err) };
+      }
+    };
+
+    const checks = await Promise.all([
+      probe('supabase', async () => {
+        const sb = createClient(cfg.get('SUPABASE_URL')!, cfg.get('SUPABASE_SERVICE_ROLE_KEY')!);
+        const { error } = await sb.from('profiles').select('id').limit(1);
+        if (error) throw new Error(error.message);
+      }),
+      probe('elevenlabs', async () => {
+        const key = cfg.get<string>('ELEVENLABS_API_KEY');
+        if (!key) throw new Error('ELEVENLABS_API_KEY not set');
+        const res = await axios.get('https://api.elevenlabs.io/v1/user', {
+          headers: { 'xi-api-key': key },
+          timeout: 6000,
+        });
+        if (res.status !== 200) throw new Error(`status ${res.status}`);
+      }),
+      probe('anthropic', async () => {
+        const key = cfg.get<string>('ANTHROPIC_API_KEY');
+        if (!key) throw new Error('ANTHROPIC_API_KEY not set');
+        const res = await axios.get('https://api.anthropic.com/v1/models', {
+          headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+          timeout: 6000,
+        });
+        if (res.status !== 200) throw new Error(`status ${res.status}`);
+      }),
+      probe('stt', async () => {
+        const sttUrl = cfg.get<string>('STT_URL');
+        if (!sttUrl) throw new Error('STT_URL not set');
+        const res = await axios.get(`${sttUrl}/health`, { timeout: 5000 });
+        if (res.status !== 200) throw new Error(`status ${res.status}`);
+      }),
+    ]);
+
+    const allOk = checks.every((c) => c.ok);
+    return {
+      status: allOk ? 'ok' : 'degraded',
+      ts: new Date().toISOString(),
+      checks,
+    };
   }
 
   @Get('llm-chat')

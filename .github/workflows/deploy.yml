@@ -26,12 +26,16 @@ jobs:
       - name: Build API
         run: cd services/api && npm run build
       
-      - name: Deploy to Render
-        if: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
+      - name: Deploy all Render services
         env:
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          HOOK_API: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          HOOK_AI: ${{ secrets.RENDER_DEPLOY_HOOK_AI_URL }}
+          HOOK_WORKER: ${{ secrets.RENDER_DEPLOY_HOOK_WORKER_URL }}
         run: |
-          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+          deploy() { [ -n "$1" ] && curl -fsS -X POST "$1" && echo "✅ $2 hook triggered" || echo "⚠️ $2 hook not configured"; }
+          deploy "$HOOK_API"    "leeloo-api"
+          deploy "$HOOK_AI"     "leeloo-ai"
+          deploy "$HOOK_WORKER" "leeloo-worker"
 
   deploy-mobile:
     runs-on: ubuntu-latest

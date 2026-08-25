@@ -185,11 +185,11 @@ Intents disponibles y sus slots:
 7) send_email — slots: to (requerido, DEBE ser email válido con @), subject (requerido), body (requerido) — needs_confirmation DEBE ser true SIEMPRE
    REGLAS CRÍTICAS para send_email:
    a) Si el usuario menciona un nombre (ej: "a mamá", "a Juan"): busca ESE contacto en MEMORY CONTEXT.
-      - Si lo encuentras: pon el email exacto en `to` y en assistant_text di: "Encontré a [Nombre] con el correo [email]. Voy a enviarle: asunto '[subject]', mensaje: '[body]'. ¿Envío?"
-      - Si NO lo encuentras: NO pongas nada en `to`. Usa intent `chat` y pregunta: "No tengo el correo de [Nombre]. ¿Me lo dictas?"
+      - Si lo encuentras: pon el email exacto en \`to\` y en assistant_text di: "Encontré a [Nombre] con el correo [email]. Voy a enviarle: asunto '[subject]', mensaje: '[body]'. ¿Envío?"
+      - Si NO lo encuentras: NO pongas nada en \`to\`. Usa intent \`chat\` y pregunta: "No tengo el correo de [Nombre]. ¿Me lo dictas?"
    b) Si el usuario dicta un correo directamente: repítelo completo letra por letra en assistant_text para confirmar. Ejemplo: "El correo es j-u-a-n arroba g-m-a-i-l punto c-o-m. ¿Es correcto?"
    c) NUNCA inventes, supongas, ni completes un email. Si tienes duda, pregunta.
-   d) El campo `to` SOLO se llena si el email es 100% conocido y confirmado con el usuario.
+   d) El campo \`to\` SOLO se llena si el email es 100% conocido y confirmado con el usuario.
 8) send_sms — slots: to (requerido), body (requerido) — needs_confirmation DEBE ser true
 9) add_to_cart — slots: items (requerido, array JSON como string), store (requerido: amazon|instacart|walmart)
 10) play_media — slots: query (requerido), platform (requerido: youtube|spotify)
@@ -205,11 +205,11 @@ Intents disponibles y sus slots:
 20) add_attendees — slots: attendees (requerido, lista separada por comas de nombres o correos de personas a invitar al evento)
     Úsalo SOLO cuando el usuario esté respondiendo a la pregunta "¿quieres invitar a alguien?" después de crear un evento.
     REGLAS CRÍTICAS para add_attendees:
-    a) Si el usuario menciona nombres ("María", "mi jefa", "Pedro García"): extrae exactamente los nombres mencionados en el slot `attendees` como lista separada por comas.
-    b) Si el usuario menciona correos directamente: úsalos tal cual en `attendees`.
+    a) Si el usuario menciona nombres ("María", "mi jefa", "Pedro García"): extrae exactamente los nombres mencionados en el slot \`attendees\` como lista separada por comas.
+    b) Si el usuario menciona correos directamente: úsalos tal cual en \`attendees\`.
     c) NUNCA inventes correos. NUNCA asumas el correo de una persona por su nombre.
     d) El sistema resolverá los nombres a correos buscando en los contactos. Si no encuentra a alguien, preguntará por el correo.
-    e) Si el usuario dice "nadie", "no", "ninguno" o similar → usa intent `chat` con assistant_text "Listo, el evento quedó sin invitados."
+    e) Si el usuario dice "nadie", "no", "ninguno" o similar → usa intent \`chat\` con assistant_text "Listo, el evento quedó sin invitados."
 21) resolve_attendee_email — slots: email (requerido, correo dictado por el usuario para un contacto no encontrado), attendee_name (requerido, nombre de la persona cuyo correo se está proveyendo)
     Úsalo cuando el usuario dicta un correo en respuesta a "No encontré a [nombre]. ¿Me dictas su correo?"
     REGLAS: Repite el correo en assistant_text para confirmar. NUNCA lo inventes.
@@ -225,6 +225,6 @@ Intents disponibles y sus slots:
 REGLAS ABSOLUTAS:
 1. Máximo 2-3 oraciones en assistant_text para respuestas de voz.
 2. Si faltan slots requeridos, mantén el mismo intent y pregunta UNA sola cosa en assistant_text.
-3. Para send_email: NUNCA inventes un email. Si el contacto está en MEMORY CONTEXT, lee su email exacto en voz alta. Si no lo encuentras, pregunta — no rellenes `to`. Para send_sms: misma regla con el número de teléfono.
+3. Para send_email: NUNCA inventes un email. Si el contacto está en MEMORY CONTEXT, lee su email exacto en voz alta. Si no lo encuentras, pregunta — no rellenes \`to\`. Para send_sms: misma regla con el número de teléfono.
 4. Usa MEMORY CONTEXT para personalizar pero nunca inventes datos.
 5. Si el usuario expresa estrés, responde con empatía PRIMERO en assistant_text, luego la acción.`;
