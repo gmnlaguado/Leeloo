@@ -523,7 +523,21 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       });
       const language = useSettingsStore.getState().language;
       const profileOpts = await getProfileOpts();
-      const res = await voiceAPI.processText(trimmed, { language, ...profileOpts });
+
+      let res: Awaited<ReturnType<typeof voiceAPI.processText>>;
+      try {
+        res = await voiceAPI.processText(trimmed, { language, ...profileOpts });
+      } catch (firstErr: unknown) {
+        const isNet = (firstErr as { message?: string })?.message === 'Network Error';
+        const isTimeout = (firstErr as { code?: string })?.code === 'ECONNABORTED';
+        if (isNet || isTimeout) {
+          set({ lastError: language === 'es' ? 'Leeloo se está despertando, un momento...' : 'Leeloo is waking up, one moment...' });
+          await new Promise((r) => setTimeout(r, 8000));
+          res = await voiceAPI.processText(trimmed, { language, ...profileOpts });
+        } else {
+          throw firstErr;
+        }
+      }
       const data = (res?.data ?? {}) as RawVoiceApiResponse;
 
       const assistantText =

@@ -293,7 +293,7 @@ export const voiceAPI = {
         ...(opts?.user_name ? { user_name: opts.user_name } : {}),
       } satisfies RequestBody,
       {
-        timeout: 30000,
+        timeout: 90000,
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),

@@ -7,6 +7,7 @@ import {
   type LeelooPersonality,
 } from '@leeloo/ai-prompts';
 import { OpenAiQueue } from './workers/openai.queue';
+import { TtsFactory } from '../tts/tts.factory';
 
 type SupportedLanguage = 'es' | 'en' | 'pt' | 'fr' | 'ja';
 
@@ -21,7 +22,10 @@ type IntentResult = {
 
 @Injectable()
 export class VoiceService {
-  constructor(private readonly openAiQueue: OpenAiQueue) {}
+  constructor(
+    private readonly openAiQueue: OpenAiQueue,
+    private readonly ttsFactory: TtsFactory,
+  ) {}
 
   async processVoice(input: {
     userId: string;
@@ -398,12 +402,8 @@ export class VoiceService {
 
   private async safeTts(input: { userId: string; text: string }) {
     try {
-      return await this.openAiQueue.tts({
-        userId: input.userId,
-        text: input.text,
-        voice: 'nova',
-        model: 'tts-1-hd',
-      });
+      const result = await this.ttsFactory.synthesize(input.text);
+      return result.audio.toString('base64');
     } catch {
       return null;
     }
