@@ -37,8 +37,10 @@ export default function SignInScreen() {
     try {
       const redirectUrl = Linking.createURL('');
       const { createdSessionId, setActive } = await startFlow({ redirectUrl });
-      if (createdSessionId && setActive) {
-        await setActive({ session: createdSessionId });
+      if (setActive) {
+        if (createdSessionId) {
+          await setActive({ session: createdSessionId });
+        }
         router.replace('/');
       }
     } catch (e: any) {
