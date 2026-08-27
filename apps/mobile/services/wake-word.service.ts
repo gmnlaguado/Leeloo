@@ -20,7 +20,7 @@
  */
 
 import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Asset } from 'expo-asset';
 
 // ─── Type stubs (avoids hard dependency at import time — real types come from the package) ───

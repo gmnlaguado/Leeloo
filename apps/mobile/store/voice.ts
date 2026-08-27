@@ -5,6 +5,7 @@ import type { AVPlaybackStatus } from 'expo-av';
 import type { AudioMode } from 'expo-av';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
+import * as FileSystem from 'expo-file-system/legacy';
 import { voiceAPI, profilesAPI, tasksAPI } from '@/lib/api';
 import { deviceLogger } from '@/services/device-logger';
 import { useSettingsStore } from '@/store/settings';
@@ -412,17 +413,33 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         data.response_audio_url ?? data.audio_url ?? data.audioUrl ?? data.tts_url ?? null;
       let played = false;
 
-      // Android MediaPlayer does not support data: URIs — skip to expo-speech fallback
-      if (audioBase64 && typeof audioBase64 === 'string' && Platform.OS !== 'android') {
-        try {
-          const uri = `data:audio/mpeg;base64,${audioBase64}`;
-          await playAudioUrl(uri);
-          played = true;
-        } catch (err) {
-          deviceLogger.log('[voice] audio(base64) playback failed', { err: String(err) });
+      if (audioBase64 && typeof audioBase64 === 'string') {
+        if (Platform.OS === 'android') {
+          // Android MediaPlayer rejects data: URIs — write to a temp file and play from path.
+          let tmpPath: string | null = null;
+          try {
+            tmpPath = `${FileSystem.cacheDirectory}leeloo_tts_${Date.now()}.mp3`;
+            await FileSystem.writeAsStringAsync(tmpPath, audioBase64, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            await playAudioUrl(tmpPath);
+            played = true;
+          } catch (err) {
+            deviceLogger.log('[voice] android tts file playback failed', { err: String(err) });
+          } finally {
+            if (tmpPath) {
+              FileSystem.deleteAsync(tmpPath, { idempotent: true }).catch(() => {});
+            }
+          }
+        } else {
+          try {
+            const dataUri = `data:audio/mpeg;base64,${audioBase64}`;
+            await playAudioUrl(dataUri);
+            played = true;
+          } catch (err) {
+            deviceLogger.log('[voice] audio(base64) playback failed', { err: String(err) });
+          }
         }
-      } else if (audioBase64) {
-        deviceLogger.log('[voice] skipping base64 on Android — will use expo-speech');
       }
 
       if (audioUrl && typeof audioUrl === 'string') {
@@ -568,17 +585,33 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         data.response_audio_url ?? data.audio_url ?? data.audioUrl ?? data.tts_url ?? null;
       let played = false;
 
-      // Android MediaPlayer does not support data: URIs — skip to expo-speech fallback
-      if (audioBase64 && typeof audioBase64 === 'string' && Platform.OS !== 'android') {
-        try {
-          const uri = `data:audio/mpeg;base64,${audioBase64}`;
-          await playAudioUrl(uri);
-          played = true;
-        } catch (err) {
-          deviceLogger.log('[voice] audio(base64) playback failed', { err: String(err) });
+      if (audioBase64 && typeof audioBase64 === 'string') {
+        if (Platform.OS === 'android') {
+          // Android MediaPlayer rejects data: URIs — write to a temp file and play from path.
+          let tmpPath: string | null = null;
+          try {
+            tmpPath = `${FileSystem.cacheDirectory}leeloo_tts_${Date.now()}.mp3`;
+            await FileSystem.writeAsStringAsync(tmpPath, audioBase64, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            await playAudioUrl(tmpPath);
+            played = true;
+          } catch (err) {
+            deviceLogger.log('[voice] android tts file playback failed', { err: String(err) });
+          } finally {
+            if (tmpPath) {
+              FileSystem.deleteAsync(tmpPath, { idempotent: true }).catch(() => {});
+            }
+          }
+        } else {
+          try {
+            const dataUri = `data:audio/mpeg;base64,${audioBase64}`;
+            await playAudioUrl(dataUri);
+            played = true;
+          } catch (err) {
+            deviceLogger.log('[voice] audio(base64) playback failed', { err: String(err) });
+          }
         }
-      } else if (audioBase64) {
-        deviceLogger.log('[voice] skipping base64 on Android — will use expo-speech');
       }
       if (audioUrl && typeof audioUrl === 'string') {
         try {

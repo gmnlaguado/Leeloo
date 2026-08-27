@@ -480,7 +480,7 @@ export default function HomeScreen() {
             ) : (
               <View style={{ gap: 10 }}>
                 {upcoming.map((task) => {
-                  const isHome = String(task.category || task.metadata?.category || '').toLowerCase().includes('hogar') ||
+                  const isHome = String((task as any).category || task.metadata?.category || '').toLowerCase().includes('hogar') ||
                     String((task as any).tags || '').toLowerCase().includes('hogar');
                   return (
                     <View key={task.id} style={styles.planCard}>
