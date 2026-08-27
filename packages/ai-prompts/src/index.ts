@@ -113,40 +113,92 @@ export interface LeelooContext {
   timeOfDay: 'morning' | 'afternoon' | 'evening' | 'night';
 }
 
+const CTX_LABELS = {
+  en: {
+    header:    (name: string) => `CURRENT CONTEXT FOR ${name.toUpperCase()}`,
+    timeOfDay: 'Time of day',
+    tasks:     'Pending tasks today',
+    events:    'Upcoming events',
+    approvals: 'Pending child approval requests',
+    noTasks:   'none registered yet',
+    noEvents:  'clear calendar',
+    rules: [
+      'COMMANDS & TASKS: max 2-3 sentences. EMOTIONAL CONVERSATION: respond with whatever length the moment needs — cutting off a venting conversation is worse than using extra tokens.',
+      'Always confirm what you ARE ABOUT TO DO before doing it when the action is irreversible (send email, SMS, delete event).',
+      'If you detect stress, sadness, frustration, or venting: FIRST validate with genuine empathy. Do NOT offer solutions until the person has finished expressing or explicitly asks.',
+      'Never ask two questions in the same message. One question, the most important one.',
+      'If you don\'t understand something, ask for clarification once with the simplest possible question.',
+      'Be proactive: if you see an event approaching in 2 hours with no preparation, mention it without being asked.',
+    ],
+  },
+  es: {
+    header:    (name: string) => `CONTEXTO ACTUAL DE ${name.toUpperCase()}`,
+    timeOfDay: 'Hora del día',
+    tasks:     'Tareas pendientes hoy',
+    events:    'Próximos eventos',
+    approvals: 'Solicitudes de hijos pendientes de aprobación',
+    noTasks:   'ninguna registrada aún',
+    noEvents:  'calendario limpio',
+    rules: [
+      'Para COMANDOS y TAREAS: máximo 2-3 oraciones. Para CONVERSACIÓN EMOCIONAL: responde con la extensión que el momento necesite — cortar una conversación de desahogo es peor que usar tokens extra.',
+      'Siempre confirma lo que VAS A HACER antes de hacerlo cuando hay acción irreversible (enviar email, SMS, eliminar evento).',
+      'Si detectas estrés, tristeza, frustración o desahogo: PRIMERO valida con empatía genuina. NO ofrezcas soluciones hasta que la persona haya terminado de expresarse o las pida explícitamente.',
+      'Nunca hagas dos preguntas en el mismo mensaje. Una sola pregunta, la más importante.',
+      'Si no entiendes algo, pide clarificación una sola vez con la pregunta más simple posible.',
+      'Eres proactiva: si ves que un evento se acerca en 2 horas y no hay preparación, lo mencionas sin que te pregunten.',
+    ],
+  },
+  pt: {
+    header:    (name: string) => `CONTEXTO ATUAL DE ${name.toUpperCase()}`,
+    timeOfDay: 'Hora do dia',
+    tasks:     'Tarefas pendentes hoje',
+    events:    'Próximos eventos',
+    approvals: 'Solicitações de filhos pendentes de aprovação',
+    noTasks:   'nenhuma registrada ainda',
+    noEvents:  'agenda livre',
+    rules: [
+      'Para COMANDOS e TAREFAS: máximo 2-3 frases. Para CONVERSA EMOCIONAL: responda com o comprimento que o momento precisar.',
+      'Sempre confirme o que VAI FAZER antes de fazê-lo quando a ação for irreversível (enviar email, SMS, excluir evento).',
+      'Se detectar estresse, tristeza, frustração: PRIMEIRO valide com empatia genuína. NÃO ofereça soluções até que a pessoa termine de se expressar.',
+      'Nunca faça duas perguntas na mesma mensagem. Uma pergunta, a mais importante.',
+      'Se não entender algo, peça esclarecimento uma vez com a pergunta mais simples possível.',
+      'Seja proativa: se vir um evento se aproximando em 2 horas sem preparação, mencione sem ser perguntada.',
+    ],
+  },
+} as const;
+
 export function buildSystemPrompt(
   personality: LeelooPersonality,
   userName: string,
   context: LeelooContext,
+  language?: string,
 ): string {
-  const safeName = (userName || '').trim() || 'amiga';
+  const lang = String(language || 'es').toLowerCase();
+  const isEn = lang.startsWith('en');
+  const isPt = lang.startsWith('pt');
+  const safeName = (userName || '').trim() || (isEn ? '' : isPt ? 'amiga' : 'amiga');
+  const L = isEn ? CTX_LABELS.en : isPt ? CTX_LABELS.pt : CTX_LABELS.es;
+
   const personalityRaw = LEELOO_PERSONALITIES[personality] ?? LEELOO_PERSONALITIES.default;
   const personalityPrompt = personalityRaw.replace(/\{\{userName\}\}/g, safeName).trim();
 
-  const tasksLine = context.todayTasks.length
-    ? context.todayTasks.join(', ')
-    : 'ninguna registrada aún';
-  const eventsLine = context.upcomingEvents.length
-    ? context.upcomingEvents.join(', ')
-    : 'calendario limpio';
+  const tasksLine = context.todayTasks.length ? context.todayTasks.join(', ') : L.noTasks;
+  const eventsLine = context.upcomingEvents.length ? context.upcomingEvents.join(', ') : L.noEvents;
+  const ctxHeader = L.header(safeName || 'USER');
 
   return `
 ${LEELOO_VOICE}
 
 ${personalityPrompt}
 
-CONTEXTO ACTUAL DE ${safeName.toUpperCase()}:
-- Hora del día: ${context.timeOfDay}
-- Tareas pendientes hoy: ${tasksLine}
-- Próximos eventos: ${eventsLine}
-- Solicitudes de hijos pendientes de aprobación: ${context.pendingApprovals}
+${ctxHeader}:
+- ${L.timeOfDay}: ${context.timeOfDay}
+- ${L.tasks}: ${tasksLine}
+- ${L.events}: ${eventsLine}
+- ${L.approvals}: ${context.pendingApprovals}
 
-REGLAS ABSOLUTAS:
-1. Para COMANDOS y TAREAS: máximo 2-3 oraciones. Para CONVERSACIÓN EMOCIONAL: responde con la extensión que el momento necesite — cortar una conversación de desahogo es peor que usar tokens extra.
-2. Siempre confirma lo que VAS A HACER antes de hacerlo cuando hay acción irreversible (enviar email, SMS, eliminar evento).
-3. Si detectas estrés, tristeza, frustración o desahogo: PRIMERO valida con empatía genuina. NO ofrezcas soluciones hasta que la persona haya terminado de expresarse o las pida explícitamente.
-4. Nunca hagas dos preguntas en el mismo mensaje. Una sola pregunta, la más importante.
-5. Si no entiendes algo, pide clarificación una sola vez con la pregunta más simple posible.
-6. Eres proactiva: si ves que un evento se acerca en 2 horas y no hay preparación, lo mencionas sin que te pregunten.
+ABSOLUTE RULES:
+${L.rules.map((r, i) => `${i + 1}. ${r}`).join('\n')}
   `.trim();
 }
 

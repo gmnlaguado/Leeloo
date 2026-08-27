@@ -108,7 +108,7 @@ export class VoiceService {
       : { todayTasks: [], upcomingEvents: [], pendingApprovals: 0 };
 
     const systemPrompt = input.userName
-      ? buildSystemPrompt(personality, input.userName, { ...userCtx, timeOfDay })
+      ? buildSystemPrompt(personality, input.userName, { ...userCtx, timeOfDay }, language)
       : LEELOO_SYSTEM_PROMPT;
 
     let intent: IntentResult;
@@ -306,8 +306,15 @@ export class VoiceService {
     language: string,
     userName: string,
   ): string {
-    const name = (userName || 'amiga').split(' ')[0];
-    const isEs = String(language || 'es').startsWith('es');
+    const lang = String(language || 'en').toLowerCase();
+    const isEs = lang.startsWith('es');
+    const isPt = lang.startsWith('pt');
+    const isFr = lang.startsWith('fr');
+    const isEn = !isEs && !isPt && !isFr;
+
+    const tLocale = isEs ? 'es-CO' : isPt ? 'pt-BR' : isFr ? 'fr-FR' : 'en-US';
+    const fallbackName = isEs || isPt ? 'amiga' : isFr ? 'amie' : '';
+    const name = ((userName || '').split(' ')[0] || fallbackName);
 
     const events: any[] = Array.isArray(data?.events) ? data.events : [];
     const tasks: any[] = Array.isArray(data?.tasks) ? data.tasks : [];
@@ -315,67 +322,120 @@ export class VoiceService {
 
     const formatTime = (iso: string) => {
       try {
-        return new Date(iso).toLocaleTimeString(isEs ? 'es-CO' : 'en-US', {
-          hour: '2-digit', minute: '2-digit', hour12: true,
+        return new Date(iso).toLocaleTimeString(tLocale, {
+          hour: '2-digit', minute: '2-digit', hour12: !isFr,
         });
       } catch { return ''; }
     };
 
-    // Build event lines (upcoming only, max 3)
     const upcomingEvents = events
       .filter((e) => e.start_at && new Date(e.start_at).getTime() >= now.getTime() - 30 * 60 * 1000)
-      .slice(0, 3)
-      .map((e) => `${e.title}${e.start_at ? ` a las ${formatTime(e.start_at)}` : ''}${e.location ? ` en ${e.location}` : ''}`);
+      .slice(0, 3);
 
-    // Build task lines (pending only, max 3)
     const pendingTasks = tasks
-      .filter((t) => t.status === 'pending' || t.status === 'in_progress')
-      .slice(0, 3)
-      .map((t) => t.title);
+      .filter((t: any) => t.status === 'pending' || t.status === 'in_progress')
+      .slice(0, 3);
 
     const totalEvents = events.length;
-    const totalTasks = tasks.filter((t) => t.status === 'pending' || t.status === 'in_progress').length;
+    const totalTasks = tasks.filter((t: any) => t.status === 'pending' || t.status === 'in_progress').length;
     const hasNothing = totalEvents === 0 && totalTasks === 0;
 
     if (hasNothing) {
+      if (isEn) {
+        const empty: Record<string, string> = {
+          christian: `Good morning${name ? `, ${name}` : ''}! Your day is completely free. Use this time to rest and recharge. God has something special for you today.`,
+          coach: `${name ? `${name}, your` : 'Your'} calendar is clear! This is the perfect moment to work on that project you've been putting off. What's your most important next step?`,
+          business: `${name ? `${name}, n` : 'N'}o meetings today. Ideal day for strategy and deep work. What initiative are you advancing?`,
+          counselor: `${name ? `${name}, your` : 'Your'} day is wide open. That's a gift. How do you want to use it for yourself?`,
+          mentor: `${name ? `${name}, n` : 'N'}o external commitments today. Free days are for building what matters. What goal are you moving forward?`,
+          faith: `${name ? `${name}, the` : 'The'} day is open. Every hour is a gift. What will you do with it?`,
+          default: `${name ? `Hi ${name}!` : 'Hi!'} Your calendar is clear today. The day is yours!`,
+        };
+        return empty[personality] ?? empty.default;
+      }
+      if (isPt) {
+        const empty: Record<string, string> = {
+          default: `${name ? `Olá ${name}!` : 'Olá!'} Você tem o dia livre hoje. O dia é seu!`,
+        };
+        return empty[personality] ?? empty.default;
+      }
+      // Spanish (default)
       const empty: Record<string, string> = {
-        christian: `¡Buenos días, ${name}! Tienes el día libre. Usa este tiempo para descansar y recargar energía. Dios tiene algo especial para ti hoy.`,
-        coach: `¡${name}, tienes el calendario libre! Es el momento perfecto para trabajar en ese proyecto que has estado postergando. ¿Cuál es tu próximo paso más importante?`,
-        business: `${name}, sin reuniones programadas hoy. Día ideal para estrategia y trabajo profundo. ¿Qué iniciativa avanzas?`,
-        counselor: `${name}, hoy tienes el día abierto. Eso es un regalo. ¿Cómo quieres usarlo para ti misma?`,
-        mentor: `${name}, sin compromisos externos hoy. Los días libres son para construir lo que importa. ¿Qué meta avanzas?`,
-        faith: `${name}, el día está abierto. Cada hora es un regalo. ¿Qué harás con ella?`,
-        default: `Hola ${name}, hoy tienes el calendario libre. ¡El día es tuyo!`,
+        christian: `¡Buenos días${name ? `, ${name}` : ''}! Tienes el día libre. Usa este tiempo para descansar y recargar energía. Dios tiene algo especial para ti hoy.`,
+        coach: `¡${name ? `${name}, tienes` : 'Tienes'} el calendario libre! Es el momento perfecto para trabajar en ese proyecto que has estado postergando. ¿Cuál es tu próximo paso más importante?`,
+        business: `${name ? `${name}, sin` : 'Sin'} reuniones programadas hoy. Día ideal para estrategia y trabajo profundo. ¿Qué iniciativa avanzas?`,
+        counselor: `${name ? `${name}, hoy tienes` : 'Hoy tienes'} el día abierto. Eso es un regalo. ¿Cómo quieres usarlo para ti misma?`,
+        mentor: `${name ? `${name}, sin` : 'Sin'} compromisos externos hoy. Los días libres son para construir lo que importa. ¿Qué meta avanzas?`,
+        faith: `${name ? `${name}, el` : 'El'} día está abierto. Cada hora es un regalo. ¿Qué harás con ella?`,
+        default: `${name ? `Hola ${name},` : '¡Hola!'} hoy tienes el calendario libre. ¡El día es tuyo!`,
       };
       return empty[personality] ?? empty.default;
     }
 
-    const listLine = [
-      ...(upcomingEvents.length ? (isEs ? [`Eventos: ${upcomingEvents.join(', ')}`] : [`Events: ${upcomingEvents.join(', ')}`]) : []),
-      ...(pendingTasks.length ? (isEs ? [`Tareas: ${pendingTasks.join(', ')}`] : [`Tasks: ${pendingTasks.join(', ')}`]) : []),
-    ].join('. ');
+    // Build event/task lines
+    const eventLines = upcomingEvents.map((e: any) => {
+      const at = e.start_at
+        ? (isEn ? ` at ${formatTime(e.start_at)}` : isPt ? ` às ${formatTime(e.start_at)}` : ` a las ${formatTime(e.start_at)}`)
+        : '';
+      const loc = e.location ? (isEn ? ` at ${e.location}` : ` en ${e.location}`) : '';
+      return `${e.title}${at}${loc}`;
+    });
+    const taskLines = pendingTasks.map((t: any) => t.title);
 
-    const summaryEs = `${totalEvents > 0 ? `${totalEvents} evento${totalEvents > 1 ? 's' : ''}` : ''}${totalEvents > 0 && totalTasks > 0 ? ' y ' : ''}${totalTasks > 0 ? `${totalTasks} tarea${totalTasks > 1 ? 's' : ''}` : ''}`;
+    const evLabel  = isEn ? 'Events' : isPt ? 'Eventos' : 'Eventos';
+    const taskLabel = isEn ? 'Tasks' : isPt ? 'Tarefas' : 'Tareas';
+    const listParts = [
+      ...(eventLines.length ? [`${evLabel}: ${eventLines.join(', ')}`] : []),
+      ...(taskLines.length  ? [`${taskLabel}: ${taskLines.join(', ')}`] : []),
+    ];
+    const listLine = listParts.join('. ');
 
-    const prefixes: Record<string, string> = {
-      christian: `Buenos días, ${name}. Hoy tienes ${summaryEs}. Que Dios guíe cada uno. `,
-      coach: `¡Vamos ${name}! Son ${summaryEs} para hoy. Foco total. `,
-      business: `${name}, briefing de hoy: ${summaryEs}. `,
-      counselor: `${name}, veamos tu día juntas. Tienes ${summaryEs}. `,
-      mentor: `${name}, hoy son ${summaryEs}. Que cada uno te acerque a tus metas. `,
-      faith: `${name}, hoy tienes ${summaryEs}. Cada compromiso es un propósito. `,
-      default: `Hola ${name}, para hoy tienes ${summaryEs}. `,
+    if (isEn) {
+      const evPart  = totalEvents > 0 ? `${totalEvents} event${totalEvents > 1 ? 's' : ''}` : '';
+      const tskPart = totalTasks > 0 ? `${totalTasks} task${totalTasks > 1 ? 's' : ''}` : '';
+      const summary = [evPart, tskPart].filter(Boolean).join(' and ');
+      const n = name ? `${name}, ` : '';
+      const prefixes: Record<string, string> = {
+        christian: `Good morning${name ? `, ${name}` : ''}. You have ${summary} today. May God guide each one. `,
+        coach: `Let's go${name ? `, ${name}` : ''}! You have ${summary} today. Full focus. `,
+        business: `${n}today's briefing: ${summary}. `,
+        counselor: `${n}let's look at your day together. You have ${summary}. `,
+        mentor: `${n}today you have ${summary}. May each one bring you closer to your goals. `,
+        faith: `${n}today you have ${summary}. Every commitment is a purpose. `,
+        default: `${name ? `Hi ${name},` : 'Hi!'} for today you have ${summary}. `,
+      };
+      const suffix: Record<string, string> = {
+        coach: ' Which one are we starting with?',
+        business: ' Would you like me to prepare something for the first meeting?',
+        counselor: ' How do you feel looking at them?',
+        default: '',
+      };
+      const prefix = prefixes[personality] ?? prefixes.default;
+      const end = suffix[personality] ?? suffix.default;
+      return `${prefix}${listLine}.${end}`;
+    }
+
+    // Spanish / Portuguese / French (default to Spanish)
+    const evPartEs  = totalEvents > 0 ? `${totalEvents} evento${totalEvents > 1 ? 's' : ''}` : '';
+    const tskPartEs = totalTasks > 0 ? `${totalTasks} tarea${totalTasks > 1 ? 's' : ''}` : '';
+    const summaryEs = [evPartEs, tskPartEs].filter(Boolean).join(' y ');
+    const prefixesEs: Record<string, string> = {
+      christian: `Buenos días${name ? `, ${name}` : ''}. Hoy tienes ${summaryEs}. Que Dios guíe cada uno. `,
+      coach: `¡Vamos${name ? ` ${name}` : ''}! Son ${summaryEs} para hoy. Foco total. `,
+      business: `${name ? `${name}, ` : ''}briefing de hoy: ${summaryEs}. `,
+      counselor: `${name ? `${name}, ` : ''}veamos tu día${name ? '' : ' juntos'}. Tienes ${summaryEs}. `,
+      mentor: `${name ? `${name}, ` : ''}hoy son ${summaryEs}. Que cada uno te acerque a tus metas. `,
+      faith: `${name ? `${name}, ` : ''}hoy tienes ${summaryEs}. Cada compromiso es un propósito. `,
+      default: `${name ? `Hola ${name},` : '¡Hola!'} para hoy tienes ${summaryEs}. `,
     };
-
-    const suffix: Record<string, string> = {
+    const suffixEs: Record<string, string> = {
       coach: ' ¿Por cuál arrancamos?',
       business: ' ¿Quieres que prepare algo para la primera reunión?',
       counselor: ' ¿Cómo te sientes al verlos?',
       default: '',
     };
-
-    const prefix = prefixes[personality] ?? prefixes.default;
-    const end = suffix[personality] ?? suffix.default;
+    const prefix = prefixesEs[personality] ?? prefixesEs.default;
+    const end = suffixEs[personality] ?? suffixEs.default;
     return `${prefix}${listLine}.${end}`;
   }
 
@@ -476,6 +536,7 @@ export class VoiceService {
 
     const intent = String(input.intent.intent || '').trim();
     const slots = input.intent.slots || {};
+    const lang = this.normalizeLanguage(input.language);
 
     try {
       if (input.intent.needs_confirmation && input.confirmation !== 'confirmed') {
@@ -526,10 +587,37 @@ export class VoiceService {
         const subject = String(slots.subject || '').trim();
         const body = String(slots.body || '').trim();
         const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!to) return { ok: false, fallback_text: '¿A quién le envío el correo? Dime el email exacto.' };
-        if (!EMAIL_RE.test(to)) return { ok: false, fallback_text: `"${to}" no parece un correo válido. ¿Me lo puedes dictar letra por letra?` };
-        if (!subject) return { ok: false, fallback_text: '¿Cuál es el asunto del correo?' };
-        if (!body) return { ok: false, fallback_text: '¿Qué quieres que diga el correo?' };
+        const emailT = {
+          en: {
+            no_to:      'Who should I send the email to? Please give me the exact email address.',
+            bad_email:  (addr: string) => `"${addr}" doesn't look like a valid email. Could you spell it out?`,
+            no_subject: 'What is the subject of the email?',
+            no_body:    'What should the email say?',
+          },
+          es: {
+            no_to:      '¿A quién le envío el correo? Dime el email exacto.',
+            bad_email:  (addr: string) => `"${addr}" no parece un correo válido. ¿Me lo puedes dictar letra por letra?`,
+            no_subject: '¿Cuál es el asunto del correo?',
+            no_body:    '¿Qué quieres que diga el correo?',
+          },
+          pt: {
+            no_to:      'Para quem devo enviar o email? Me diga o endereço exato.',
+            bad_email:  (addr: string) => `"${addr}" não parece um email válido. Pode soletrar?`,
+            no_subject: 'Qual é o assunto do email?',
+            no_body:    'O que você quer que o email diga?',
+          },
+          fr: {
+            no_to:      'À qui dois-je envoyer l\'email ? Donnez-moi l\'adresse exacte.',
+            bad_email:  (addr: string) => `"${addr}" ne semble pas être un email valide. Pouvez-vous l'épeler ?`,
+            no_subject: 'Quel est l\'objet de l\'email ?',
+            no_body:    'Que doit dire l\'email ?',
+          },
+        } as const;
+        const eT = emailT[lang as keyof typeof emailT] ?? emailT.en;
+        if (!to) return { ok: false, fallback_text: eT.no_to };
+        if (!EMAIL_RE.test(to)) return { ok: false, fallback_text: eT.bad_email(to) };
+        if (!subject) return { ok: false, fallback_text: eT.no_subject };
+        if (!body) return { ok: false, fallback_text: eT.no_body };
         const res = await axios.post(
           `${apiBaseUrl.replace(/\/+$/, '')}/v1/email/send`,
           { to, subject, body },
@@ -565,9 +653,16 @@ export class VoiceService {
         const title = String(slots.title || '').trim();
         const date = String(slots.date || '').trim();
         const time = String(slots.time || '').trim();
-        if (!title) return { ok: false, fallback_text: '¿Cuál es el título del evento?' };
-        if (!date) return { ok: false, fallback_text: '¿Para qué fecha es el evento?' };
-        if (!time) return { ok: false, fallback_text: '¿A qué hora es el evento?' };
+        const evT = {
+          en: { no_title: 'What is the event title?', no_date: 'What date is the event?', no_time: 'What time is the event?' },
+          es: { no_title: '¿Cuál es el título del evento?', no_date: '¿Para qué fecha es el evento?', no_time: '¿A qué hora es el evento?' },
+          pt: { no_title: 'Qual é o título do evento?', no_date: 'Para qual data é o evento?', no_time: 'A que horas é o evento?' },
+          fr: { no_title: 'Quel est le titre de l\'événement ?', no_date: 'À quelle date est l\'événement ?', no_time: 'À quelle heure est l\'événement ?' },
+        } as const;
+        const eV = evT[lang as keyof typeof evT] ?? evT.en;
+        if (!title) return { ok: false, fallback_text: eV.no_title };
+        if (!date) return { ok: false, fallback_text: eV.no_date };
+        if (!time) return { ok: false, fallback_text: eV.no_time };
 
         const startAt = `${date}T${time}`;
         const durationMinutesRaw = String(slots.duration || '').trim();

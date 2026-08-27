@@ -77,7 +77,7 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     if (!sttUrl || !sttSecret) return null;
 
     const form = new FormData();
-    const blob = new Blob([input.bytes], { type: 'application/octet-stream' });
+    const blob = new Blob([new Uint8Array(input.bytes)], { type: 'application/octet-stream' });
     form.append('file', blob, input.filename);
     form.append('language', 'es');
 
