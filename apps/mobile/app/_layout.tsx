@@ -270,8 +270,9 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
 function warmupBackends() {
   const api = process.env.EXPO_PUBLIC_API_URL ?? 'https://leeloo-api-55i5.onrender.com';
   const ai  = process.env.EXPO_PUBLIC_AI_ORCHESTRATOR_URL ?? 'https://leeloo-ai.onrender.com';
+  // AbortSignal.timeout() is not available in all Hermes versions — plain fetch is safe here.
   [api, ai].forEach((base) => {
-    fetch(`${base}/health`, { signal: AbortSignal.timeout(45_000) }).catch(() => {});
+    fetch(`${base}/health`).catch(() => {});
   });
 }
 

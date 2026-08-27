@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.hyperbyte.leeloo",
-      "buildNumber": "13",
+      "buildNumber": "14",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Leeloo necesita el micrófono para escuchar tus comandos de voz.",
         "NSCalendarsUsageDescription": "Leeloo necesita acceso a tu calendario para programar eventos.",
@@ -41,7 +41,7 @@
         "backgroundColor": "#2D266C"
       },
       "package": "com.leeloo.app",
-      "versionCode": 17,
+      "versionCode": 18,
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE",
