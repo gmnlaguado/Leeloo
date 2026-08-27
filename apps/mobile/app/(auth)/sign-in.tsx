@@ -35,12 +35,18 @@ export default function SignInScreen() {
     setError(null);
     setLoading(provider);
     try {
-      const redirectUrl = Linking.createURL('');
-      const { createdSessionId, setActive } = await startFlow({ redirectUrl });
-      if (setActive) {
-        if (createdSessionId) {
-          await setActive({ session: createdSessionId });
-        }
+      // Use a specific path so Android doesn't treat the redirect as "navigate to
+      // app root" — which destroys the navigation stack and loses the startFlow promise.
+      // sso-callback.tsx calls WebBrowser.maybeCompleteAuthSession() so the browser
+      // closes cleanly and this promise resolves with the session data.
+      const redirectUrl = Linking.createURL('sso-callback');
+      const { createdSessionId, setActive, signIn, signUp } = await startFlow({ redirectUrl });
+      // createdSessionId may be null for returning users; fall back to signIn/signUp objects.
+      const sessionId = createdSessionId ?? (signIn as any)?.createdSessionId ?? (signUp as any)?.createdSessionId;
+      if (sessionId && setActive) {
+        await setActive({ session: sessionId });
+        router.replace('/');
+      } else if (setActive) {
         router.replace('/');
       }
     } catch (e: any) {
