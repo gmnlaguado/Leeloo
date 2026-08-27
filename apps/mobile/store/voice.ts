@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { Audio } from 'expo-av';
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import type { AVPlaybackStatus } from 'expo-av';
 import type { AudioMode } from 'expo-av';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { voiceAPI, profilesAPI, tasksAPI } from '@/lib/api';
+import { deviceLogger } from '@/services/device-logger';
 import { useSettingsStore } from '@/store/settings';
 
 const getProfileOpts = async (): Promise<{ personality?: string; user_name?: string }> => {
@@ -121,6 +122,7 @@ const playAudioUrl = async (uri: string) => {
             'error' in s && typeof (s as unknown as { error?: unknown }).error === 'string'
               ? String((s as unknown as { error?: string }).error)
               : 'Audio not loaded';
+          deviceLogger.log('[voice] sound status error', { errMsg });
           settleOnce(() => reject(new Error(errMsg)));
           return;
         }
@@ -130,9 +132,12 @@ const playAudioUrl = async (uri: string) => {
         }
       });
 
-      sound.playAsync().catch((e) => settleOnce(() => reject(e)));
+      sound.playAsync().catch((e) => {
+        deviceLogger.log('[voice] playAsync error', { err: String(e) });
+        settleOnce(() => reject(e));
+      });
 
-      // Safety timeout: avoid hanging forever
+      // Safety timeout
       setTimeout(() => settleOnce(() => resolve()), 45000);
     });
   } finally {
@@ -407,14 +412,17 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         data.response_audio_url ?? data.audio_url ?? data.audioUrl ?? data.tts_url ?? null;
       let played = false;
 
-      if (audioBase64 && typeof audioBase64 === 'string') {
+      // Android MediaPlayer does not support data: URIs — skip to expo-speech fallback
+      if (audioBase64 && typeof audioBase64 === 'string' && Platform.OS !== 'android') {
         try {
           const uri = `data:audio/mpeg;base64,${audioBase64}`;
           await playAudioUrl(uri);
           played = true;
         } catch (err) {
-          console.log('[voice] audio(base64) playback failed:', String(err));
+          deviceLogger.log('[voice] audio(base64) playback failed', { err: String(err) });
         }
+      } else if (audioBase64) {
+        deviceLogger.log('[voice] skipping base64 on Android — will use expo-speech');
       }
 
       if (audioUrl && typeof audioUrl === 'string') {
@@ -560,14 +568,17 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         data.response_audio_url ?? data.audio_url ?? data.audioUrl ?? data.tts_url ?? null;
       let played = false;
 
-      if (audioBase64 && typeof audioBase64 === 'string') {
+      // Android MediaPlayer does not support data: URIs — skip to expo-speech fallback
+      if (audioBase64 && typeof audioBase64 === 'string' && Platform.OS !== 'android') {
         try {
           const uri = `data:audio/mpeg;base64,${audioBase64}`;
           await playAudioUrl(uri);
           played = true;
         } catch (err) {
-          console.log('[voice] audio(base64) playback failed:', String(err));
+          deviceLogger.log('[voice] audio(base64) playback failed', { err: String(err) });
         }
+      } else if (audioBase64) {
+        deviceLogger.log('[voice] skipping base64 on Android — will use expo-speech');
       }
       if (audioUrl && typeof audioUrl === 'string') {
         try {
