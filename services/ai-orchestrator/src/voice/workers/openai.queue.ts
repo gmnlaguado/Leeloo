@@ -21,8 +21,13 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
   private monthlyTokensKey = '';
 
   async onModuleInit() {
+    // Groq offers free Whisper transcription with OpenAI-compatible API.
+    // Set GROQ_API_KEY in Render to enable mic/voice input without paying OpenAI.
+    const groqKey = String(process.env.GROQ_API_KEY || '').trim();
     const openaiKey = String(process.env.OPENAI_API_KEY || '').trim();
-    this.openai = new OpenAI({ apiKey: openaiKey });
+    this.openai = groqKey
+      ? new OpenAI({ apiKey: groqKey, baseURL: 'https://api.groq.com/openai/v1' })
+      : new OpenAI({ apiKey: openaiKey });
 
     const anthropicKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
     this.anthropic = new Anthropic({ apiKey: anthropicKey });
