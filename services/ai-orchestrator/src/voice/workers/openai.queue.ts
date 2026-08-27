@@ -46,12 +46,16 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
 
   async transcribe(input: { userId: string; filename: string; bytes: Buffer }): Promise<string> {
     await this.assertWithinOpenAiRateLimit(input.userId);
+    const provider = process.env.GROQ_API_KEY ? 'groq' : 'openai';
+    this.logger.log(`[STT] transcribe start — provider=${provider} file=${input.filename} bytes=${input.bytes.length}`);
     const file = await toFile(input.bytes, input.filename, { type: 'application/octet-stream' });
     const res = await this.openai.audio.transcriptions.create({
       file,
       model: 'whisper-1',
     });
-    return String((res as any)?.text || '');
+    const text = String((res as any)?.text || '');
+    this.logger.log(`[STT] transcribe result — "${text.slice(0, 80)}" (${text.length} chars)`);
+    return text;
   }
 
   async tts(input: { userId: string; text: string; model: string; voice: string }): Promise<string> {
@@ -85,6 +89,8 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
         else if (v !== undefined && v !== null) normalizedSlots[k] = String(v);
       }
 
+      this.logger.log(`[INTENT] intent=${parsed?.intent} lang=${parsed?.language} conf=${parsed?.confidence} text="${String(parsed?.assistant_text || '').slice(0, 80)}"`);
+
       return {
         intent: String(parsed?.intent || 'chat'),
         confidence: Number(parsed?.confidence || 0.5),
@@ -93,7 +99,8 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
         assistant_text: String(parsed?.assistant_text || ''),
         needs_confirmation: Boolean(parsed?.needs_confirmation),
       };
-    } catch {
+    } catch (err: any) {
+      this.logger.error(`[INTENT] extractIntent failed — ${err?.message ?? String(err)}`);
       return {
         intent: 'chat',
         confidence: 0.1,
