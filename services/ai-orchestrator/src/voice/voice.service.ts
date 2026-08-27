@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import {
   LEELOO_SYSTEM_PROMPT,
@@ -22,6 +22,8 @@ type IntentResult = {
 
 @Injectable()
 export class VoiceService {
+  private readonly logger = new Logger(VoiceService.name);
+
   constructor(
     private readonly openAiQueue: OpenAiQueue,
     private readonly ttsFactory: TtsFactory,
@@ -404,7 +406,10 @@ export class VoiceService {
     try {
       const result = await this.ttsFactory.synthesize(input.text);
       return result.audio.toString('base64');
-    } catch {
+    } catch (err: any) {
+      this.logger.error(
+        `[TTS] safeTts failed — provider=${process.env.TTS_PROVIDER ?? 'unknown'} voiceId=${process.env.ELEVENLABS_VOICE_ID ?? 'unset'} error=${err?.message ?? String(err)}`,
+      );
       return null;
     }
   }
