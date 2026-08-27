@@ -15,7 +15,8 @@ import { WaveBackground } from '@/components/WaveBackground';
 import { T } from '@/lib/theme';
 import { Search } from 'lucide-react-native';
 import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
+import { es, enUS, ptBR, fr as frLocale } from 'date-fns/locale';
+import type { Locale } from 'date-fns';
 import { profilesAPI, verseAPI } from '@/lib/api';
 import { useSettingsStore } from '@/store/settings';
 import { deviceLogger } from '@/services/device-logger';
@@ -26,6 +27,8 @@ const UI_STRINGS = {
     greeting_morning: 'Good morning',
     greeting_afternoon: 'Good afternoon',
     greeting_evening: 'Good evening',
+    hello: 'Hello',
+    fallback_name: '',
     ask_leeloo: 'How can I help you today?',
     plan_title: "Today's plan",
     ask_plan: 'Ask Leeloo what you have today →',
@@ -39,11 +42,23 @@ const UI_STRINGS = {
     no_date: 'No date',
     write_here: 'Write here...',
     calendar_title: 'Calendar',
+    agenda_cmd: 'what do I have today',
+    emails_cmd: 'check my emails',
+    date_format: 'EEEE, MMMM d',
+    pw_christian: 'Verse of the day',
+    pw_coach: "Today's challenge",
+    pw_business: 'Executive briefing',
+    pw_mentor: 'Mentor reflection',
+    pw_counselor: 'Your space',
+    pw_faith: "Today's purpose",
+    pw_default: 'Your day',
   },
   es: {
     greeting_morning: 'Buenos días',
     greeting_afternoon: 'Buenas tardes',
     greeting_evening: 'Buenas noches',
+    hello: 'Hola',
+    fallback_name: 'amiga',
     ask_leeloo: '¿En qué te ayudo hoy?',
     plan_title: 'Tu plan de hoy',
     ask_plan: 'Pregúntale a Leeloo qué tienes hoy →',
@@ -57,11 +72,23 @@ const UI_STRINGS = {
     no_date: 'Sin fecha',
     write_here: 'Escribe aquí...',
     calendar_title: 'Calendario',
+    agenda_cmd: 'qué tengo para hoy',
+    emails_cmd: 'revisa mis correos',
+    date_format: "EEEE d 'de' MMMM",
+    pw_christian: 'Versículo del día',
+    pw_coach: 'Desafío de hoy',
+    pw_business: 'Briefing ejecutivo',
+    pw_mentor: 'Reflexión del mentor',
+    pw_counselor: 'Tu espacio',
+    pw_faith: 'Propósito del día',
+    pw_default: 'Tu día',
   },
   pt: {
     greeting_morning: 'Bom dia',
     greeting_afternoon: 'Boa tarde',
     greeting_evening: 'Boa noite',
+    hello: 'Olá',
+    fallback_name: 'amiga',
     ask_leeloo: 'Como posso te ajudar hoje?',
     plan_title: 'Seu plano de hoje',
     ask_plan: 'Pergunte à Leeloo o que você tem hoje →',
@@ -75,14 +102,26 @@ const UI_STRINGS = {
     no_date: 'Sem data',
     write_here: 'Escreva aqui...',
     calendar_title: 'Calendário',
+    agenda_cmd: 'o que tenho para hoje',
+    emails_cmd: 'verificar meus e-mails',
+    date_format: "EEEE, d 'de' MMMM",
+    pw_christian: 'Versículo do dia',
+    pw_coach: 'Desafio de hoje',
+    pw_business: 'Briefing executivo',
+    pw_mentor: 'Reflexão do mentor',
+    pw_counselor: 'Seu espaço',
+    pw_faith: 'Propósito do dia',
+    pw_default: 'Seu dia',
   },
   fr: {
     greeting_morning: 'Bonjour',
     greeting_afternoon: 'Bon après-midi',
     greeting_evening: 'Bonsoir',
-    ask_leeloo: 'Comment puis-je t\'aider aujourd\'hui ?',
+    hello: 'Bonjour',
+    fallback_name: 'amie',
+    ask_leeloo: "Comment puis-je t'aider aujourd'hui ?",
     plan_title: 'Votre plan du jour',
-    ask_plan: 'Demandez à Leeloo ce que vous avez aujourd\'hui →',
+    ask_plan: "Demandez à Leeloo ce que vous avez aujourd'hui →",
     actions_title: 'Actions rapides',
     action_agenda: 'Mon agenda',
     action_emails: 'E-mails',
@@ -93,21 +132,33 @@ const UI_STRINGS = {
     no_date: 'Sans date',
     write_here: 'Écrivez ici...',
     calendar_title: 'Calendrier',
+    agenda_cmd: "qu'est-ce que j'ai aujourd'hui",
+    emails_cmd: 'vérifier mes e-mails',
+    date_format: 'EEEE d MMMM',
+    pw_christian: 'Verset du jour',
+    pw_coach: "Défi d'aujourd'hui",
+    pw_business: 'Briefing exécutif',
+    pw_mentor: 'Réflexion du mentor',
+    pw_counselor: 'Votre espace',
+    pw_faith: "Objectif du jour",
+    pw_default: 'Votre journée',
   },
 } as const;
+
+const DATE_LOCALES: Record<string, Locale> = { en: enUS, es, pt: ptBR, fr: frLocale };
 
 const { width: W } = Dimensions.get('window');
 const DAY_W = (W - 48) / 7;
 
 // ─── Personality-aware daily widget ───────────────────────────────────────────
-const PERSONALITY_WIDGETS: Record<string, { emoji: string; label: string; color: [string, string] }> = {
-  christian:  { emoji: '✝️',  label: 'Versículo del día',     color: ['#6366F1', '#8B5CF6'] },
-  coach:      { emoji: '🏆',  label: 'Desafío de hoy',        color: ['#F59E0B', '#EF4444'] },
-  business:   { emoji: '📊',  label: 'Briefing ejecutivo',    color: ['#0F172A', '#334155'] },
-  mentor:     { emoji: '🧭',  label: 'Reflexión del mentor',  color: ['#0891B2', '#0E7490'] },
-  counselor:  { emoji: '💜',  label: 'Tu espacio',            color: ['#7C3AED', '#A855F7'] },
-  faith:      { emoji: '🌿',  label: 'Propósito del día',     color: ['#059669', '#10B981'] },
-  default:    { emoji: '⭐',  label: 'Tu día',                color: ['#F07040', '#8375FA'] },
+const PERSONALITY_WIDGETS: Record<string, { emoji: string; labelKey: keyof typeof UI_STRINGS.en; color: [string, string] }> = {
+  christian:  { emoji: '✝️',  labelKey: 'pw_christian', color: ['#6366F1', '#8B5CF6'] },
+  coach:      { emoji: '🏆',  labelKey: 'pw_coach',     color: ['#F59E0B', '#EF4444'] },
+  business:   { emoji: '📊',  labelKey: 'pw_business',  color: ['#0F172A', '#334155'] },
+  mentor:     { emoji: '🧭',  labelKey: 'pw_mentor',    color: ['#0891B2', '#0E7490'] },
+  counselor:  { emoji: '💜',  labelKey: 'pw_counselor', color: ['#7C3AED', '#A855F7'] },
+  faith:      { emoji: '🌿',  labelKey: 'pw_faith',     color: ['#059669', '#10B981'] },
+  default:    { emoji: '⭐',  labelKey: 'pw_default',   color: ['#F07040', '#8375FA'] },
 };
 
 const COACH_CHALLENGES = [
@@ -161,11 +212,13 @@ function usePersonalityWidget() {
   return { personality, verseText, leelooName, loaded };
 }
 
-function PersonalityWidget({ personality, verseText, userName }: {
+function PersonalityWidget({ personality, verseText, userName, language }: {
   personality: string;
   verseText: string;
   userName: string;
+  language: string;
 }) {
+  const t = UI_STRINGS[language as keyof typeof UI_STRINGS] ?? UI_STRINGS.en;
   const cfg = PERSONALITY_WIDGETS[personality] ?? PERSONALITY_WIDGETS.default;
 
   const content = (() => {
@@ -201,7 +254,7 @@ function PersonalityWidget({ personality, verseText, userName }: {
     >
       <Text style={pw.emoji}>{cfg.emoji}</Text>
       <View style={{ flex: 1 }}>
-        <Text style={pw.label}>{cfg.label}</Text>
+        <Text style={pw.label}>{t[cfg.labelKey]}</Text>
         <Text style={pw.content} numberOfLines={3}>{content}</Text>
       </View>
     </LinearGradient>
@@ -223,6 +276,8 @@ const pw = StyleSheet.create({
 });
 
 function CalendarStrip() {
+  const language = useSettingsStore((s) => s.language);
+  const dateLocale = DATE_LOCALES[language] ?? enUS;
   const today = new Date();
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today);
@@ -243,7 +298,7 @@ function CalendarStrip() {
             activeOpacity={0.7}
           >
             <Text style={[cs.dayName, isSelected && cs.dayTextActive]}>
-              {format(d, 'EEE', { locale: es }).charAt(0).toUpperCase() + format(d, 'EEE', { locale: es }).slice(1, 3)}
+              {format(d, 'EEE', { locale: dateLocale }).charAt(0).toUpperCase() + format(d, 'EEE', { locale: dateLocale }).slice(1, 3)}
             </Text>
             <Text style={[cs.dayNum, isSelected && cs.dayTextActive]}>{d.getDate()}</Text>
             {isToday && <View style={[cs.dot, isSelected && cs.dotActive]} />}
@@ -282,6 +337,7 @@ export default function HomeScreen() {
   const { personality, verseText, leelooName } = usePersonalityWidget();
   const language = useSettingsStore((s) => s.language);
   const t = UI_STRINGS[language] ?? UI_STRINGS.en;
+  const dateLocale = DATE_LOCALES[language] ?? enUS;
 
   useEffect(() => { void hydrateTasks(); }, [hydrateTasks]);
 
@@ -299,7 +355,7 @@ export default function HomeScreen() {
     (typeof userMetadata?.name === 'string' && userMetadata.name.split(' ')[0]) ||
     '';
   // Use Leeloo name from profile if set, else fallback to Clerk name
-  const name = leelooName || clerkName || 'amiga';
+  const name = leelooName || clerkName || t.fallback_name;
 
   const upcoming = useMemo(() => {
     return (tasks || [])
@@ -324,7 +380,7 @@ export default function HomeScreen() {
     await sendText(text);
   };
 
-  const todayStr = format(new Date(), "EEEE d 'de' MMMM", { locale: es });
+  const todayStr = format(new Date(), t.date_format, { locale: dateLocale });
 
   return (
     <View style={{ flex: 1, backgroundColor: T.colors.cream }}>
@@ -339,7 +395,7 @@ export default function HomeScreen() {
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={styles.headerDate}>{todayStr}</Text>
-              <Text style={styles.headerName}>Hola, {name}</Text>
+              <Text style={styles.headerName}>{t.hello}{name ? `, ${name}` : ''}</Text>
             </View>
             <TouchableOpacity style={styles.searchBtn}>
               <Search size={20} color={T.colors.navy} strokeWidth={2} />
@@ -352,7 +408,7 @@ export default function HomeScreen() {
           />
 
           {/* ── PERSONALITY WIDGET ────────────────────── */}
-          <PersonalityWidget personality={personality} verseText={verseText} userName={name} />
+          <PersonalityWidget personality={personality} verseText={verseText} userName={name} language={language} />
 
           {/* ── VOICE + GREETING CARD ─────────────────── */}
           <LinearGradient
@@ -436,7 +492,7 @@ export default function HomeScreen() {
                       <View style={styles.planCardLeft}>
                         <Text style={styles.planCardTitle}>{task.title}</Text>
                         <Text style={styles.planCardSub}>
-                          {task.due_at ? new Date(task.due_at).toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short' }) : t.no_date}
+                          {task.due_at ? new Date(task.due_at).toLocaleDateString(language === 'pt' ? 'pt-BR' : language, { weekday: 'short', day: 'numeric', month: 'short' }) : t.no_date}
                         </Text>
                       </View>
                       <Text style={styles.planCardDots}>⋮</Text>
@@ -447,15 +503,15 @@ export default function HomeScreen() {
             )}
           </View>
 
-          {/* ── ACCIONES RÁPIDAS ──────────────────────── */}
+          {/* ── QUICK ACTIONS ─────────────────────────── */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Acciones rápidas</Text>
+            <Text style={styles.sectionTitle}>{t.actions_title}</Text>
             <View style={styles.quickActions}>
               {[
-                { emoji: '🗓️', label: 'Mi agenda', action: () => sendText('qué tengo para hoy') },
-                { emoji: '📧', label: 'Correos', action: () => sendText('revisa mis correos') },
-                { emoji: '✅', label: 'Tareas', action: () => router.push('/(tabs)/tasks') },
-                { emoji: '🧠', label: 'Modo Leeloo', action: () => router.push('/settings/personality') },
+                { emoji: '🗓️', label: t.action_agenda, action: () => sendText(t.agenda_cmd) },
+                { emoji: '📧', label: t.action_emails, action: () => sendText(t.emails_cmd) },
+                { emoji: '✅', label: t.action_tasks, action: () => router.push('/(tabs)/tasks') },
+                { emoji: '🧠', label: t.action_mode, action: () => router.push('/settings/personality') },
               ].map((a) => (
                 <TouchableOpacity key={a.label} style={styles.actionCard} onPress={a.action} activeOpacity={0.75}>
                   <Text style={styles.actionEmoji}>{a.emoji}</Text>

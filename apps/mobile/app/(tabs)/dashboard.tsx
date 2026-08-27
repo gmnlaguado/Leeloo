@@ -4,6 +4,42 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { useTasksStore } from '@/store/tasks';
 import { TaskCard } from '@/components/TaskCard';
+import { useSettingsStore } from '@/store/settings';
+
+const DASH_STRINGS = {
+  en: {
+    title: 'Dashboard',
+    tab_today: 'Today',
+    tab_approvals: 'Approvals',
+    tab_completed: 'Completed',
+    empty: 'No tasks in this view.',
+    badge_from: 'From',
+  },
+  es: {
+    title: 'Dashboard',
+    tab_today: 'Hoy',
+    tab_approvals: 'Aprobaciones',
+    tab_completed: 'Completadas',
+    empty: 'No hay tareas en esta vista.',
+    badge_from: 'De',
+  },
+  pt: {
+    title: 'Dashboard',
+    tab_today: 'Hoje',
+    tab_approvals: 'Aprovações',
+    tab_completed: 'Concluídas',
+    empty: 'Nenhuma tarefa nesta visualização.',
+    badge_from: 'De',
+  },
+  fr: {
+    title: 'Tableau de bord',
+    tab_today: "Aujourd'hui",
+    tab_approvals: 'Approbations',
+    tab_completed: 'Terminées',
+    empty: 'Aucune tâche dans cette vue.',
+    badge_from: 'De',
+  },
+} as const;
 
 type TabKey = 'today' | 'approvals' | 'completed';
 
@@ -19,6 +55,8 @@ export default function DashboardScreen() {
   const tasks = useTasksStore((s) => s.tasks);
   const params = useLocalSearchParams();
   const [tab, setTab] = useState<TabKey>('today');
+  const language = useSettingsStore((s) => s.language);
+  const d = DASH_STRINGS[language] ?? DASH_STRINGS.en;
 
   useEffect(() => {
     hydrate();
@@ -53,18 +91,18 @@ export default function DashboardScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Dashboard</Text>
+        <Text style={styles.title}>{d.title}</Text>
       </View>
 
       <View style={styles.tabs}>
-        <Tab label="Hoy" active={tab === 'today'} onPress={() => setTab('today')} />
+        <Tab label={d.tab_today} active={tab === 'today'} onPress={() => setTab('today')} />
         <Tab
-          label={`Aprobaciones${approvals.length ? ` (${approvals.length})` : ''}`}
+          label={`${d.tab_approvals}${approvals.length ? ` (${approvals.length})` : ''}`}
           active={tab === 'approvals'}
           onPress={() => setTab('approvals')}
         />
         <Tab
-          label={`Completadas${completed.length ? ` (${completed.length})` : ''}`}
+          label={`${d.tab_completed}${completed.length ? ` (${completed.length})` : ''}`}
           active={tab === 'completed'}
           onPress={() => setTab('completed')}
         />
@@ -72,7 +110,7 @@ export default function DashboardScreen() {
 
       <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
         {list.length === 0 ? (
-          <Text style={styles.empty}>No hay tareas en esta vista.</Text>
+          <Text style={styles.empty}>{d.empty}</Text>
         ) : (
           <View style={{ paddingTop: 10 }}>
             {list.map((t) => {
@@ -81,7 +119,7 @@ export default function DashboardScreen() {
                 <TaskCard
                   key={t.id}
                   task={t}
-                  badgeText={childName ? `De: ${childName}` : undefined}
+                  badgeText={childName ? `${d.badge_from}: ${childName}` : undefined}
                   onApprove={tab === 'approvals' ? () => {} : undefined}
                   onReject={tab === 'approvals' ? () => {} : undefined}
                   onEdit={tab === 'approvals' ? () => {} : undefined}

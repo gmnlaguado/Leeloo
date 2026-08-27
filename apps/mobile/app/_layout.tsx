@@ -265,8 +265,22 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Ping both backend services on every app launch so they wake up from Render
+// Starter cold sleep BEFORE the user types anything. Fire-and-forget.
+function warmupBackends() {
+  const api = process.env.EXPO_PUBLIC_API_URL ?? 'https://leeloo-api-55i5.onrender.com';
+  const ai  = process.env.EXPO_PUBLIC_AI_ORCHESTRATOR_URL ?? 'https://leeloo-ai.onrender.com';
+  [api, ai].forEach((base) => {
+    fetch(`${base}/health`, { signal: AbortSignal.timeout(45_000) }).catch(() => {});
+  });
+}
+
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({ Raleway_400Regular, Raleway_600SemiBold, Raleway_700Bold });
+
+  useEffect(() => {
+    warmupBackends();
+  }, []);
 
   useEffect(() => {
     if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
