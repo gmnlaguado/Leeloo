@@ -46,16 +46,60 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
 
   async transcribe(input: { userId: string; filename: string; bytes: Buffer }): Promise<string> {
     await this.assertWithinOpenAiRateLimit(input.userId);
+
+    // Use self-hosted leeloo-stt first (<2s, already paid $25/mo on Render Standard).
+    // Falls back to Groq only if the STT service is unreachable or returns an error.
+    try {
+      const text = await this.transcribeViaSTTService({ filename: input.filename, bytes: input.bytes });
+      if (text) return text;
+    } catch (err: any) {
+      this.logger.warn(`[STT] leeloo-stt failed — falling back to Groq — ${err?.message ?? String(err)}`);
+    }
+
+    // Groq fallback (cloud Whisper, ~2-30s depending on rate limits)
     const provider = process.env.GROQ_API_KEY ? 'groq' : 'openai';
     this.logger.log(`[STT] transcribe start — provider=${provider} file=${input.filename} bytes=${input.bytes.length}`);
     const file = await toFile(input.bytes, input.filename, { type: 'application/octet-stream' });
     const res = await this.openai.audio.transcriptions.create({
       file,
       model: 'whisper-1',
-    });
+      language: 'es',
+      response_format: 'json',
+    } as any);
     const text = String((res as any)?.text || '');
     this.logger.log(`[STT] transcribe result — "${text.slice(0, 80)}" (${text.length} chars)`);
     return text;
+  }
+
+  private async transcribeViaSTTService(input: { filename: string; bytes: Buffer }): Promise<string | null> {
+    const sttUrl = String(process.env.STT_URL || '').trim();
+    const sttSecret = String(process.env.STT_SHARED_SECRET || '').trim();
+    if (!sttUrl || !sttSecret) return null;
+
+    const form = new FormData();
+    const blob = new Blob([input.bytes], { type: 'application/octet-stream' });
+    form.append('file', blob, input.filename);
+    form.append('language', 'es');
+
+    const t0 = Date.now();
+    this.logger.log(`[STT] leeloo-stt start — file=${input.filename} bytes=${input.bytes.length}`);
+
+    const res = await fetch(`${sttUrl}/v1/transcribe`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${sttSecret}` },
+      body: form,
+      signal: AbortSignal.timeout(25_000),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`leeloo-stt ${res.status}: ${body.slice(0, 200)}`);
+    }
+
+    const json = await res.json() as { text?: string };
+    const text = String(json?.text || '').trim();
+    this.logger.log(`[STT] leeloo-stt result — ${Date.now() - t0}ms — "${text.slice(0, 80)}" (${text.length} chars)`);
+    return text || null;
   }
 
   async tts(input: { userId: string; text: string; model: string; voice: string }): Promise<string> {
@@ -89,12 +133,14 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
         else if (v !== undefined && v !== null) normalizedSlots[k] = String(v);
       }
 
-      this.logger.log(`[INTENT] intent=${parsed?.intent} lang=${parsed?.language} conf=${parsed?.confidence} text="${String(parsed?.assistant_text || '').slice(0, 80)}"`);
+      const resolvedLang = String(parsed?.language || input.language || 'es').toLowerCase().slice(0, 5);
+      const resolvedConf = Number(parsed?.confidence ?? 0.5);
+      this.logger.log(`[INTENT] intent=${parsed?.intent} lang=${resolvedLang} conf=${resolvedConf} text="${String(parsed?.assistant_text || '').slice(0, 80)}"`);
 
       return {
         intent: String(parsed?.intent || 'chat'),
-        confidence: Number(parsed?.confidence || 0.5),
-        language: (String(parsed?.language || input.language) as any) || 'en',
+        confidence: resolvedConf,
+        language: (resolvedLang as any),
         slots: normalizedSlots,
         assistant_text: String(parsed?.assistant_text || ''),
         needs_confirmation: Boolean(parsed?.needs_confirmation),
@@ -135,7 +181,7 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       throw Object.assign(new Error('Claude monthly budget exceeded'), { status: 429 });
     }
 
-    const userContent = this.buildIntentPrompt(data);
+    const userContent = this.buildIntentPrompt({ ...data, language: data.language || 'es' });
     const response = await this.anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 700,
