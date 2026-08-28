@@ -25,8 +25,10 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     // Set GROQ_API_KEY in Render to enable mic/voice input without paying OpenAI.
     const groqKey = String(process.env.GROQ_API_KEY || '').trim();
     const openaiKey = String(process.env.OPENAI_API_KEY || '').trim();
+    // 8-second hard timeout on ALL Groq requests. Without this, openai.embeddings.create()
+    // (unsupported on Groq) hangs ~60s before failing, blocking every voice request.
     this.openai = groqKey
-      ? new OpenAI({ apiKey: groqKey, baseURL: 'https://api.groq.com/openai/v1' })
+      ? new OpenAI({ apiKey: groqKey, baseURL: 'https://api.groq.com/openai/v1', timeout: 8_000 })
       : new OpenAI({ apiKey: openaiKey });
 
     const anthropicKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
@@ -222,12 +224,19 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     );
 
     const block = response.content?.[0];
-    if (block?.type !== 'text') return '{}';
+    if (block?.type !== 'text') {
+      this.logger.warn(`[INTENT] Claude returned no text block — content=${JSON.stringify(response.content).slice(0, 200)}`);
+      return '{}';
+    }
 
     const text = block.text.trim();
+    this.logger.debug(`[INTENT] Claude raw (${text.length} chars): ${text.slice(0, 300)}`);
     const start = text.indexOf('{');
     const end = text.lastIndexOf('}');
-    if (start === -1 || end === -1) return '{}';
+    if (start === -1 || end === -1) {
+      this.logger.warn(`[INTENT] Claude response has no JSON braces — raw="${text.slice(0, 200)}"`);
+      return '{}';
+    }
     return text.slice(start, end + 1);
   }
 
