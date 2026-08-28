@@ -56,29 +56,39 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`[STT] leeloo-stt failed — falling back to Groq — ${err?.message ?? String(err)}`);
     }
 
-    // Groq fallback (cloud Whisper, ~2-5s with distil model)
+    // Groq fallback (cloud Whisper, ~3-8s with turbo model)
     const isGroq = Boolean(process.env.GROQ_API_KEY);
     const provider = isGroq ? 'groq' : 'openai';
-    // Groq requires its own model name — 'whisper-1' is OpenAI-only and causes Groq to be slow.
-    // distil-whisper-large-v3-en is Groq's fastest STT model (~2-5s for most clips).
-    const sttModel = isGroq ? 'distil-whisper-large-v3-en' : 'whisper-1';
+    // whisper-large-v3-turbo: Groq's fastest multilingual model.
+    // distil-whisper-large-v3-en is English-only and garbles Spanish audio.
+    const sttModel = isGroq ? 'whisper-large-v3-turbo' : 'whisper-1';
     const sttLang = String(input.language || 'es').slice(0, 2).toLowerCase();
+    const timeoutMs = isGroq ? 20_000 : 45_000;
     this.logger.log(`[STT] transcribe start — provider=${provider} model=${sttModel} lang=${sttLang} file=${input.filename} bytes=${input.bytes.length}`);
-    const file = await toFile(input.bytes, input.filename, { type: 'application/octet-stream' });
+    const file = await toFile(input.bytes, input.filename, { type: 'audio/m4a' });
 
-    // AbortSignal in SDK options is unreliable across SDK versions — use Promise.race instead.
-    const transcribePromise = this.openai.audio.transcriptions.create({
-      file,
-      model: sttModel,
-      language: sttLang,
-      response_format: 'json',
-    } as any);
-    const timeoutMs = isGroq ? 25_000 : 45_000;
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`[STT] ${provider} timeout after ${timeoutMs / 1000}s`)), timeoutMs),
-    );
+    // Use AbortController to actually cancel the underlying HTTP request on timeout.
+    // Promise.race alone doesn't cancel the fetch; AbortController does.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      this.logger.warn(`[STT] ${provider} aborting — exceeded ${timeoutMs / 1000}s`);
+      controller.abort();
+    }, timeoutMs);
 
-    const res = await Promise.race([transcribePromise, timeoutPromise]);
+    let res: any;
+    try {
+      res = await this.openai.audio.transcriptions.create(
+        { file, model: sttModel, language: sttLang, response_format: 'json' } as any,
+        { signal: controller.signal } as any,
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (controller.signal.aborted) {
+      throw new Error(`[STT] ${provider} timeout after ${timeoutMs / 1000}s`);
+    }
+
     const text = String((res as any)?.text || '');
     this.logger.log(`[STT] transcribe result — provider=${provider} "${text.slice(0, 80)}" (${text.length} chars)`);
     return text;
