@@ -276,30 +276,56 @@ export const voiceAPI = {
       personality?: string;
       user_name?: string;
     },
-  ): Promise<AxiosResponse<unknown>> => {
-    // The ai-orchestrator identifies the caller from the verified Clerk JWT
-    // (AuthGuard), not from `user_id` in the body — that field is accepted but
-    // ignored server-side. A Bearer token is required or the request 401s.
+  ): Promise<{ data: unknown; status: number }> => {
+    // Uses fetch (same as processVoice) — Axios XHR adapter has known issues on
+    // Android React Native with certain HTTPS configurations on Render.com.
     const userId = await resolveUserId();
     const { token } = await resolveBearerToken();
-    return axios.post(
-      `${AI_V1_BASE_URL}/voice/test`,
-      {
-        user_id: userId,
-        text,
-        ...(opts?.language ? { language: opts.language } : {}),
-        ...(opts?.confirmation ? { confirmation: opts.confirmation } : {}),
-        ...(opts?.personality ? { personality: opts.personality } : {}),
-        ...(opts?.user_name ? { user_name: opts.user_name } : {}),
-      } satisfies RequestBody,
-      {
-        timeout: 90000,
+    const url = `${AI_V1_BASE_URL}/voice/test`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 90000);
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Accept: 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-      },
-    );
+        body: JSON.stringify({
+          user_id: userId,
+          text,
+          ...(opts?.language ? { language: opts.language } : {}),
+          ...(opts?.confirmation ? { confirmation: opts.confirmation } : {}),
+          ...(opts?.personality ? { personality: opts.personality } : {}),
+          ...(opts?.user_name ? { user_name: opts.user_name } : {}),
+        }),
+        signal: controller.signal,
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        const err = new Error(`HTTP ${res.status}`) as Error & {
+          response?: { status: number; data: unknown };
+        };
+        err.response = { status: res.status, data };
+        throw err;
+      }
+
+      return { data, status: res.status };
+    } catch (err: unknown) {
+      if ((err as { name?: string } | null)?.name === 'AbortError') {
+        const e = new Error('Text request timed out. Please try again.') as Error & { code?: string };
+        e.code = 'ECONNABORTED';
+        throw e;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   },
 };
 
