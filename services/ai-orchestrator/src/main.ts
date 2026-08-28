@@ -37,7 +37,7 @@ async function bootstrap() {
   failFastEnv();
 
   const app = await NestFactory.create(AppModule);
-  app.setGlobalPrefix('v1');
+  app.setGlobalPrefix('v1', { exclude: ['health'] });
 
   const port = Number(process.env.PORT || process.env.AI_ORCHESTRATOR_PORT || 3002);
   await app.listen(port, '0.0.0.0');
