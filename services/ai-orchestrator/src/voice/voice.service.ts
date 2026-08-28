@@ -44,6 +44,9 @@ export class VoiceService {
   }) {
     const language = this.normalizeLanguage(input.language);
 
+    const t0 = Date.now();
+    const ms = () => Date.now() - t0;
+
     let transcription = '';
     try {
       transcription = input.text
@@ -54,7 +57,9 @@ export class VoiceService {
             bytes: input.audio?.buffer || Buffer.from(''),
             language,
           });
+      this.logger.log(`[PIPE] stt done +${ms()}ms — "${transcription.slice(0, 60)}"`);
     } catch (err: any) {
+      this.logger.error(`[PIPE] stt FAILED +${ms()}ms — ${(err as any)?.message}`);
       return {
         ok: false,
         transcription: input.text ? String(input.text) : '',
@@ -81,12 +86,15 @@ export class VoiceService {
 
     let memories = '';
     try {
+      this.logger.log(`[PIPE] memory start +${ms()}ms`);
       memories = await this.openAiQueue.fetchMemoryContext({
         userId: input.userId,
         query: transcription,
         limit: 5,
       });
+      this.logger.log(`[PIPE] memory done +${ms()}ms — ${memories.length} chars`);
     } catch {
+      this.logger.warn(`[PIPE] memory failed +${ms()}ms — continuing without`);
       memories = '';
     }
 
@@ -102,11 +110,16 @@ export class VoiceService {
     const timeOfDay =
       hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
 
+    this.logger.log(`[PIPE] userCtx start +${ms()}ms — userName=${!!input.userName}`);
     const userCtx = input.userName
       ? await this.openAiQueue
           .fetchUserContext(input.userId)
-          .catch(() => ({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 }))
+          .catch((e: any) => {
+            this.logger.warn(`[PIPE] userCtx failed +${ms()}ms — ${e?.message}`);
+            return { todayTasks: [], upcomingEvents: [], pendingApprovals: 0 };
+          })
       : { todayTasks: [], upcomingEvents: [], pendingApprovals: 0 };
+    this.logger.log(`[PIPE] userCtx done +${ms()}ms`);
 
     const systemPrompt = input.userName
       ? buildSystemPrompt(personality, input.userName, { ...userCtx, timeOfDay }, language)
@@ -114,6 +127,7 @@ export class VoiceService {
 
     let intent: IntentResult;
     try {
+      this.logger.log(`[PIPE] claude start +${ms()}ms`);
       intent = await this.openAiQueue.extractIntent({
         userId: input.userId,
         language,
@@ -122,7 +136,9 @@ export class VoiceService {
         systemPrompt,
         systemPromptVersion: LEELOO_SYSTEM_PROMPT_VERSION,
       });
+      this.logger.log(`[PIPE] claude done +${ms()}ms — intent=${intent?.intent}`);
     } catch (err: any) {
+      this.logger.error(`[PIPE] claude FAILED +${ms()}ms — ${(err as any)?.message}`);
       intent = {
         intent: 'chat',
         confidence: 0.1,
@@ -132,6 +148,7 @@ export class VoiceService {
       };
     }
 
+    this.logger.log(`[PIPE] action start +${ms()}ms — intent=${intent?.intent}`);
     const actionResult = await this.dispatchAction({
       intent,
       userId: input.userId,
@@ -141,6 +158,7 @@ export class VoiceService {
       pendingAttendeeName: input.pending_attendee_name,
       language,
     });
+    this.logger.log(`[PIPE] action done +${ms()}ms`);
 
     let assistantText = this.buildAssistantText(intent, actionResult);
 
@@ -271,10 +289,12 @@ export class VoiceService {
       };
     }
 
+    this.logger.log(`[PIPE] tts start +${ms()}ms — ${assistantText.length} chars`);
     const ttsAudioBase64 = await this.safeTts({
       userId: input.userId,
       text: assistantText,
     });
+    this.logger.log(`[PIPE] tts done +${ms()}ms — audio=${ttsAudioBase64 ? 'ok' : 'NULL (ElevenLabs failed)'}`);
 
     // Persist this exchange so Leeloo remembers it in future sessions
     this.saveTurnFireAndForget({

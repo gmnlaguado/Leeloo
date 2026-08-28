@@ -207,17 +207,31 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     }
 
     const userContent = this.buildIntentPrompt({ ...data, language: data.language || 'es' });
-    const response = await this.anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 700,
-      temperature: 0,
-      system: [{ type: 'text', text: data.systemPrompt, cache_control: { type: 'ephemeral' } }],
-      // Prefill forces Claude to begin with '{' — prevents prose responses that break JSON parsing.
-      messages: [
-        { role: 'user', content: userContent },
-        { role: 'assistant', content: '{' },
-      ],
-    } as any);
+    const claudeController = new AbortController();
+    const claudeTimeout = setTimeout(() => {
+      this.logger.warn('[INTENT] Claude timeout after 25s — aborting');
+      claudeController.abort();
+    }, 25_000);
+
+    let response: any;
+    try {
+      response = await this.anthropic.messages.create(
+        {
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 700,
+          temperature: 0,
+          system: [{ type: 'text', text: data.systemPrompt, cache_control: { type: 'ephemeral' } }],
+          // Prefill forces Claude to begin with '{' — prevents prose responses that break JSON parsing.
+          messages: [
+            { role: 'user', content: userContent },
+            { role: 'assistant', content: '{' },
+          ],
+        } as any,
+        { signal: claudeController.signal } as any,
+      );
+    } finally {
+      clearTimeout(claudeTimeout);
+    }
 
     const inputTokens = response.usage?.input_tokens ?? 0;
     const outputTokens = response.usage?.output_tokens ?? 0;
