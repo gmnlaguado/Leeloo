@@ -66,14 +66,15 @@ export class ElevenLabsService {
         Accept: 'audio/mpeg',
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
     });
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      this.logger.warn(
-        `ElevenLabs synthesize failed status=${res.status} body=${errText.slice(0, 200)}`,
+      this.logger.error(
+        `ElevenLabs synthesize FAILED status=${res.status} voiceId=${this.voiceId} body=${errText.slice(0, 400)}`,
       );
-      throw new Error(`ElevenLabs synthesize failed: HTTP ${res.status}`);
+      throw new Error(`ElevenLabs synthesize failed: HTTP ${res.status} — ${errText.slice(0, 200)}`);
     }
 
     const arrayBuffer = await res.arrayBuffer();

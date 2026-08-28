@@ -56,19 +56,31 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`[STT] leeloo-stt failed — falling back to Groq — ${err?.message ?? String(err)}`);
     }
 
-    // Groq fallback (cloud Whisper, ~2-30s depending on rate limits)
-    const provider = process.env.GROQ_API_KEY ? 'groq' : 'openai';
+    // Groq fallback (cloud Whisper, ~2-5s with distil model)
+    const isGroq = Boolean(process.env.GROQ_API_KEY);
+    const provider = isGroq ? 'groq' : 'openai';
+    // Groq requires its own model name — 'whisper-1' is OpenAI-only and causes Groq to be slow.
+    // distil-whisper-large-v3-en is Groq's fastest STT model (~2-5s for most clips).
+    const sttModel = isGroq ? 'distil-whisper-large-v3-en' : 'whisper-1';
     const sttLang = String(input.language || 'es').slice(0, 2).toLowerCase();
-    this.logger.log(`[STT] transcribe start — provider=${provider} lang=${sttLang} file=${input.filename} bytes=${input.bytes.length}`);
+    this.logger.log(`[STT] transcribe start — provider=${provider} model=${sttModel} lang=${sttLang} file=${input.filename} bytes=${input.bytes.length}`);
     const file = await toFile(input.bytes, input.filename, { type: 'application/octet-stream' });
-    const res = await this.openai.audio.transcriptions.create({
+
+    // AbortSignal in SDK options is unreliable across SDK versions — use Promise.race instead.
+    const transcribePromise = this.openai.audio.transcriptions.create({
       file,
-      model: 'whisper-1',
+      model: sttModel,
       language: sttLang,
       response_format: 'json',
-    } as any, { signal: AbortSignal.timeout(30_000) } as any);
+    } as any);
+    const timeoutMs = isGroq ? 25_000 : 45_000;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`[STT] ${provider} timeout after ${timeoutMs / 1000}s`)), timeoutMs),
+    );
+
+    const res = await Promise.race([transcribePromise, timeoutPromise]);
     const text = String((res as any)?.text || '');
-    this.logger.log(`[STT] transcribe result — "${text.slice(0, 80)}" (${text.length} chars)`);
+    this.logger.log(`[STT] transcribe result — provider=${provider} "${text.slice(0, 80)}" (${text.length} chars)`);
     return text;
   }
 
@@ -89,7 +101,7 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       method: 'POST',
       headers: { Authorization: `Bearer ${sttSecret}` },
       body: form,
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.timeout(8_000),
     });
 
     if (!res.ok) {

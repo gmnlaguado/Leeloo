@@ -22,7 +22,16 @@ WORKDIR /opt
 RUN git clone --depth 1 --branch ${WHISPER_CPP_REF} https://github.com/ggml-org/whisper.cpp.git
 
 WORKDIR /opt/whisper.cpp
-RUN cmake -B build -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
+# Explicitly disable GPU backends so the binary runs on CPU-only Render instances.
+# Without these flags cmake auto-detects CUDA/Metal and compiles GPU support in;
+# the resulting binary then tries to initialise the GPU at runtime and crashes.
+RUN cmake -B build \
+    -DWHISPER_BUILD_TESTS=OFF \
+    -DWHISPER_BUILD_EXAMPLES=ON \
+    -DGGML_CUDA=OFF \
+    -DGGML_METAL=OFF \
+    -DGGML_OPENCL=OFF \
+    -DGGML_VULKAN=OFF
 RUN cmake --build build -j
 
 # Collect shared libs required by whisper-cli (Render runtime currently misses libwhisper/libggml)
