@@ -37,7 +37,12 @@ async function bootstrap() {
   failFastEnv();
 
   const app = await NestFactory.create(AppModule);
-  app.setGlobalPrefix('v1', { exclude: ['health'] });
+
+  // Register /health before global prefix so Render's health check always finds it
+  const httpAdapter = app.getHttpAdapter();
+  httpAdapter.get('/health', (_req: any, res: any) => res.status(200).json({ ok: true }));
+
+  app.setGlobalPrefix('v1');
 
   const port = Number(process.env.PORT || process.env.AI_ORCHESTRATOR_PORT || 3002);
   await app.listen(port, '0.0.0.0');

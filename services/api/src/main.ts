@@ -94,7 +94,11 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
 
-  app.setGlobalPrefix('v1', { exclude: ['health'] });
+  // Register /health before global prefix so Render's health check always finds it
+  const httpAdapter = app.getHttpAdapter();
+  httpAdapter.get('/health', (_req: any, res: any) => res.status(200).json({ status: 'ok' }));
+
+  app.setGlobalPrefix('v1');
   app.enableCors(buildCorsOptions());
   app.useGlobalPipes(
     new ValidationPipe({
