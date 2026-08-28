@@ -161,26 +161,86 @@ const PERSONALITY_WIDGETS: Record<string, { emoji: string; labelKey: keyof typeo
   default:    { emoji: '⭐',  labelKey: 'pw_default',   color: ['#F07040', '#8375FA'] },
 };
 
-const COACH_CHALLENGES = [
-  '¿Cuál es el UNA cosa que, si la haces hoy, todo lo demás se vuelve más fácil?',
-  'Identifica tu tarea de mayor impacto antes de revisar el teléfono.',
-  'Bloquea 90 minutos de trabajo profundo sin interrupciones hoy.',
-  '¿Qué compromiso de la semana pasada aún no cumpliste? Hazlo hoy.',
-];
+const COACH_CHALLENGES: Record<string, string[]> = {
+  en: [
+    'What is the ONE thing that, if you do it today, makes everything else easier?',
+    'Identify your highest-impact task before checking your phone.',
+    'Block 90 minutes of deep, uninterrupted work today.',
+    'What commitment from last week did you not fulfill? Do it today.',
+  ],
+  es: [
+    '¿Cuál es la UNA cosa que, si la haces hoy, todo lo demás se vuelve más fácil?',
+    'Identifica tu tarea de mayor impacto antes de revisar el teléfono.',
+    'Bloquea 90 minutos de trabajo profundo sin interrupciones hoy.',
+    '¿Qué compromiso de la semana pasada aún no cumpliste? Hazlo hoy.',
+  ],
+  pt: [
+    'Qual é a UMA coisa que, se você fizer hoje, tudo fica mais fácil?',
+    'Identifique sua tarefa de maior impacto antes de checar o celular.',
+    'Reserve 90 minutos de trabalho profundo sem interrupções hoje.',
+    'Que compromisso da semana passada você ainda não cumpriu? Faça hoje.',
+  ],
+  fr: [
+    'Quelle est LA chose que, si vous la faites aujourd\'hui, rend tout le reste plus facile ?',
+    'Identifiez votre tâche à plus fort impact avant de vérifier votre téléphone.',
+    'Bloquez 90 minutes de travail profond sans interruption aujourd\'hui.',
+    'Quel engagement de la semaine dernière n\'avez-vous pas tenu ? Faites-le aujourd\'hui.',
+  ],
+};
 
-const MENTOR_REFLECTIONS = [
-  'El progreso constante supera al perfeccionismo esporádico.',
-  'Lo que siembras en tus hábitos, lo cosechas en tus resultados.',
-  'Cada día es una oportunidad de ser quien quieres ser.',
-  'La claridad viene de la acción, no de la contemplación.',
-];
+const MENTOR_REFLECTIONS: Record<string, string[]> = {
+  en: [
+    'Consistent progress beats sporadic perfectionism.',
+    'What you sow in your habits, you reap in your results.',
+    'Every day is an opportunity to become who you want to be.',
+    'Clarity comes from action, not contemplation.',
+  ],
+  es: [
+    'El progreso constante supera al perfeccionismo esporádico.',
+    'Lo que siembras en tus hábitos, lo cosechas en tus resultados.',
+    'Cada día es una oportunidad de ser quien quieres ser.',
+    'La claridad viene de la acción, no de la contemplación.',
+  ],
+  pt: [
+    'O progresso constante supera o perfeccionismo esporádico.',
+    'O que você semeia nos seus hábitos, colhe nos seus resultados.',
+    'Cada dia é uma oportunidade de ser quem você quer ser.',
+    'A clareza vem da ação, não da contemplação.',
+  ],
+  fr: [
+    'Le progrès constant l\'emporte sur le perfectionnisme sporadique.',
+    'Ce que vous semez dans vos habitudes, vous le récoltez dans vos résultats.',
+    'Chaque jour est une occasion de devenir qui vous voulez être.',
+    'La clarté vient de l\'action, pas de la contemplation.',
+  ],
+};
 
-const FAITH_PURPOSES = [
-  'Hoy tienes la oportunidad de servir a alguien inesperadamente.',
-  'Cada tarea cumplida es un acto de amor hacia tu familia.',
-  'La gratitud abre puertas que el esfuerzo solo no puede abrir.',
-  'Tu presencia plena es el regalo más grande que puedes dar.',
-];
+const FAITH_PURPOSES: Record<string, string[]> = {
+  en: [
+    'Today you have the opportunity to serve someone unexpectedly.',
+    'Every completed task is an act of love toward your family.',
+    'Gratitude opens doors that effort alone cannot.',
+    'Your full presence is the greatest gift you can give.',
+  ],
+  es: [
+    'Hoy tienes la oportunidad de servir a alguien inesperadamente.',
+    'Cada tarea cumplida es un acto de amor hacia tu familia.',
+    'La gratitud abre puertas que el esfuerzo solo no puede abrir.',
+    'Tu presencia plena es el regalo más grande que puedes dar.',
+  ],
+  pt: [
+    'Hoje você tem a oportunidade de servir alguém inesperadamente.',
+    'Cada tarefa cumprida é um ato de amor para com sua família.',
+    'A gratidão abre portas que o esforço sozinho não consegue.',
+    'Sua presença plena é o maior presente que você pode dar.',
+  ],
+  fr: [
+    'Aujourd\'hui vous avez l\'opportunité de servir quelqu\'un de façon inattendue.',
+    'Chaque tâche accomplie est un acte d\'amour envers votre famille.',
+    'La gratitude ouvre des portes que l\'effort seul ne peut ouvrir.',
+    'Votre présence totale est le plus grand cadeau que vous puissiez offrir.',
+  ],
+};
 
 const dayIndex = new Date().getDay();
 
@@ -222,27 +282,41 @@ function PersonalityWidget({ personality, verseText, userName, language }: {
   const cfg = PERSONALITY_WIDGETS[personality] ?? PERSONALITY_WIDGETS.default;
 
   const content = (() => {
+    const lang = language as keyof typeof COACH_CHALLENGES;
     if (personality === 'christian') {
-      return verseText || 'Cargando versículo...';
+      const loading = { en: 'Loading verse...', es: 'Cargando versículo...', pt: 'Carregando versículo...', fr: 'Chargement du verset...' };
+      return verseText || loading[lang] || loading.en;
     }
     if (personality === 'coach') {
-      return COACH_CHALLENGES[dayIndex % COACH_CHALLENGES.length];
+      const arr = COACH_CHALLENGES[lang] ?? COACH_CHALLENGES.en;
+      return arr[dayIndex % arr.length];
     }
     if (personality === 'business') {
       const h = new Date().getHours();
-      const shift = h < 12 ? 'mañana' : h < 18 ? 'tarde' : 'noche';
-      return `${userName ? `${userName}, b` : 'B'}uenas. Optimiza tu ${shift}: define tu próxima decisión de mayor impacto.`;
+      const shifts = {
+        en: [h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening', 'Good'],
+        es: [h < 12 ? 'mañana' : h < 18 ? 'tarde' : 'noche', 'Buenos'],
+        pt: [h < 12 ? 'manhã' : h < 18 ? 'tarde' : 'noite', 'Bom'],
+        fr: [h < 12 ? 'matin' : h < 18 ? 'après-midi' : 'soirée', 'Bonjour'],
+      };
+      const [shift] = shifts[lang] ?? shifts.en;
+      const greet = { en: `${userName ? `${userName}, good` : 'Good'} ${shift}. Optimize now: what's your highest-impact decision?`, es: `${userName ? `${userName}, b` : 'B'}uenas. Optimiza tu ${shift}: define tu próxima decisión de mayor impacto.`, pt: `${userName ? `${userName}, bom` : 'Bom'} ${shift}. Otimize agora: qual é sua decisão de maior impacto?`, fr: `${userName ? `${userName}, bonjour` : 'Bonjour'}. Optimisez votre ${shift} : quelle est votre décision à plus fort impact ?` };
+      return greet[lang] ?? greet.en;
     }
     if (personality === 'mentor') {
-      return MENTOR_REFLECTIONS[dayIndex % MENTOR_REFLECTIONS.length];
+      const arr = MENTOR_REFLECTIONS[lang] ?? MENTOR_REFLECTIONS.en;
+      return arr[dayIndex % arr.length];
     }
     if (personality === 'counselor') {
-      return '¿Cómo estás hoy realmente? Leeloo está aquí para escucharte.';
+      const s = { en: "How are you really today? Leeloo is here to listen.", es: '¿Cómo estás hoy realmente? Leeloo está aquí para escucharte.', pt: 'Como você está realmente hoje? Leeloo está aqui para ouvir.', fr: 'Comment allez-vous vraiment aujourd\'hui ? Leeloo est là pour vous écouter.' };
+      return s[lang] ?? s.en;
     }
     if (personality === 'faith') {
-      return FAITH_PURPOSES[dayIndex % FAITH_PURPOSES.length];
+      const arr = FAITH_PURPOSES[lang] ?? FAITH_PURPOSES.en;
+      return arr[dayIndex % arr.length];
     }
-    return userName ? `¡Hola ${userName}! ¿Qué quieres lograr hoy?` : '¿Cómo puedo ayudarte hoy?';
+    const def = { en: userName ? `Hi ${userName}! What do you want to achieve today?` : 'How can I help you today?', es: userName ? `¡Hola ${userName}! ¿Qué quieres lograr hoy?` : '¿Cómo puedo ayudarte hoy?', pt: userName ? `Olá ${userName}! O que você quer alcançar hoje?` : 'Como posso te ajudar hoje?', fr: userName ? `Bonjour ${userName} ! Que voulez-vous accomplir aujourd'hui ?` : 'Comment puis-je vous aider aujourd\'hui ?' };
+    return def[lang] ?? def.en;
   })();
 
   return (

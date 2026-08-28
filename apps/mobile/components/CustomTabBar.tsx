@@ -1,10 +1,34 @@
 import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet, Platform } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Home, Calendar, ListTodo, Settings } from 'lucide-react-native';
+import Svg, { Circle, Path, Ellipse } from 'react-native-svg';
 import { T } from '@/lib/theme';
+
+function LeelooTabIcon({ size = 32 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">
+      {/* Head */}
+      <Circle cx="32" cy="26" r="18" fill="#fff" />
+      {/* Ears */}
+      <Ellipse cx="14" cy="20" rx="5" ry="7" fill="#fff" />
+      <Ellipse cx="50" cy="20" rx="5" ry="7" fill="#fff" />
+      {/* Hair strands */}
+      <Path d="M20 10 Q22 4 26 8" stroke="#F07040" strokeWidth="2.5" strokeLinecap="round" />
+      <Path d="M26 8 Q30 2 34 7" stroke="#F07040" strokeWidth="2.5" strokeLinecap="round" />
+      <Path d="M34 7 Q38 2 42 9" stroke="#F07040" strokeWidth="2.5" strokeLinecap="round" />
+      {/* Eyes */}
+      <Ellipse cx="25" cy="27" rx="3" ry="3.5" fill="#2D266C" />
+      <Ellipse cx="39" cy="27" rx="3" ry="3.5" fill="#2D266C" />
+      <Circle cx="26" cy="25.5" r="1" fill="#fff" />
+      <Circle cx="40" cy="25.5" r="1" fill="#fff" />
+      {/* Smile */}
+      <Path d="M26 33 Q32 38 38 33" stroke="#F07040" strokeWidth="2" strokeLinecap="round" fill="none" />
+    </Svg>
+  );
+}
 
 const TAB_ICONS: Record<string, (active: boolean) => React.ReactNode> = {
   home: (a) => <Home size={22} color={a ? T.colors.purple : '#B0AACC'} strokeWidth={a ? 2.5 : 1.8} />,
@@ -70,8 +94,7 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
             end={{ x: 1, y: 1 }}
             style={styles.centerBtn}
           >
-            {/* Leeloo avatar mark — simplified SVG inline */}
-            <Text style={styles.centerIcon}>◎</Text>
+            <LeelooTabIcon size={34} />
           </LinearGradient>
         </TouchableOpacity>
       </View>

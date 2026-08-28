@@ -35,6 +35,53 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+const S_STRINGS = {
+  en: {
+    header: 'Settings', headerSub: 'Customize your Leeloo experience',
+    secLeeloo: 'LEELOO', secAccount: 'ACCOUNT', secSupport: 'SUPPORT', secSession: 'SESSION',
+    personality: 'Personality', personalitySub: 'Choose how you want Leeloo to be',
+    integrations: 'Integrations', integrationsSub: 'Google, Microsoft, Calendar',
+    language: 'Language',
+    profile: 'My profile', notifications: 'Notifications', notificationsSub: 'Alerts and reminders',
+    help: 'Help & FAQ', rate: 'Rate Leeloo',
+    signOut: 'Sign out', signOutTitle: 'Sign out', signOutMsg: 'Are you sure you want to sign out?',
+    cancel: 'Cancel', version: 'Leeloo v1.0.0 · Made with 💜 for you',
+  },
+  es: {
+    header: 'Configuración', headerSub: 'Personaliza tu experiencia Leeloo',
+    secLeeloo: 'LEELOO', secAccount: 'CUENTA', secSupport: 'SOPORTE', secSession: 'SESIÓN',
+    personality: 'Personalidad', personalitySub: 'Elige cómo quieres que sea Leeloo',
+    integrations: 'Integraciones', integrationsSub: 'Google, Microsoft, Calendar',
+    language: 'Idioma',
+    profile: 'Mi perfil', notifications: 'Notificaciones', notificationsSub: 'Alertas y recordatorios',
+    help: 'Ayuda y FAQ', rate: 'Calificar Leeloo',
+    signOut: 'Cerrar sesión', signOutTitle: 'Cerrar sesión', signOutMsg: '¿Segura que quieres salir?',
+    cancel: 'Cancelar', version: 'Leeloo v1.0.0 · Hecho con 💜 para ti',
+  },
+  pt: {
+    header: 'Configurações', headerSub: 'Personalize sua experiência Leeloo',
+    secLeeloo: 'LEELOO', secAccount: 'CONTA', secSupport: 'SUPORTE', secSession: 'SESSÃO',
+    personality: 'Personalidade', personalitySub: 'Escolha como você quer que a Leeloo seja',
+    integrations: 'Integrações', integrationsSub: 'Google, Microsoft, Calendário',
+    language: 'Idioma',
+    profile: 'Meu perfil', notifications: 'Notificações', notificationsSub: 'Alertas e lembretes',
+    help: 'Ajuda e FAQ', rate: 'Avaliar Leeloo',
+    signOut: 'Sair', signOutTitle: 'Sair', signOutMsg: 'Tem certeza que quer sair?',
+    cancel: 'Cancelar', version: 'Leeloo v1.0.0 · Feito com 💜 para você',
+  },
+  fr: {
+    header: 'Paramètres', headerSub: 'Personnalisez votre expérience Leeloo',
+    secLeeloo: 'LEELOO', secAccount: 'COMPTE', secSupport: 'SUPPORT', secSession: 'SESSION',
+    personality: 'Personnalité', personalitySub: 'Choisissez comment vous voulez que Leeloo soit',
+    integrations: 'Intégrations', integrationsSub: 'Google, Microsoft, Calendrier',
+    language: 'Langue',
+    profile: 'Mon profil', notifications: 'Notifications', notificationsSub: 'Alertes et rappels',
+    help: 'Aide et FAQ', rate: 'Noter Leeloo',
+    signOut: 'Se déconnecter', signOutTitle: 'Se déconnecter', signOutMsg: 'Êtes-vous sûr(e) de vouloir vous déconnecter ?',
+    cancel: 'Annuler', version: 'Leeloo v1.0.0 · Fait avec 💜 pour vous',
+  },
+} as const;
+
 export default function SettingsScreen() {
   const router = useRouter();
   const signOut = useAuthStore((s) => s.signOut);
@@ -46,10 +93,12 @@ export default function SettingsScreen() {
     pt: '🇧🇷 Português', fr: '🇫🇷 Français',
   };
 
+  const st = S_STRINGS[language] ?? S_STRINGS.en;
+
   const handleSignOut = () => {
-    Alert.alert('Cerrar sesión', '¿Segura que quieres salir?', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Cerrar sesión', style: 'destructive',
+    Alert.alert(st.signOutTitle, st.signOutMsg, [
+      { text: st.cancel, style: 'cancel' },
+      { text: st.signOut, style: 'destructive',
         onPress: async () => { await signOut(); router.replace('/(auth)/sign-in'); } },
     ]);
   };
@@ -67,50 +116,50 @@ export default function SettingsScreen() {
             style={s.headerCard}
           >
             <WaveBackground opacity={0.12} cellSize={30} />
-            <Text style={s.headerTitle}>Configuración</Text>
-            <Text style={s.headerSub}>Personaliza tu experiencia Leeloo</Text>
+            <Text style={s.headerTitle}>{st.header}</Text>
+            <Text style={s.headerSub}>{st.headerSub}</Text>
           </LinearGradient>
 
-          <Section title="Leeloo">
+          <Section title={st.secLeeloo}>
             <Row
               emoji="🧠"
-              label="Personalidad"
-              subtitle="Elige cómo quieres que sea Leeloo"
+              label={st.personality}
+              subtitle={st.personalitySub}
               onPress={() => router.push('/settings/personality')}
             />
             <View style={s.divider} />
             <Row
               emoji="🔗"
-              label="Integraciones"
-              subtitle="Google, Microsoft, Calendar"
+              label={st.integrations}
+              subtitle={st.integrationsSub}
               onPress={() => router.push('/settings/integrations')}
             />
             <View style={s.divider} />
             <Row
               emoji="🌍"
-              label="Idioma"
+              label={st.language}
               subtitle={langLabels[language] || language}
               onPress={() => router.push('/onboarding')}
             />
           </Section>
 
-          <Section title="Cuenta">
-            <Row emoji="👤" label="Mi perfil" subtitle={session?.userId ?? ''} onPress={() => {}} />
+          <Section title={st.secAccount}>
+            <Row emoji="👤" label={st.profile} subtitle={session?.userId ?? ''} onPress={() => {}} />
             <View style={s.divider} />
-            <Row emoji="🔔" label="Notificaciones" subtitle="Alertas y recordatorios" onPress={() => {}} />
+            <Row emoji="🔔" label={st.notifications} subtitle={st.notificationsSub} onPress={() => {}} />
           </Section>
 
-          <Section title="Soporte">
-            <Row emoji="❓" label="Ayuda y FAQ" onPress={() => {}} />
+          <Section title={st.secSupport}>
+            <Row emoji="❓" label={st.help} onPress={() => {}} />
             <View style={s.divider} />
-            <Row emoji="⭐" label="Calificar Leeloo" onPress={() => {}} />
+            <Row emoji="⭐" label={st.rate} onPress={() => {}} />
           </Section>
 
-          <Section title="Sesión">
-            <Row emoji="🚪" label="Cerrar sesión" onPress={handleSignOut} danger />
+          <Section title={st.secSession}>
+            <Row emoji="🚪" label={st.signOut} onPress={handleSignOut} danger />
           </Section>
 
-          <Text style={s.version}>Leeloo v1.0.0 · Hecho con 💜 para ti</Text>
+          <Text style={s.version}>{st.version}</Text>
         </ScrollView>
       </SafeAreaView>
     </View>

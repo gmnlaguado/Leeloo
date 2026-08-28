@@ -69,8 +69,8 @@ export class IntegrationsService {
     if (provider === 'google') {
       return {
         provider,
-        clientId: this.config.get<string>('GOOGLE_OAUTH_CLIENT_ID') || '',
-        clientSecret: this.config.get<string>('GOOGLE_OAUTH_CLIENT_SECRET') || '',
+        clientId: this.config.get<string>('GOOGLE_OAUTH_CLIENT_ID') || this.config.get<string>('GOOGLE_CLIENT_ID') || '',
+        clientSecret: this.config.get<string>('GOOGLE_OAUTH_CLIENT_SECRET') || this.config.get<string>('GOOGLE_CLIENT_SECRET') || '',
         authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
         tokenUrl: 'https://oauth2.googleapis.com/token',
         scope:

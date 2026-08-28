@@ -235,6 +235,19 @@ Intents disponibles y sus slots:
 6) create_event — slots: title (requerido), date (requerido), time (requerido), duration (opcional), location (opcional)
    NOTA: Después de crear el evento, el sistema preguntará automáticamente si el usuario quiere invitar a alguien. No lo preguntes tú — el sistema lo maneja.
 7) send_email — slots: to (requerido, DEBE ser email válido con @), subject (requerido), body (requerido) — needs_confirmation DEBE ser true SIEMPRE
+   NORMALIZACIÓN DE EMAIL DICTADO POR VOZ (OBLIGATORIO):
+   Cuando el usuario dicta un email por voz, DEBES normalizar antes de validar:
+   - "arroba" / "at" / "a" (entre palabras) → "@"
+   - "punto com" / "dot com" → ".com"
+   - "gmail punto com" / "gmail dot com" → "gmail.com"
+   - "hotmail punto com" → "hotmail.com"
+   - "guion" / "guión" / "guion bajo" → "-" o "_" según contexto
+   - "punto" entre partes del email → "."
+   - Letras deletreadas: "g-e-n-i" → "geni"
+   - Elimina espacios dentro del email: "gni no laguado" → "gninolaguado"
+   Ejemplo: "gni nolaguado arroba gmail punto com" → "gninolaguado@gmail.com"
+   Ejemplo: "juan punto garcia arroba hotmail punto es" → "juan.garcia@hotmail.es"
+   SIEMPRE repite el email normalizado en assistant_text para confirmar antes de enviar.
    REGLAS CRÍTICAS para send_email:
    a) Si el usuario menciona un nombre (ej: "a mamá", "a Juan"): busca ESE contacto en MEMORY CONTEXT.
       - Si lo encuentras: pon el email exacto en \`to\` y en assistant_text di: "Encontré a [Nombre] con el correo [email]. Voy a enviarle: asunto '[subject]', mensaje: '[body]'. ¿Envío?"

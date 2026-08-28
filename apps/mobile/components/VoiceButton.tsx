@@ -2,12 +2,22 @@ import { TouchableOpacity, View, Text, StyleSheet, Animated } from 'react-native
 import { Mic, MicOff } from 'lucide-react-native';
 import { useEffect, useRef } from 'react';
 import { useVoiceStore } from '@/store/voice';
+import { useSettingsStore } from '@/store/settings';
 import * as Haptics from 'expo-haptics';
 
+const VOICE_LABELS = {
+  en: { speaking: 'Speaking...', processing: 'Processing...', wake: 'Listening...', recording: 'Recording...', idle: 'Hey Leeloo' },
+  es: { speaking: 'Hablando...', processing: 'Procesando...', wake: 'Escuchando...', recording: 'Grabando...', idle: 'Hey Leeloo' },
+  pt: { speaking: 'Falando...', processing: 'Processando...', wake: 'Ouvindo...', recording: 'Gravando...', idle: 'Hey Leeloo' },
+  fr: { speaking: 'Parle...', processing: 'Traitement...', wake: 'Écoute...', recording: 'Enregistre...', idle: 'Hey Leeloo' },
+} as const;
+
 export function VoiceButton() {
-  const { isListening, isProcessing, startListening, stopListening } = useVoiceStore();
+  const { isListening, isProcessing, startListeningFromWakeWord, stopListening } = useVoiceStore();
   const isSpeaking = useVoiceStore((s) => s.isSpeaking);
   const isWakeActivated = useVoiceStore((s) => s.isWakeActivated);
+  const language = useSettingsStore((s) => s.language);
+  const L = VOICE_LABELS[language] ?? VOICE_LABELS.en;
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -50,7 +60,7 @@ export function VoiceButton() {
     ]).start();
 
     if (isListening) await stopListening();
-    else await startListening();
+    else await startListeningFromWakeWord();
   };
 
   return (
@@ -74,14 +84,14 @@ export function VoiceButton() {
 
       <Text style={styles.label}>
         {isSpeaking
-          ? 'Hablando...'
+          ? L.speaking
           : isProcessing
-            ? 'Procesando...'
+            ? L.processing
             : isWakeActivated
-              ? 'Escuchando...'
+              ? L.wake
               : isListening
-                ? 'Grabando...'
-                : 'Hey Leeloo'}
+                ? L.recording
+                : L.idle}
       </Text>
     </View>
   );

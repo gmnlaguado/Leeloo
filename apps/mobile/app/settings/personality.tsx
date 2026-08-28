@@ -8,23 +8,105 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { WaveBackground } from '@/components/WaveBackground';
 import { T } from '@/lib/theme';
 import { profilesAPI } from '../../lib/api';
+import { useSettingsStore } from '@/store/settings';
 
 type PersonalityId =
   | 'default' | 'christian' | 'coach' | 'mentor'
   | 'business' | 'counselor' | 'faith' | 'motivation' | 'balanced' | 'nurturing';
 
-const PERSONALITIES: { id: PersonalityId; label: string; emoji: string; desc: string }[] = [
-  { id: 'faith',      label: 'Faith',       emoji: '🕊️', desc: 'Espiritualidad y propósito' },
-  { id: 'business',   label: 'Business',    emoji: '💼', desc: 'Productividad máxima' },
-  { id: 'counselor',  label: 'Counselor',   emoji: '💜', desc: 'Escucha profunda' },
-  { id: 'balanced',   label: 'Balanced',    emoji: '⚖️', desc: 'Equilibrio integral' },
-  { id: 'mentor',     label: 'Mentor',      emoji: '🌱', desc: 'Crecimiento y propósito' },
-  { id: 'motivation', label: 'Motivation',  emoji: '🎯', desc: 'Metas y disciplina' },
-  { id: 'nurturing',  label: 'Nurturing',   emoji: '🌸', desc: 'Calidez y apoyo' },
-  { id: 'christian',  label: 'Christian',   emoji: '✝️', desc: 'Fe, oración y gracia' },
-  { id: 'coach',      label: 'Coach',       emoji: '⚡', desc: 'Accountability' },
-  { id: 'default',    label: 'Leeloo Clásica', emoji: '⭐', desc: 'Organizada y empática' },
+const P_STRINGS = {
+  en: {
+    title: 'Leeloo Personality', sub: 'You can change this anytime.',
+    multiNote: 'Multiple selections allowed.',
+    activeLabel: 'Active personalities:', save: 'Save selection',
+    errSave: 'Could not save. Try again.',
+    descs: {
+      faith: 'Spirituality & purpose',
+      business: 'Maximum productivity',
+      counselor: 'Deep listening',
+      balanced: 'Full balance',
+      mentor: 'Growth & purpose',
+      motivation: 'Goals & discipline',
+      nurturing: 'Warmth & support',
+      christian: 'Faith, prayer & grace',
+      coach: 'Accountability',
+      default: 'Organized & empathetic',
+    },
+  },
+  es: {
+    title: 'Personalidad de Leeloo', sub: 'Puedes cambiar esto en cualquier momento.',
+    multiNote: 'Puedes seleccionar varias personalidades.',
+    activeLabel: 'Personalidades activas:', save: 'Guardar selección',
+    errSave: 'No se pudo guardar. Intenta de nuevo.',
+    descs: {
+      faith: 'Espiritualidad y propósito',
+      business: 'Productividad máxima',
+      counselor: 'Escucha profunda',
+      balanced: 'Equilibrio integral',
+      mentor: 'Crecimiento y propósito',
+      motivation: 'Metas y disciplina',
+      nurturing: 'Calidez y apoyo',
+      christian: 'Fe, oración y gracia',
+      coach: 'Accountability',
+      default: 'Organizada y empática',
+    },
+  },
+  pt: {
+    title: 'Personalidade da Leeloo', sub: 'Você pode mudar isso a qualquer momento.',
+    multiNote: 'Você pode selecionar várias personalidades.',
+    activeLabel: 'Personalidades ativas:', save: 'Salvar seleção',
+    errSave: 'Não foi possível salvar. Tente novamente.',
+    descs: {
+      faith: 'Espiritualidade e propósito',
+      business: 'Produtividade máxima',
+      counselor: 'Escuta profunda',
+      balanced: 'Equilíbrio integral',
+      mentor: 'Crescimento e propósito',
+      motivation: 'Metas e disciplina',
+      nurturing: 'Calor e apoio',
+      christian: 'Fé, oração e graça',
+      coach: 'Responsabilidade',
+      default: 'Organizada e empática',
+    },
+  },
+  fr: {
+    title: 'Personnalité de Leeloo', sub: 'Vous pouvez changer cela à tout moment.',
+    multiNote: 'Vous pouvez sélectionner plusieurs personnalités.',
+    activeLabel: 'Personnalités actives :', save: 'Enregistrer la sélection',
+    errSave: 'Impossible de sauvegarder. Réessayez.',
+    descs: {
+      faith: 'Spiritualité et sens',
+      business: 'Productivité maximale',
+      counselor: 'Écoute profonde',
+      balanced: 'Équilibre global',
+      mentor: 'Croissance et sens',
+      motivation: 'Objectifs et discipline',
+      nurturing: 'Chaleur et soutien',
+      christian: 'Foi, prière et grâce',
+      coach: 'Responsabilité',
+      default: 'Organisée et empathique',
+    },
+  },
+} as const;
+
+const PERSONALITY_IDS: { id: PersonalityId; emoji: string }[] = [
+  { id: 'faith',      emoji: '🕊️' },
+  { id: 'business',   emoji: '💼' },
+  { id: 'counselor',  emoji: '💜' },
+  { id: 'balanced',   emoji: '⚖️' },
+  { id: 'mentor',     emoji: '🌱' },
+  { id: 'motivation', emoji: '🎯' },
+  { id: 'nurturing',  emoji: '🌸' },
+  { id: 'christian',  emoji: '✝️' },
+  { id: 'coach',      emoji: '⚡' },
+  { id: 'default',    emoji: '⭐' },
 ];
+
+const LABELS: Record<PersonalityId, string> = {
+  faith: 'Faith', business: 'Business', counselor: 'Counselor',
+  balanced: 'Balanced', mentor: 'Mentor', motivation: 'Motivation',
+  nurturing: 'Nurturing', christian: 'Christian', coach: 'Coach', default: 'Leeloo',
+};
 
 function parseSelected(raw: string | undefined): Set<PersonalityId> {
   if (!raw) return new Set(['default']);
@@ -33,6 +115,9 @@ function parseSelected(raw: string | undefined): Set<PersonalityId> {
 }
 
 export default function PersonalityScreen() {
+  const language = useSettingsStore((s) => s.language);
+  const st = P_STRINGS[language] ?? P_STRINGS.en;
+
   const [selected, setSelected] = useState<Set<PersonalityId>>(new Set(['default']));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -59,7 +144,7 @@ export default function PersonalityScreen() {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
-        if (next.size <= 1) return prev; // al menos una siempre activa
+        if (next.size <= 1) return prev;
         next.delete(id);
       } else {
         next.add(id);
@@ -74,8 +159,8 @@ export default function PersonalityScreen() {
       const value = Array.from(selected).join(',');
       await profilesAPI.updateMe({ leeloo_personality: value });
       router.back();
-    } catch (e) {
-      Alert.alert('No se pudo guardar', 'Intenta de nuevo en un momento.');
+    } catch {
+      Alert.alert('', st.errSave);
     } finally {
       setSaving(false);
     }
@@ -92,7 +177,7 @@ export default function PersonalityScreen() {
 
       <Stack.Screen
         options={{
-          title: 'Personalidad de Leeloo',
+          title: st.title,
           headerStyle: { backgroundColor: T.colors.cream },
           headerTintColor: T.colors.navy,
           headerTitleStyle: { fontFamily: T.fonts.bold, fontWeight: '700' },
@@ -105,7 +190,6 @@ export default function PersonalityScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          {/* Header */}
           <LinearGradient
             colors={['#F07040', '#C4507A', '#8375FA']}
             start={{ x: 0, y: 0 }}
@@ -113,16 +197,14 @@ export default function PersonalityScreen() {
             style={styles.headerCard}
           >
             <WaveBackground opacity={0.12} cellSize={30} />
-            <Text style={styles.headerTitle}>Choose my personality</Text>
-            <Text style={styles.headerSub}>You can change this anytime.</Text>
+            <Text style={styles.headerTitle}>{st.title}</Text>
+            <Text style={styles.headerSub}>{st.sub}</Text>
           </LinearGradient>
 
-          {/* Multi-select note */}
-          <Text style={styles.multiNote}>Multiple selections allowed.</Text>
+          <Text style={styles.multiNote}>{st.multiNote}</Text>
 
-          {/* Chips grid */}
           <View style={styles.chipsGrid}>
-            {PERSONALITIES.map((p) => {
+            {PERSONALITY_IDS.map((p) => {
               const active = selected.has(p.id);
               return (
                 <TouchableOpacity
@@ -133,27 +215,25 @@ export default function PersonalityScreen() {
                 >
                   <Text style={styles.chipEmoji}>{p.emoji}</Text>
                   <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>
-                    {p.label}
+                    {LABELS[p.id]}
                   </Text>
                 </TouchableOpacity>
               );
             })}
           </View>
 
-          {/* Selected descriptions */}
           {selected.size > 0 && (
             <View style={styles.selectedInfo}>
-              <Text style={styles.selectedInfoTitle}>Personalidades activas:</Text>
-              {PERSONALITIES.filter((p) => selected.has(p.id)).map((p) => (
+              <Text style={styles.selectedInfoTitle}>{st.activeLabel}</Text>
+              {PERSONALITY_IDS.filter((p) => selected.has(p.id)).map((p) => (
                 <Text key={p.id} style={styles.selectedInfoRow}>
-                  {p.emoji} <Text style={{ fontWeight: '600' }}>{p.label}</Text>
-                  {' '}— {p.desc}
+                  {p.emoji} <Text style={{ fontWeight: '600' }}>{LABELS[p.id]}</Text>
+                  {' '}— {st.descs[p.id]}
                 </Text>
               ))}
             </View>
           )}
 
-          {/* Save button */}
           <TouchableOpacity
             style={[styles.saveBtn, saving && { opacity: 0.6 }]}
             onPress={handleSave}
@@ -169,7 +249,7 @@ export default function PersonalityScreen() {
               {saving ? (
                 <ActivityIndicator color={T.colors.white} />
               ) : (
-                <Text style={styles.saveBtnText}>Guardar selección</Text>
+                <Text style={styles.saveBtnText}>{st.save}</Text>
               )}
             </LinearGradient>
           </TouchableOpacity>
