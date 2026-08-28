@@ -27,18 +27,38 @@ export class HealthController {
       results.anthropic = { ok: false, error: String(e?.message || e) };
     }
 
-    // 2 — ElevenLabs
+    // 2 — ElevenLabs (voice info + actual TTS synthesis test)
     try {
       const key = String(process.env.ELEVENLABS_API_KEY || '').trim();
       const voiceId = String(process.env.ELEVENLABS_VOICE_ID || '').trim();
       if (!key || !voiceId) throw new Error(`missing: ${!key ? 'ELEVENLABS_API_KEY' : 'ELEVENLABS_VOICE_ID'}`);
-      const res = await fetch(`https://api.elevenlabs.io/v1/voices/${voiceId}`, {
+
+      // Check voice exists
+      const voiceRes = await fetch(`https://api.elevenlabs.io/v1/voices/${voiceId}`, {
         headers: { 'xi-api-key': key },
         signal: AbortSignal.timeout(8_000),
       });
-      if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${await res.text().catch(() => '')}`);
-      const voice = await res.json() as any;
-      results.elevenlabs = { ok: true, voice_name: voice?.name, voice_id: voiceId };
+      if (!voiceRes.ok) throw new Error(`voice lookup ${voiceRes.status}: ${await voiceRes.text().catch(() => '')}`);
+      const voice = await voiceRes.json() as any;
+
+      // Actually synthesize a short test clip
+      const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
+        method: 'POST',
+        headers: { 'xi-api-key': key, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
+        body: JSON.stringify({
+          text: 'Test.',
+          model_id: 'eleven_multilingual_v2',
+          voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true },
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      if (!ttsRes.ok) {
+        const errBody = await ttsRes.text().catch(() => '');
+        throw new Error(`TTS synthesis failed ${ttsRes.status}: ${errBody.slice(0, 300)}`);
+      }
+      const audioBytes = (await ttsRes.arrayBuffer()).byteLength;
+      results.elevenlabs = { ok: true, voice_name: voice?.name, voice_id: voiceId, tts_test_bytes: audioBytes };
     } catch (e: any) {
       results.elevenlabs = { ok: false, error: String(e?.message || e) };
     }
