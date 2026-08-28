@@ -3,7 +3,6 @@ import axios from 'axios';
 import {
   LEELOO_SYSTEM_PROMPT,
   LEELOO_SYSTEM_PROMPT_VERSION,
-  buildSystemPrompt,
   type LeelooPersonality,
 } from '@leeloo/ai-prompts';
 import { OpenAiQueue } from './workers/openai.queue';
@@ -112,18 +111,33 @@ export class VoiceService {
 
     this.logger.log(`[PIPE] userCtx start +${ms()}ms — userName=${!!input.userName}`);
     const userCtx = input.userName
-      ? await this.openAiQueue
-          .fetchUserContext(input.userId)
-          .catch((e: any) => {
-            this.logger.warn(`[PIPE] userCtx failed +${ms()}ms — ${e?.message}`);
-            return { todayTasks: [], upcomingEvents: [], pendingApprovals: 0 };
-          })
+      ? await Promise.race([
+          this.openAiQueue.fetchUserContext(input.userId),
+          new Promise<{ todayTasks: string[]; upcomingEvents: string[]; pendingApprovals: number }>(
+            (resolve) => setTimeout(() => {
+              this.logger.warn(`[PIPE] userCtx timeout after 3s — skipping`);
+              resolve({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 });
+            }, 3_000),
+          ),
+        ]).catch(() => ({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 }))
       : { todayTasks: [], upcomingEvents: [], pendingApprovals: 0 };
     this.logger.log(`[PIPE] userCtx done +${ms()}ms`);
 
-    const systemPrompt = input.userName
-      ? buildSystemPrompt(personality, input.userName, { ...userCtx, timeOfDay }, language)
-      : LEELOO_SYSTEM_PROMPT;
+    // Always use LEELOO_SYSTEM_PROMPT — it contains the mandatory JSON format schema.
+    // buildSystemPrompt() lacks those instructions and causes Claude to return prose.
+    // User context (name, tasks, events) is injected into the memory context string.
+    const systemPrompt = LEELOO_SYSTEM_PROMPT;
+    if (input.userName) {
+      const ctxLines = [
+        `USER_NAME: ${input.userName}`,
+        `TIME_OF_DAY: ${timeOfDay}`,
+        `PERSONALITY: ${personality}`,
+        ...(userCtx.todayTasks.length ? [`TODAY_TASKS: ${userCtx.todayTasks.slice(0, 3).join('; ')}`] : []),
+        ...(userCtx.upcomingEvents.length ? [`UPCOMING_EVENTS: ${userCtx.upcomingEvents.slice(0, 3).join('; ')}`] : []),
+        ...(userCtx.pendingApprovals > 0 ? [`PENDING_APPROVALS: ${userCtx.pendingApprovals}`] : []),
+      ].join('\n');
+      memories = ctxLines + (memories ? '\n\n' + memories : '');
+    }
 
     let intent: IntentResult;
     try {
