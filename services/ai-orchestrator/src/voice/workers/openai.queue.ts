@@ -184,7 +184,16 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
   }
 
   async fetchMemoryContext(input: { userId: string; query: string; limit: number }): Promise<string> {
-    return this.fetchMemoriesPgvector(input);
+    // Hard cap: if DB is slow / pool is connecting, don't block the voice pipeline.
+    return Promise.race([
+      this.fetchMemoriesPgvector(input),
+      new Promise<string>((resolve) =>
+        setTimeout(() => {
+          this.logger.warn('[MEMORY] DB timeout after 3s — skipping memory context');
+          resolve('');
+        }, 3_000),
+      ),
+    ]);
   }
 
   private async extractIntentWithClaude(data: {
