@@ -52,6 +52,7 @@ export class VoiceService {
             userId: input.userId,
             filename: input.audio?.originalname || 'audio.webm',
             bytes: input.audio?.buffer || Buffer.from(''),
+            language,
           });
     } catch (err: any) {
       return {

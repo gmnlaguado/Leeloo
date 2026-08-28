@@ -44,7 +44,7 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     await this.pool?.end();
   }
 
-  async transcribe(input: { userId: string; filename: string; bytes: Buffer }): Promise<string> {
+  async transcribe(input: { userId: string; filename: string; bytes: Buffer; language?: string }): Promise<string> {
     await this.assertWithinOpenAiRateLimit(input.userId);
 
     // Use self-hosted leeloo-stt first (<2s, already paid $25/mo on Render Standard).
@@ -58,14 +58,15 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
 
     // Groq fallback (cloud Whisper, ~2-30s depending on rate limits)
     const provider = process.env.GROQ_API_KEY ? 'groq' : 'openai';
-    this.logger.log(`[STT] transcribe start — provider=${provider} file=${input.filename} bytes=${input.bytes.length}`);
+    const sttLang = String(input.language || 'es').slice(0, 2).toLowerCase();
+    this.logger.log(`[STT] transcribe start — provider=${provider} lang=${sttLang} file=${input.filename} bytes=${input.bytes.length}`);
     const file = await toFile(input.bytes, input.filename, { type: 'application/octet-stream' });
     const res = await this.openai.audio.transcriptions.create({
       file,
       model: 'whisper-1',
-      language: 'es',
+      language: sttLang,
       response_format: 'json',
-    } as any);
+    } as any, { signal: AbortSignal.timeout(30_000) } as any);
     const text = String((res as any)?.text || '');
     this.logger.log(`[STT] transcribe result — "${text.slice(0, 80)}" (${text.length} chars)`);
     return text;

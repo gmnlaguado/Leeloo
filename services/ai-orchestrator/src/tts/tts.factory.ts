@@ -19,7 +19,7 @@ export class TtsFactory {
   ) {}
 
   getActive(): TtsService {
-    const provider = String(process.env.TTS_PROVIDER || 'openai').toLowerCase() as TtsProvider;
+    const provider = String(process.env.TTS_PROVIDER || 'elevenlabs').toLowerCase() as TtsProvider;
     if (provider === 'elevenlabs') {
       if (this.elevenLabs.isEnabled()) {
         return this.elevenLabs as unknown as TtsService;
