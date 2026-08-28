@@ -210,9 +210,13 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     const response = await this.anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 700,
-      temperature: 0.2,
+      temperature: 0,
       system: [{ type: 'text', text: data.systemPrompt, cache_control: { type: 'ephemeral' } }],
-      messages: [{ role: 'user', content: userContent }],
+      // Prefill forces Claude to begin with '{' — prevents prose responses that break JSON parsing.
+      messages: [
+        { role: 'user', content: userContent },
+        { role: 'assistant', content: '{' },
+      ],
     } as any);
 
     const inputTokens = response.usage?.input_tokens ?? 0;
@@ -229,15 +233,16 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       return '{}';
     }
 
-    const text = block.text.trim();
-    this.logger.debug(`[INTENT] Claude raw (${text.length} chars): ${text.slice(0, 300)}`);
-    const start = text.indexOf('{');
+    const rawText = block.text.trim();
+    this.logger.debug(`[INTENT] Claude raw (${rawText.length} chars): ${rawText.slice(0, 300)}`);
+    // Prepend '{' — the prefill sends that character but it is excluded from response text.
+    const text = rawText.startsWith('{') ? rawText : '{' + rawText;
     const end = text.lastIndexOf('}');
-    if (start === -1 || end === -1) {
-      this.logger.warn(`[INTENT] Claude response has no JSON braces — raw="${text.slice(0, 200)}"`);
+    if (end === -1) {
+      this.logger.warn(`[INTENT] Claude response missing closing brace — raw="${rawText.slice(0, 200)}"`);
       return '{}';
     }
-    return text.slice(start, end + 1);
+    return text.slice(0, end + 1);
   }
 
   private assertWithinOpenAiRateLimit(userId: string) {
@@ -296,6 +301,13 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     const profileId = await this.resolveProfileId(input.userId);
     if (!profileId) return '';
 
+    // Groq does not support the embeddings API — calls hang ~70s before failing.
+    // Skip directly to the SQL fallback when Groq is the active provider.
+    const isGroq = Boolean(process.env.GROQ_API_KEY);
+    if (isGroq) {
+      return this.fetchMemoriesSqlFallback(profileId, input.limit);
+    }
+
     try {
       const q = String(input.query || '').trim();
       if (!q) return '';
@@ -328,71 +340,76 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
         })
         .join('\n');
     } catch {
-      try {
-        const limit = Math.max(1, Math.min(5, Math.floor(input.limit || 5)));
-        const [memRes, contactRes] = await Promise.all([
-          this.pool.query(
-            `SELECT category, key, value
-             FROM memories
-             WHERE user_id = $1
-               AND key NOT LIKE 'turn_%'
-             ORDER BY last_used DESC
-             LIMIT $2`,
-            [profileId, limit],
-          ),
-          this.pool.query(
-            `SELECT name, nickname, email, phone, relation
-             FROM contacts
-             WHERE user_id = $1
-             ORDER BY updated_at DESC
-             LIMIT 20`,
-            [profileId],
-          ),
-        ]);
+      return this.fetchMemoriesSqlFallback(profileId, input.limit);
+    }
+  }
 
-        const memLines = (memRes.rows || []).map((r: any) => {
-          const cat = String(r?.category || '').trim();
-          const k = String(r?.key || '').trim();
-          return `${cat}${k ? `:${k}` : ''} = ${JSON.stringify(r?.value)}`;
+  private async fetchMemoriesSqlFallback(profileId: string, limitRaw: number): Promise<string> {
+    if (!this.pool) return '';
+    try {
+      const limit = Math.max(1, Math.min(5, Math.floor(limitRaw || 5)));
+      const [memRes, contactRes] = await Promise.all([
+        this.pool.query(
+          `SELECT category, key, value
+           FROM memories
+           WHERE user_id = $1
+             AND key NOT LIKE 'turn_%'
+           ORDER BY last_used DESC
+           LIMIT $2`,
+          [profileId, limit],
+        ),
+        this.pool.query(
+          `SELECT name, nickname, email, phone, relation
+           FROM contacts
+           WHERE user_id = $1
+           ORDER BY updated_at DESC
+           LIMIT 20`,
+          [profileId],
+        ),
+      ]);
+
+      const memLines = (memRes.rows || []).map((r: any) => {
+        const cat = String(r?.category || '').trim();
+        const k = String(r?.key || '').trim();
+        return `${cat}${k ? `:${k}` : ''} = ${JSON.stringify(r?.value)}`;
+      });
+
+      const contactLines = (contactRes.rows || [])
+        .filter((r: any) => r?.email || r?.phone)
+        .map((r: any) => {
+          const name = r.nickname ? `${r.name} (${r.nickname})` : r.name;
+          const parts = [];
+          if (r.email) parts.push(`email:${r.email}`);
+          if (r.phone) parts.push(`phone:${r.phone}`);
+          if (r.relation) parts.push(`relation:${r.relation}`);
+          return `contact:${name} = ${parts.join(', ')}`;
         });
 
-        const contactLines = (contactRes.rows || [])
-          .filter((r: any) => r?.email || r?.phone)
+      // Last 3 conversation turns for session continuity
+      let turnLines: string[] = [];
+      try {
+        const turnRes = await this.pool.query(
+          `SELECT value FROM memories
+           WHERE user_id = $1 AND key LIKE 'turn_%'
+           ORDER BY created_at DESC LIMIT 3`,
+          [profileId],
+        );
+        turnLines = (turnRes.rows || [])
+          .reverse()
           .map((r: any) => {
-            const name = r.nickname ? `${r.name} (${r.nickname})` : r.name;
-            const parts = [];
-            if (r.email) parts.push(`email:${r.email}`);
-            if (r.phone) parts.push(`phone:${r.phone}`);
-            if (r.relation) parts.push(`relation:${r.relation}`);
-            return `contact:${name} = ${parts.join(', ')}`;
-          });
+            const v = r?.value;
+            if (!v) return null;
+            const u = typeof v.user === 'string' ? v.user : '';
+            const a = typeof v.assistant === 'string' ? v.assistant : '';
+            if (!u && !a) return null;
+            return `[prev] user: ${u.slice(0, 200)} | leeloo: ${a.slice(0, 300)}`;
+          })
+          .filter(Boolean) as string[];
+      } catch { /* turns table may not have rows yet */ }
 
-        // Last 3 conversation turns for session continuity
-        let turnLines: string[] = [];
-        try {
-          const turnRes = await this.pool.query(
-            `SELECT value FROM memories
-             WHERE user_id = $1 AND key LIKE 'turn_%'
-             ORDER BY created_at DESC LIMIT 3`,
-            [profileId],
-          );
-          turnLines = (turnRes.rows || [])
-            .reverse()
-            .map((r: any) => {
-              const v = r?.value;
-              if (!v) return null;
-              const u = typeof v.user === 'string' ? v.user : '';
-              const a = typeof v.assistant === 'string' ? v.assistant : '';
-              if (!u && !a) return null;
-              return `[prev] user: ${u.slice(0, 200)} | leeloo: ${a.slice(0, 300)}`;
-            })
-            .filter(Boolean) as string[];
-        } catch { /* turns table may not have rows yet */ }
-
-        return [...turnLines, ...memLines, ...contactLines].join('\n');
-      } catch {
-        return '';
-      }
+      return [...turnLines, ...memLines, ...contactLines].join('\n');
+    } catch {
+      return '';
     }
   }
 
