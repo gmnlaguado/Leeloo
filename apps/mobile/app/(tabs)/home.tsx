@@ -408,6 +408,7 @@ export default function HomeScreen() {
   const sendText = useVoiceStore((s) => s.sendText);
   const isSpeaking = useVoiceStore((s) => s.isSpeaking);
   const isListening = useVoiceStore((s) => s.isListening);
+  const isConversationMode = useVoiceStore((s) => s.isConversationMode);
   const session = useAuthStore((s) => s.session);
   const hydrateTasks = useTasksStore((s) => s.hydrate);
   const tasks = useTasksStore((s) => s.tasks);
@@ -440,20 +441,21 @@ export default function HomeScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  // When conversation ends → resume wake word detection
+  // Pause/resume wake word detector based on voice activity.
+  // In conversation mode, the voice store handles its own auto-continue loop,
+  // so we pause the wake word detector until conversation mode exits.
   useEffect(() => {
-    const wasActive = wakeActive;
-    if (!wasActive) return;
+    if (!wakeActive) return;
 
-    const busy = isListening || isProcessing || isSpeaking;
-    if (!busy) {
-      // Small delay so TTS finishes before we start listening for "Leeloo" again
-      const t = setTimeout(() => wakeWordService.resume(), 800);
-      return () => clearTimeout(t);
-    } else {
+    const busy = isListening || isProcessing || isSpeaking || isConversationMode;
+    if (busy) {
       wakeWordService.pause();
+    } else {
+      // Idle AND out of conversation mode → resume passive wake word detection
+      const t = setTimeout(() => wakeWordService.resume(), 1000);
+      return () => clearTimeout(t);
     }
-  }, [isListening, isProcessing, isSpeaking, wakeActive]);
+  }, [isListening, isProcessing, isSpeaking, isConversationMode, wakeActive]);
 
   useEffect(() => { void hydrateTasks(); }, [hydrateTasks]);
 

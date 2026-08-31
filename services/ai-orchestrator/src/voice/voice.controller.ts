@@ -53,6 +53,7 @@ export class VoiceController {
     const pendingEventId = typeof body?.pending_event_id === 'string' ? body.pending_event_id : undefined;
     const pendingAttendeeName =
       typeof body?.pending_attendee_name === 'string' ? body.pending_attendee_name : undefined;
+    const conversationHistory = typeof body?.conversation_history === 'string' ? body.conversation_history : undefined;
 
     if (!audio && !text)
       throw new BadRequestException('Either audio file or text must be provided');
@@ -69,6 +70,7 @@ export class VoiceController {
       userName,
       pending_event_id: pendingEventId,
       pending_attendee_name: pendingAttendeeName,
+      conversation_history: conversationHistory,
     });
   }
 

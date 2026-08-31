@@ -40,6 +40,7 @@ export class VoiceService {
     userName?: string;
     pending_event_id?: string;
     pending_attendee_name?: string;
+    conversation_history?: string;
   }) {
     const language = this.normalizeLanguage(input.language);
 
@@ -134,7 +135,14 @@ export class VoiceService {
       ...(userCtx.upcomingEvents.length ? [`UPCOMING_EVENTS: ${userCtx.upcomingEvents.slice(0, 3).join('; ')}`] : []),
       ...(userCtx.pendingApprovals > 0 ? [`PENDING_APPROVALS: ${userCtx.pendingApprovals}`] : []),
     ].join('\n');
-    memories = ctxLines + (memories ? '\n\n' + memories : '');
+
+    // Conversation history — gives Claude context of the current voice session.
+    // This is what makes Leeloo feel like a continuous conversation, not isolated queries.
+    const historyBlock = input.conversation_history
+      ? `\n\nRECENT_CONVERSATION (most recent last — use for context, do not repeat):\n${input.conversation_history}`
+      : '';
+
+    memories = ctxLines + historyBlock + (memories ? '\n\n' + memories : '');
 
     let intent: IntentResult;
     try {

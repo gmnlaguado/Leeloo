@@ -196,7 +196,7 @@ api.interceptors.response.use(
 export const voiceAPI = {
   processVoice: async (
     audioUri: string,
-    opts?: { language?: string; personality?: string; user_name?: string; wakeWordOnly?: boolean },
+    opts?: { language?: string; personality?: string; user_name?: string; wakeWordOnly?: boolean; conversationHistory?: string },
   ): Promise<{ data: unknown; status: number }> => {
     // Axios + multipart is flaky in RN/Expo Go. Use fetch here for stability.
     const { token, source } = await resolveBearerToken();
@@ -222,6 +222,9 @@ export const voiceAPI = {
     }
     if (opts?.wakeWordOnly) {
       formData.append('wake_word_only', 'true');
+    }
+    if (opts?.conversationHistory) {
+      formData.append('conversation_history', opts.conversationHistory);
     }
 
     const controller = new AbortController();

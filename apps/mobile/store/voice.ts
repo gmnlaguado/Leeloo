@@ -169,11 +169,17 @@ export function matchReminderResponse(text: string): 'done' | 'postpone' | numbe
   return null;
 }
 
+type ConversationTurn = {
+  user: string;
+  assistant: string;
+};
+
 interface VoiceState {
   isListening: boolean;
   isProcessing: boolean;
   isSpeaking: boolean;
   isWakeActivated: boolean;
+  isConversationMode: boolean;
   status: VoiceStatus;
   transcription: string;
   response: string;
@@ -184,8 +190,10 @@ interface VoiceState {
   pendingReminder: PendingReminder | null;
   pendingEventId: string | null;
   pendingAttendeeName: string | null;
+  conversationHistory: ConversationTurn[];
   startListening: () => Promise<void>;
   startListeningFromWakeWord: () => Promise<void>;
+  startConversationContinue: () => Promise<void>;
   stopListening: () => Promise<void>;
   sendText: (text: string) => Promise<void>;
   confirm: () => Promise<void>;
@@ -200,16 +208,27 @@ interface VoiceState {
 }
 
 // Silence VAD constants — tuned to feel like Alexa
-const SILENCE_THRESHOLD_DB = -45;   // below this = silence
-const SILENCE_DURATION_MS  = 1500;  // 1.5s of silence → auto-stop
-const MAX_RECORD_MS        = 30000; // hard cap 30s
-const METERING_INTERVAL_MS = 150;   // poll rate
+const SILENCE_THRESHOLD_DB      = -45;   // below this = silence
+const SILENCE_DURATION_MS       = 1500;  // 1.5s of silence → auto-stop (wake-word trigger)
+const CONVO_SILENCE_DURATION_MS = 3000;  // 3s in conversation mode — user has time to think
+const MAX_RECORD_MS             = 30000; // hard cap 30s
+const METERING_INTERVAL_MS      = 150;   // poll rate
+
+// Instant filler phrases played with expo-speech (<100ms, no API)
+// Covers the 1.5-2s gap while Whisper + Claude processes
+const FILLERS: Record<string, string[]> = {
+  en: ['Hmm...', 'Let me see...', 'Got it...', 'Sure...', 'One moment...'],
+  es: ['Hmm...', 'A ver...', 'Déjame ver...', 'Claro...', 'Un momento...'],
+  pt: ['Hmm...', 'Deixa eu ver...', 'Claro...', 'Um momento...'],
+  fr: ['Hmm...', 'Voyons...', 'Bien sûr...', 'Un moment...'],
+};
 
 export const useVoiceStore = create<VoiceState>((set, get) => ({
   isListening: false,
   isProcessing: false,
   isSpeaking: false,
   isWakeActivated: false,
+  isConversationMode: false,
   status: 'idle',
   transcription: '',
   response: '',
@@ -220,6 +239,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   pendingReminder: null,
   pendingEventId: null,
   pendingAttendeeName: null,
+  conversationHistory: [],
   _recording: null,
   _silenceTimer: null,
 
@@ -279,6 +299,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       set({
         isListening: true,
         isWakeActivated: true,
+        isConversationMode: true,
         status: 'wake_activated',
         _recording: recording,
       });
@@ -335,6 +356,81 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     }
   },
 
+  // ── Conversation continue mode (ChatGPT-style turn-taking) ────────────────
+  // Called automatically after Leeloo finishes speaking. Uses a longer silence
+  // threshold (3s) so the user has time to think, and preserves conversation history.
+  startConversationContinue: async () => {
+    try {
+      set({ lastError: null });
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) return;
+
+      try { await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch { /* ok */ }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+      } as AudioMode);
+
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync({
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        isMeteringEnabled: true,
+      });
+      await recording.startAsync();
+
+      set({
+        isListening: true,
+        isWakeActivated: true,
+        isConversationMode: true,
+        status: 'wake_activated',
+        _recording: recording,
+      });
+
+      let silenceMs = 0;
+      const startedAt = Date.now();
+
+      const timer = setInterval(async () => {
+        try {
+          const state = useVoiceStore.getState();
+          if (!state.isListening) { clearInterval(timer); set({ _silenceTimer: null }); return; }
+
+          if (Date.now() - startedAt >= MAX_RECORD_MS) {
+            clearInterval(timer);
+            set({ _silenceTimer: null, isWakeActivated: false });
+            await useVoiceStore.getState().stopListening();
+            return;
+          }
+
+          const recStatus = await recording.getStatusAsync();
+          const db = recStatus.isRecording && 'metering' in recStatus
+            ? ((recStatus as unknown as { metering?: number }).metering ?? 0)
+            : 0;
+
+          if (db < SILENCE_THRESHOLD_DB) {
+            silenceMs += METERING_INTERVAL_MS;
+            // Conversation mode: 3s silence → exit conversation, go back to wake word
+            if (silenceMs >= CONVO_SILENCE_DURATION_MS) {
+              clearInterval(timer);
+              set({ _silenceTimer: null, isWakeActivated: false, isConversationMode: false });
+              await useVoiceStore.getState().stopListening();
+            }
+          } else {
+            silenceMs = 0;
+          }
+        } catch {
+          clearInterval(timer);
+          set({ _silenceTimer: null, isWakeActivated: false, isConversationMode: false });
+        }
+      }, METERING_INTERVAL_MS);
+
+      set({ _silenceTimer: timer });
+    } catch {
+      set({ isConversationMode: false });
+    }
+  },
+
   stopListening: async () => {
     let uri: string | null = null;
 
@@ -353,6 +449,15 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
 
       set({ isProcessing: true });
       const language = useSettingsStore.getState().language;
+
+      // Instant filler — played with expo-speech before API round-trip (<100ms start)
+      // speakTextAndWait() calls Speech.stop() when real audio arrives, cancelling this.
+      try {
+        const fillerList = FILLERS[language] ?? FILLERS.en;
+        Speech.speak(fillerList[Math.floor(Math.random() * fillerList.length)], {
+          language, rate: 1.1, onDone: () => {}, onError: () => {},
+        });
+      } catch { /* non-critical */ }
 
       // Si hay un recordatorio pendiente, intentamos matching local primero (cero tokens)
       const reminder = useVoiceStore.getState().pendingReminder;
@@ -383,7 +488,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       }
 
       const profileOpts = await getProfileOpts();
-      const res = await voiceAPI.processVoice(uri, { language, ...profileOpts });
+      const history = useVoiceStore.getState().conversationHistory;
+      const historyStr = history.length
+        ? history.map((t) => `User: ${t.user}\nLeeloo: ${t.assistant}`).join('\n')
+        : undefined;
+      const res = await voiceAPI.processVoice(uri, { language, ...profileOpts, conversationHistory: historyStr });
       const data = (res?.data ?? {}) as RawVoiceApiResponse;
 
       const transcription = data.transcription ?? data.text ?? data.input_text ?? '';
@@ -406,6 +515,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
           awaitingConfirmation: false,
           status: 'idle',
         });
+      }
+
+      // Append to rolling conversation history (last 5 turns)
+      if (transcription && assistantText) {
+        const prev = useVoiceStore.getState().conversationHistory;
+        const updated = [...prev, { user: transcription, assistant: assistantText }].slice(-5);
+        set({ conversationHistory: updated });
       }
 
       const audioBase64 = data?.tts?.audio_base64 || null;
@@ -455,6 +571,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         set({ isSpeaking: true, status: 'speaking' });
         await speakTextAndWait(assistantText, language);
         set({ isSpeaking: false, status: 'idle' });
+      }
+
+      // ChatGPT-style turn-taking: after Leeloo speaks, auto-listen for a follow-up.
+      // If the user doesn't speak within 3s, conversation mode exits naturally.
+      const isConvoMode = useVoiceStore.getState().isConversationMode;
+      const isAwaitingConf = useVoiceStore.getState().awaitingConfirmation;
+      if (isConvoMode && !isAwaitingConf) {
+        setTimeout(() => {
+          const s = useVoiceStore.getState();
+          if (!s.isListening && !s.isProcessing && !s.isSpeaking && s.isConversationMode) {
+            s.startConversationContinue();
+          }
+        }, 600);
       }
 
       // Open native phone dialer when Leeloo resolved a call intent
@@ -759,6 +888,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       isProcessing: false,
       isSpeaking: false,
       isWakeActivated: false,
+      isConversationMode: false,
       status: 'idle',
       transcription: '',
       response: '',
@@ -769,6 +899,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       pendingReminder: null,
       pendingEventId: null,
       pendingAttendeeName: null,
+      conversationHistory: [],
       _recording: null,
       _silenceTimer: null,
     });
