@@ -29,6 +29,20 @@ export class MemoriesService implements OnModuleInit {
       )`,
     );
 
+    // Expand the category constraint to include all categories the AI may generate.
+    // Wrapped in DO block so it's a no-op if ALTER fails (e.g. insufficient permissions).
+    await this.db.query(`
+      DO $$ BEGIN
+        ALTER TABLE memories DROP CONSTRAINT IF EXISTS memories_category_check;
+        ALTER TABLE memories ADD CONSTRAINT memories_category_check
+          CHECK (category IN (
+            'routine','preference','family','work','spiritual','other',
+            'conversation_turn','contact','task','goal','reminder',
+            'birthday','school','general'
+          ));
+      EXCEPTION WHEN OTHERS THEN NULL; END $$
+    `).catch(() => {});
+
     await this.db.query(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_user_key_unique ON memories (user_id, key)',
     );
@@ -39,6 +53,20 @@ export class MemoriesService implements OnModuleInit {
       `CREATE INDEX IF NOT EXISTS idx_memories_fts ON memories
        USING GIN (to_tsvector('simple', coalesce(key,'') || ' ' || coalesce(category,'') || ' ' || coalesce(value::text,'')))`,
     );
+  }
+
+  private static readonly VALID_CATEGORIES = new Set([
+    'routine','preference','family','work','spiritual','other',
+    'conversation_turn','contact','task','goal','reminder','birthday','school','general',
+  ]);
+
+  private normalizeCategory(raw: string): string {
+    const c = String(raw || '').toLowerCase().trim();
+    if (MemoriesService.VALID_CATEGORIES.has(c)) return c;
+    // Map common Claude-generated values to valid categories
+    if (c === 'productivity' || c === 'habit') return 'routine';
+    if (c === 'personal' || c === 'note') return 'other';
+    return 'other';
   }
 
   private async touchMemories(ids: string[]) {
@@ -173,11 +201,12 @@ export class MemoriesService implements OnModuleInit {
   async createMemory(userId: string, category: string, key: string, value: any) {
     const profileId = await this.getProfileId(userId);
     const id = randomUUID();
+    const safeCategory = this.normalizeCategory(category);
     const res = await this.db.query(
       `INSERT INTO memories (id, user_id, category, key, value, confidence, last_used, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
        RETURNING *`,
-      [id, profileId, category, key, value, 1.0],
+      [id, profileId, safeCategory, key, value, 1.0],
     );
     return res.rows[0];
   }

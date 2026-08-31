@@ -400,8 +400,11 @@ const cs = StyleSheet.create({
 });
 
 export default function HomeScreen() {
-  deviceLogger.log('[Home] HomeScreen mounting');
-  const { transcription, response, isProcessing, lastError, sendText } = useVoiceStore();
+  const transcription = useVoiceStore((s) => s.transcription);
+  const response = useVoiceStore((s) => s.response);
+  const isProcessing = useVoiceStore((s) => s.isProcessing);
+  const lastError = useVoiceStore((s) => s.lastError);
+  const sendText = useVoiceStore((s) => s.sendText);
   const isSpeaking = useVoiceStore((s) => s.isSpeaking);
   const session = useAuthStore((s) => s.session);
   const hydrateTasks = useTasksStore((s) => s.hydrate);

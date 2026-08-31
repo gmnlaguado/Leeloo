@@ -867,15 +867,24 @@ export class VoiceService {
         return { ok: true, provider: 'api', endpoint: '/v1/media/play', data: res.data };
       }
 
+      if (intent === 'set_language') {
+        const lang = String(slots.language || '').trim().toLowerCase();
+        const validLangs = ['es', 'en', 'pt', 'fr'];
+        const resolvedLang = validLangs.includes(lang) ? lang : 'es';
+        try {
+          await axios.patch(
+            `${apiBaseUrl.replace(/\/+$/, '')}/v1/profiles/me`,
+            { leeloo_language: resolvedLang },
+            { headers },
+          );
+        } catch { /* non-fatal — UI will still update on next startup */ }
+        return { ok: true, provider: 'api', endpoint: '/v1/profiles/me', data: { language: resolvedLang }, _languageChange: resolvedLang };
+      }
+
       if (intent === 'save_memory') {
         const content = String(slots.content || '').trim();
-        const category = String(slots.category || '').trim();
+        const category = String(slots.category || 'other').trim() || 'other';
         if (!content) return { ok: false, fallback_text: 'What should I remember?' };
-        if (!category)
-          return {
-            ok: false,
-            fallback_text: 'What category is it? birthday, school, contact, or goal?',
-          };
         const res = await axios.post(
           `${apiBaseUrl.replace(/\/+$/, '')}/v1/memories/save`,
           { content, category },

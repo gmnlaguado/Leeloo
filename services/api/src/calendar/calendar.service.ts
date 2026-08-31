@@ -426,8 +426,11 @@ export class CalendarService implements OnModuleInit {
   async getEventsForDay(clerkUserId: string, day: string) {
     const profileId = await this.getProfileId(clerkUserId);
     const timezone = await this.getUserTimezone(clerkUserId);
-    const startLocal = `${day} 00:00:00`;
-    const endLocal = `${day} 23:59:59.999`;
+    const safeDay = /^\d{4}-\d{2}-\d{2}$/.test(String(day || ''))
+      ? day
+      : this.formatDayInTimezone(new Date(), timezone);
+    const startLocal = `${safeDay} 00:00:00`;
+    const endLocal = `${safeDay} 23:59:59.999`;
 
     const result = await this.db.query(
       `SELECT *
