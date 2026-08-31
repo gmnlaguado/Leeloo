@@ -254,6 +254,87 @@ export class IntegrationsService {
   }
 
   // ---------------------------------------------------------------------------
+  // Public OAuth callback — used by the backend callback URL (no JWT required)
+  // State row contains the stored user_id so we can exchange without auth.
+  // ---------------------------------------------------------------------------
+  async handleOAuthCallback(provider: IntegrationProvider, code: string, state: string): Promise<string> {
+    const MOBILE_SCHEME = 'leeloo://integrations/callback';
+    const stateStr = String(state || '').trim();
+    const codeStr  = String(code  || '').trim();
+
+    if (!stateStr || !codeStr) {
+      return `${MOBILE_SCHEME}?error=missing_params&provider=${provider}`;
+    }
+
+    const stateRes = await this.db.query<{
+      code_verifier: string;
+      redirect_uri: string;
+      user_id: string;
+      provider: string;
+      expires_at: string;
+    }>(
+      `SELECT code_verifier, redirect_uri, user_id, provider, expires_at
+       FROM oauth_states WHERE state = $1 LIMIT 1`,
+      [stateStr],
+    );
+
+    const row = stateRes.rows[0];
+    if (!row) return `${MOBILE_SCHEME}?error=invalid_state&provider=${provider}`;
+    if (new Date(row.expires_at).getTime() <= Date.now()) {
+      await this.db.query('DELETE FROM oauth_states WHERE state = $1', [stateStr]);
+      return `${MOBILE_SCHEME}?error=expired_state&provider=${provider}`;
+    }
+    if (row.provider !== provider) {
+      return `${MOBILE_SCHEME}?error=provider_mismatch&provider=${provider}`;
+    }
+
+    const cfg = this.readProviderConfig(provider);
+    if (!cfg.clientId || !cfg.clientSecret) {
+      return `${MOBILE_SCHEME}?error=server_config&provider=${provider}`;
+    }
+
+    const body = new URLSearchParams();
+    body.set('client_id', cfg.clientId);
+    body.set('client_secret', cfg.clientSecret);
+    body.set('code', codeStr);
+    body.set('grant_type', 'authorization_code');
+    body.set('redirect_uri', row.redirect_uri);
+    body.set('code_verifier', row.code_verifier);
+
+    let tokenResData: Record<string, unknown> = {};
+    try {
+      const tokenRes = await axios.post(cfg.tokenUrl, body.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        timeout: 30_000,
+      });
+      tokenResData = tokenRes.data || {};
+    } catch (e: unknown) {
+      await this.db.query('DELETE FROM oauth_states WHERE state = $1', [stateStr]);
+      this.logger.warn(`[callback] token exchange failed (${provider}): ${String((e as any)?.message)}`);
+      return `${MOBILE_SCHEME}?error=token_exchange&provider=${provider}`;
+    }
+
+    await this.db.query('DELETE FROM oauth_states WHERE state = $1', [stateStr]);
+
+    try {
+      await this.upsertIntegration(row.user_id, provider, tokenResData);
+      if (provider === 'google') {
+        const accessToken = typeof tokenResData.access_token === 'string' ? tokenResData.access_token : '';
+        if (accessToken) {
+          this.googleContactsService
+            .syncContactsForUser(accessToken, row.user_id)
+            .catch((e) => this.logger.warn(`Auto contacts sync failed: ${String(e)}`));
+        }
+      }
+    } catch (e) {
+      this.logger.warn(`[callback] upsert failed: ${String(e)}`);
+      return `${MOBILE_SCHEME}?error=save_failed&provider=${provider}`;
+    }
+
+    return `${MOBILE_SCHEME}?success=true&provider=${provider}`;
+  }
+
+  // ---------------------------------------------------------------------------
   // Persistence (encrypted)
   // ---------------------------------------------------------------------------
   private async upsertIntegration(

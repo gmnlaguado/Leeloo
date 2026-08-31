@@ -3,6 +3,7 @@ import { ProfilesModule } from '../profiles/profiles.module';
 import { DatabaseModule } from '../database/database.module';
 import { AuthModule } from '../auth/auth.module';
 import { IntegrationsController } from './integrations.controller';
+import { IntegrationsPublicController } from './integrations-public.controller';
 import { IntegrationsService } from './integrations.service';
 import { GoogleCalendarService } from './google-calendar.service';
 import { GoogleContactsService } from './google-contacts.service';
@@ -11,7 +12,7 @@ import { MicrosoftCalendarService } from './microsoft-calendar.service';
 
 @Module({
   imports: [DatabaseModule, ProfilesModule, AuthModule],
-  controllers: [IntegrationsController],
+  controllers: [IntegrationsController, IntegrationsPublicController],
   providers: [
     IntegrationsService,
     GoogleCalendarService,

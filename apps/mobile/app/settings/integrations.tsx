@@ -113,19 +113,23 @@ export default function IntegrationsScreen() {
   const handleConnect = async (provider: IntegrationProvider) => {
     setActionLoading(provider);
     try {
-      const redirectUri = 'leeloo://settings/integrations';
+      // Use the backend URL as redirect URI — it's already registered in Google Cloud Console.
+      // The backend exchanges the code, saves the token, then redirects to leeloo://integrations/callback
+      const redirectUri = `https://leeloo-api-55i5.onrender.com/v1/integrations/callback/${provider}`;
       const res = await integrationsAPI.getAuthUrl(provider, redirectUri);
       const url: string = (res.data as any)?.url;
       if (!url) throw new Error('No URL returned');
 
-      const result = await WebBrowser.openAuthSessionAsync(url, redirectUri);
+      // openAuthSessionAsync closes the browser when it detects the leeloo:// scheme redirect
+      const result = await WebBrowser.openAuthSessionAsync(url, 'leeloo://');
       if (result.type === 'success' && result.url) {
         const params = new URLSearchParams(result.url.split('?')[1] || '');
-        const code = params.get('code');
-        const state = params.get('state');
-        if (code && state) {
-          await integrationsAPI.connectIntegration({ provider, authCode: code, state, redirectUri });
+        const success = params.get('success');
+        const error = params.get('error');
+        if (error) throw new Error(error);
+        if (success === 'true') {
           setIntegrations((prev) => prev.map((i) => i.provider === provider ? { ...i, connected: true } : i));
+          await loadIntegrations(); // refresh from backend to confirm
         }
       }
     } catch {
