@@ -413,7 +413,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
             // Conversation mode: 3s silence → exit conversation, go back to wake word
             if (silenceMs >= CONVO_SILENCE_DURATION_MS) {
               clearInterval(timer);
-              set({ _silenceTimer: null, isWakeActivated: false, isConversationMode: false });
+              set({ _silenceTimer: null, isWakeActivated: false });
               await useVoiceStore.getState().stopListening();
             }
           } else {
@@ -438,7 +438,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       const recording = useVoiceStore.getState()._recording;
       set({ isListening: false, status: 'processing', _recording: null, lastError: null });
 
-      if (!recording) return;
+      if (!recording) {
+        set({ isConversationMode: false });
+        return;
+      }
 
       await recording.stopAndUnloadAsync();
       uri = recording.getURI();
@@ -517,11 +520,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         });
       }
 
-      // Append to rolling conversation history (last 5 turns)
-      if (transcription && assistantText) {
-        const prev = useVoiceStore.getState().conversationHistory;
-        const updated = [...prev, { user: transcription, assistant: assistantText }].slice(-5);
-        set({ conversationHistory: updated });
+      // If the user said nothing (silence timeout), exit conversation mode to avoid infinite listen loop
+      if (!transcription.trim()) {
+        set({ isConversationMode: false });
       }
 
       const audioBase64 = data?.tts?.audio_base64 || null;
@@ -530,6 +531,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       let played = false;
 
       if (audioBase64 && typeof audioBase64 === 'string') {
+        try { Speech.stop(); } catch { /* cancel filler before real TTS */ }
         if (Platform.OS === 'android') {
           // Android MediaPlayer rejects data: URIs — write to a temp file and play from path.
           let tmpPath: string | null = null;
@@ -538,11 +540,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
             await FileSystem.writeAsStringAsync(tmpPath, audioBase64, {
               encoding: FileSystem.EncodingType.Base64,
             });
+            set({ isSpeaking: true, status: 'speaking' });
             await playAudioUrl(tmpPath);
             played = true;
           } catch (err) {
             deviceLogger.log('[voice] android tts file playback failed', { err: String(err) });
           } finally {
+            set({ isSpeaking: false, status: 'idle' });
             if (tmpPath) {
               FileSystem.deleteAsync(tmpPath, { idempotent: true }).catch(() => {});
             }
@@ -550,20 +554,26 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         } else {
           try {
             const dataUri = `data:audio/mpeg;base64,${audioBase64}`;
+            set({ isSpeaking: true, status: 'speaking' });
             await playAudioUrl(dataUri);
             played = true;
           } catch (err) {
             deviceLogger.log('[voice] audio(base64) playback failed', { err: String(err) });
+          } finally {
+            set({ isSpeaking: false, status: 'idle' });
           }
         }
       }
 
       if (audioUrl && typeof audioUrl === 'string') {
         try {
+          set({ isSpeaking: true, status: 'speaking' });
           await playAudioUrl(audioUrl);
           played = true;
         } catch (err) {
           console.log('[voice] audio playback failed:', String(err));
+        } finally {
+          set({ isSpeaking: false, status: 'idle' });
         }
       }
 
@@ -571,6 +581,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         set({ isSpeaking: true, status: 'speaking' });
         await speakTextAndWait(assistantText, language);
         set({ isSpeaking: false, status: 'idle' });
+      }
+
+      // Append turn to conversation history only after audio played (avoid orphaned turns on failure)
+      if (transcription && assistantText) {
+        const prev = useVoiceStore.getState().conversationHistory;
+        const updated = [...prev, { user: transcription, assistant: assistantText }].slice(-5);
+        set({ conversationHistory: updated });
       }
 
       // ChatGPT-style turn-taking: after Leeloo speaks, auto-listen for a follow-up.
@@ -715,6 +732,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       let played = false;
 
       if (audioBase64 && typeof audioBase64 === 'string') {
+        try { Speech.stop(); } catch { /* cancel filler before real TTS */ }
         if (Platform.OS === 'android') {
           // Android MediaPlayer rejects data: URIs — write to a temp file and play from path.
           let tmpPath: string | null = null;
@@ -723,11 +741,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
             await FileSystem.writeAsStringAsync(tmpPath, audioBase64, {
               encoding: FileSystem.EncodingType.Base64,
             });
+            set({ isSpeaking: true, status: 'speaking' });
             await playAudioUrl(tmpPath);
             played = true;
           } catch (err) {
             deviceLogger.log('[voice] android tts file playback failed', { err: String(err) });
           } finally {
+            set({ isSpeaking: false, status: 'idle' });
             if (tmpPath) {
               FileSystem.deleteAsync(tmpPath, { idempotent: true }).catch(() => {});
             }
@@ -735,19 +755,25 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         } else {
           try {
             const dataUri = `data:audio/mpeg;base64,${audioBase64}`;
+            set({ isSpeaking: true, status: 'speaking' });
             await playAudioUrl(dataUri);
             played = true;
           } catch (err) {
             deviceLogger.log('[voice] audio(base64) playback failed', { err: String(err) });
+          } finally {
+            set({ isSpeaking: false, status: 'idle' });
           }
         }
       }
       if (audioUrl && typeof audioUrl === 'string') {
         try {
+          set({ isSpeaking: true, status: 'speaking' });
           await playAudioUrl(audioUrl);
           played = true;
         } catch (err) {
           console.log('[voice] audio playback failed:', String(err));
+        } finally {
+          set({ isSpeaking: false, status: 'idle' });
         }
       }
 

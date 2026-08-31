@@ -168,16 +168,32 @@ export class VoiceService {
     }
 
     this.logger.log(`[PIPE] action start +${ms()}ms — intent=${intent?.intent}`);
-    const actionResult = await this.dispatchAction({
-      intent,
-      userId: input.userId,
-      authorization: input.authorization,
-      confirmation: input.confirmation,
-      pendingEventId: input.pending_event_id,
-      pendingAttendeeName: input.pending_attendee_name,
-      language,
-    });
-    this.logger.log(`[PIPE] action done +${ms()}ms`);
+
+    // Parallel TTS optimisation: for intents where assistant_text is already final,
+    // start TTS while the action dispatches. Saves 0.5-1.5s on every non-confirmation turn.
+    const canParallelTts =
+      VoiceService.PARALLEL_TTS_INTENTS.has(intent.intent) &&
+      Boolean(intent.assistant_text) &&
+      !intent.needs_confirmation &&
+      !input.confirmation;
+
+    const ttsEarlyPromise: Promise<string | null> = canParallelTts
+      ? this.safeTts({ userId: input.userId, text: intent.assistant_text, personality })
+      : Promise.resolve(null);
+
+    const [actionResult, earlyTtsAudio] = await Promise.all([
+      this.dispatchAction({
+        intent,
+        userId: input.userId,
+        authorization: input.authorization,
+        confirmation: input.confirmation,
+        pendingEventId: input.pending_event_id,
+        pendingAttendeeName: input.pending_attendee_name,
+        language,
+      }),
+      ttsEarlyPromise,
+    ]);
+    this.logger.log(`[PIPE] action done +${ms()}ms — parallelTts=${canParallelTts}`);
 
     let assistantText = this.buildAssistantText(intent, actionResult);
 
@@ -196,6 +212,7 @@ export class VoiceService {
       const ttsAudioBase64 = await this.safeTts({
         userId: input.userId,
         text: assistantText,
+        personality,
       });
 
       return {
@@ -217,7 +234,7 @@ export class VoiceService {
 
     if (needsConfirmation && input.confirmation === 'cancel') {
       const cancelText = language === 'es' ? 'Listo, cancelado.' : 'Okay, canceled.';
-      const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: cancelText });
+      const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: cancelText, personality });
       return {
         ok: true,
         status: 'canceled',
@@ -246,7 +263,7 @@ export class VoiceService {
         language,
       });
       const confirmedText = this.buildAssistantText(intent, confirmedAction);
-      const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: confirmedText });
+      const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: confirmedText, personality });
       this.saveTurnFireAndForget({
         authorization: input.authorization,
         transcription,
@@ -276,7 +293,7 @@ export class VoiceService {
         language === 'es'
           ? `${assistantText} ¿Quieres invitar a alguien?`
           : `${assistantText} Would you like to invite someone?`;
-      const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: askText });
+      const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: askText, personality });
       return {
         ok: true,
         status: 'awaiting_attendees',
@@ -292,7 +309,7 @@ export class VoiceService {
     // If waiting for an attendee email, return the unresolved state.
     if (actionResult?.status === 'awaiting_attendee_email' && actionResult?.event_id) {
       const askText = actionResult.fallback_text || assistantText;
-      const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: askText });
+      const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: askText, personality });
       return {
         ok: true,
         status: 'awaiting_attendee_email',
@@ -308,12 +325,16 @@ export class VoiceService {
       };
     }
 
-    this.logger.log(`[PIPE] tts start +${ms()}ms — ${assistantText.length} chars`);
-    const ttsAudioBase64 = await this.safeTts({
-      userId: input.userId,
-      text: assistantText,
-    });
-    this.logger.log(`[PIPE] tts done +${ms()}ms — audio=${ttsAudioBase64 ? 'ok' : 'NULL (ElevenLabs failed)'}`);
+    // Reuse parallel-generated TTS if text is unchanged; otherwise generate fresh.
+    let ttsAudioBase64: string | null;
+    if (earlyTtsAudio && assistantText === intent.assistant_text) {
+      ttsAudioBase64 = earlyTtsAudio;
+      this.logger.log(`[PIPE] tts reused (parallel) +${ms()}ms`);
+    } else {
+      this.logger.log(`[PIPE] tts start +${ms()}ms — ${assistantText.length} chars`);
+      ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: assistantText, personality });
+      this.logger.log(`[PIPE] tts done +${ms()}ms — audio=${ttsAudioBase64 ? 'ok' : 'NULL (ElevenLabs failed)'}`);
+    }
 
     // Persist this exchange so Leeloo remembers it in future sessions
     this.saveTurnFireAndForget({
@@ -502,9 +523,39 @@ export class VoiceService {
       .catch(() => { /* fire-and-forget — never blocks the response */ });
   }
 
-  private async safeTts(input: { userId: string; text: string }) {
+  // ElevenLabs voice parameter presets per personality.
+  // Each personality has a distinct acoustic feel while sharing the same voice ID.
+  private static readonly PERSONALITY_TTS: Record<string, {
+    stability: number; similarityBoost: number; style: number;
+  }> = {
+    counselor: { stability: 0.75, similarityBoost: 0.85, style: 0.08 }, // slow, warm, grounded
+    coach:     { stability: 0.28, similarityBoost: 0.80, style: 0.72 }, // energetic, dynamic
+    business:  { stability: 0.65, similarityBoost: 0.85, style: 0.12 }, // professional, clear
+    christian: { stability: 0.62, similarityBoost: 0.82, style: 0.22 }, // serene, gentle
+    mentor:    { stability: 0.52, similarityBoost: 0.80, style: 0.38 }, // thoughtful, measured
+    faith:     { stability: 0.60, similarityBoost: 0.82, style: 0.20 }, // warm, reverential
+    default:   { stability: 0.45, similarityBoost: 0.80, style: 0.35 }, // balanced
+  };
+
+  // Intents whose assistant_text from Claude is the final spoken text — safe to
+  // start TTS generation in parallel with the action dispatch, saving 0.5-1.5s.
+  private static readonly PARALLEL_TTS_INTENTS = new Set([
+    'chat', 'emotional_support', 'save_memory', 'set_language',
+    'create_task', 'create_reminder', 'complete_task', 'set_goal',
+    'daily_verse', 'suggest_meal', 'get_recipe', 'recommend_restaurant',
+    'play_media', 'make_call', 'school_email_check',
+  ]);
+
+  private async safeTts(input: { userId: string; text: string; personality?: string }) {
     try {
-      const result = await this.ttsFactory.synthesize(input.text);
+      const preset = VoiceService.PERSONALITY_TTS[input.personality ?? 'default']
+        ?? VoiceService.PERSONALITY_TTS.default;
+      const result = await this.ttsFactory.synthesize(input.text, {
+        stability: preset.stability,
+        similarityBoost: preset.similarityBoost,
+        style: preset.style,
+        useSpeakerBoost: true,
+      });
       return result.audio.toString('base64');
     } catch (err: any) {
       this.logger.error(

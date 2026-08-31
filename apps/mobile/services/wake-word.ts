@@ -35,6 +35,7 @@ class WakeWordService {
   private language = 'en';
 
   private cycleTimer: ReturnType<typeof setTimeout> | null = null;
+  private clipTimer: ReturnType<typeof setTimeout> | null = null;
   private meterTimer: ReturnType<typeof setInterval> | null = null;
   private recording: Audio.Recording | null = null;
   private appStateSub: ReturnType<typeof AppState.addEventListener> | null = null;
@@ -103,6 +104,10 @@ class WakeWordService {
       clearTimeout(this.cycleTimer);
       this.cycleTimer = null;
     }
+    if (this.clipTimer !== null) {
+      clearTimeout(this.clipTimer);
+      this.clipTimer = null;
+    }
     if (this.meterTimer !== null) {
       clearInterval(this.meterTimer);
       this.meterTimer = null;
@@ -150,7 +155,8 @@ class WakeWordService {
           } catch { /* ignore */ }
         }, METER_POLL_MS);
 
-        setTimeout(() => {
+        this.clipTimer = setTimeout(() => {
+          this.clipTimer = null;
           clearInterval(this.meterTimer!);
           this.meterTimer = null;
           resolve();
