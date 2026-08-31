@@ -544,6 +544,8 @@ export class VoiceService {
     'create_task', 'create_reminder', 'complete_task', 'set_goal',
     'daily_verse', 'suggest_meal', 'get_recipe', 'recommend_restaurant',
     'play_media', 'make_call', 'school_email_check',
+    'create_alarm', 'add_to_shopping_list', 'view_shopping_list',
+    'add_family_member', 'assign_to_family_member', 'list_goals', 'check_goals',
   ]);
 
   private async safeTts(input: { userId: string; text: string; personality?: string }) {
@@ -922,17 +924,16 @@ export class VoiceService {
       }
 
       if (intent === 'add_to_cart') {
-        const store = String(slots.store || '').trim();
+        // Redirect to shopping list — cart is now shopping-list backed
+        const store = String(slots.store || 'general').trim();
         const items = String(slots.items || '').trim();
-        if (!store)
-          return { ok: false, fallback_text: 'Which store? Amazon, Instacart, or Walmart?' };
-        if (!items) return { ok: false, fallback_text: 'What items should I add?' };
+        if (!items) return { ok: false, fallback_text: lang === 'es' ? '¿Qué quieres agregar?' : 'What should I add?' };
         const res = await axios.post(
-          `${apiBaseUrl.replace(/\/+$/, '')}/v1/cart/add`,
+          `${apiBaseUrl.replace(/\/+$/, '')}/v1/shopping-list/add`,
           { store, items },
           { headers },
         );
-        return { ok: true, provider: 'api', endpoint: '/v1/cart/add', data: res.data };
+        return { ok: true, provider: 'api', endpoint: '/v1/shopping-list/add', data: res.data };
       }
 
       if (intent === 'play_media') {
@@ -998,6 +999,11 @@ export class VoiceService {
           },
           { headers },
         );
+        return { ok: true, provider: 'api', endpoint: '/v1/goals', data: res.data };
+      }
+
+      if (intent === 'list_goals' || intent === 'check_goals') {
+        const res = await axios.get(`${apiBaseUrl.replace(/\/+$/, '')}/v1/goals`, { headers });
         return { ok: true, provider: 'api', endpoint: '/v1/goals', data: res.data };
       }
 
@@ -1087,6 +1093,91 @@ export class VoiceService {
           data: res.data,
           _agendaData: res.data,
         };
+      }
+
+      // Create a native device alarm — mobile handles 'device' provider directly
+      if (intent === 'create_alarm') {
+        const title = String(slots.title || 'Alarm').trim();
+        const time = String(slots.time || '').trim();
+        const recurrence = String(slots.recurrence || 'once').trim();
+        if (!time) return { ok: false, fallback_text: lang === 'es' ? '¿A qué hora pongo la alarma?' : 'What time should I set the alarm for?' };
+        return { ok: true, provider: 'device', action: 'create_alarm', title, time, recurrence };
+      }
+
+      if (intent === 'reschedule_reminder') {
+        const reminderTitle = String(slots.reminder_title || '').trim();
+        const newDatetime = String(slots.new_datetime || '').trim();
+        if (!reminderTitle) return { ok: false, fallback_text: lang === 'es' ? '¿Qué recordatorio quieres mover?' : 'Which reminder should I reschedule?' };
+        if (!newDatetime) return { ok: false, fallback_text: lang === 'es' ? '¿Para cuándo lo muevo?' : 'When should I reschedule it to?' };
+        const searchRes = await axios.get(`${apiBaseUrl.replace(/\/+$/, '')}/v1/reminders/search`, {
+          headers, params: { q: reminderTitle }, timeout: 10000,
+        });
+        const reminders: any[] = Array.isArray(searchRes.data?.reminders) ? searchRes.data.reminders : [];
+        const match = reminders[0];
+        if (!match?.id) return { ok: false, fallback_text: lang === 'es' ? `No encontré el recordatorio "${reminderTitle}".` : `Couldn't find reminder "${reminderTitle}".` };
+        const res = await axios.patch(`${apiBaseUrl.replace(/\/+$/, '')}/v1/reminders/${match.id}/reschedule`, { new_datetime: newDatetime }, { headers });
+        return { ok: true, provider: 'api', endpoint: `/v1/reminders/${match.id}/reschedule`, data: res.data };
+      }
+
+      if (intent === 'delete_reminder') {
+        const reminderTitle = String(slots.reminder_title || '').trim();
+        if (!reminderTitle) return { ok: false, fallback_text: lang === 'es' ? '¿Qué recordatorio elimino?' : 'Which reminder should I delete?' };
+        const searchRes = await axios.get(`${apiBaseUrl.replace(/\/+$/, '')}/v1/reminders/search`, {
+          headers, params: { q: reminderTitle }, timeout: 10000,
+        });
+        const reminders: any[] = Array.isArray(searchRes.data?.reminders) ? searchRes.data.reminders : [];
+        const match = reminders[0];
+        if (!match?.id) return { ok: false, fallback_text: lang === 'es' ? `No encontré el recordatorio "${reminderTitle}".` : `Couldn't find reminder "${reminderTitle}".` };
+        await axios.delete(`${apiBaseUrl.replace(/\/+$/, '')}/v1/reminders/${match.id}`, { headers });
+        return { ok: true, provider: 'api', endpoint: `/v1/reminders/${match.id}`, data: { deleted: true } };
+      }
+
+      if (intent === 'add_to_shopping_list') {
+        const items = String(slots.items || '').trim();
+        const store = String(slots.store || 'general').trim();
+        if (!items) return { ok: false, fallback_text: lang === 'es' ? '¿Qué quieres agregar a la lista?' : 'What should I add to the list?' };
+        const res = await axios.post(
+          `${apiBaseUrl.replace(/\/+$/, '')}/v1/shopping-list/add`,
+          { items, store },
+          { headers },
+        );
+        return { ok: true, provider: 'api', endpoint: '/v1/shopping-list/add', data: res.data };
+      }
+
+      if (intent === 'view_shopping_list') {
+        const store = String(slots.store || '').trim() || undefined;
+        const res = await axios.get(`${apiBaseUrl.replace(/\/+$/, '')}/v1/shopping-list`, {
+          headers,
+          params: store ? { store } : {},
+        });
+        return { ok: true, provider: 'api', endpoint: '/v1/shopping-list', data: res.data };
+      }
+
+      if (intent === 'add_family_member') {
+        const name = String(slots.name || '').trim();
+        const role = String(slots.role || '').trim();
+        if (!name) return { ok: false, fallback_text: lang === 'es' ? '¿Cuál es el nombre del familiar?' : 'What is the family member\'s name?' };
+        if (!role) return { ok: false, fallback_text: lang === 'es' ? '¿Cuál es su relación contigo?' : 'What is their relationship to you?' };
+        const res = await axios.post(
+          `${apiBaseUrl.replace(/\/+$/, '')}/v1/family/members`,
+          { name, role, age: slots.age ? Number(slots.age) : undefined },
+          { headers },
+        );
+        return { ok: true, provider: 'api', endpoint: '/v1/family/members', data: res.data };
+      }
+
+      if (intent === 'assign_to_family_member') {
+        const memberName = String(slots.member_name || '').trim();
+        const taskTitle = String(slots.task_title || '').trim();
+        const dueAt = String(slots.due_at || '').trim() || undefined;
+        if (!memberName) return { ok: false, fallback_text: lang === 'es' ? '¿A quién asigno la tarea?' : 'Who should I assign this task to?' };
+        if (!taskTitle) return { ok: false, fallback_text: lang === 'es' ? '¿Qué tarea asigno?' : 'What task should I assign?' };
+        const res = await axios.post(
+          `${apiBaseUrl.replace(/\/+$/, '')}/v1/tasks`,
+          { title: taskTitle, description: `Asignado a: ${memberName}`, assignee_name: memberName, due_at: dueAt },
+          { headers },
+        );
+        return { ok: true, provider: 'api', endpoint: '/v1/tasks', data: res.data };
       }
 
       return { ok: true, provider: 'none', endpoint: null, data: null };

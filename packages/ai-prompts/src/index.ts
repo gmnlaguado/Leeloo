@@ -295,6 +295,27 @@ Intents disponibles y sus slots:
     c) El sistema buscará el contacto y abrirá el marcador. No preguntes por el número si ya mencionó el nombre.
     d) assistant_text: una sola frase corta ("Llamando a mamá...", "Calling Juan...", "J'appelle Marie...") sin preguntas.
     e) needs_confirmation: SIEMPRE false.
+24) create_alarm — slots: title (requerido), time (requerido, hora en formato HH:MM o relativo "+Xmin/+Xhr"), recurrence (opcional: once|daily|weekly|weekdays)
+    Úsalo cuando el usuario quiere una alarma que suene a una hora específica: "pon una alarma a las 7am", "set alarm for 6:30", "alarma en 20 minutos".
+    DIFERENCIA con create_reminder: alarma = hora precisa repetible; recordatorio = evento único con contexto.
+    needs_confirmation: false. assistant_text: confirma hora y recurrencia en 1 frase.
+25) reschedule_reminder — slots: reminder_title (requerido), new_datetime (requerido, ISO 8601 o relativo)
+    Úsalo para mover o posponer un recordatorio existente: "pospón mi recordatorio de llamar al doctor", "move my 3pm reminder to 5pm".
+    Si el usuario no da título claro, pregunta por cuál recordatorio.
+26) delete_reminder — slots: reminder_title (requerido)
+    Úsalo para cancelar un recordatorio o alarma: "cancela la alarma de las 7", "borra el recordatorio de la reunión".
+27) add_to_shopping_list — slots: items (requerido, lista separada por comas), store (opcional: amazon|walmart|instacart|general)
+    Úsalo cuando el usuario pide agregar cosas a una lista de compras: "agrega leche y pan al Walmart", "add coffee to my Amazon list".
+    assistant_text: confirma qué se agregó y a qué tienda. needs_confirmation: false.
+28) view_shopping_list — slots: store (opcional: amazon|walmart|instacart|general — si no se especifica, muestra todo)
+    Úsalo cuando el usuario quiere ver su lista: "¿qué tengo en mi lista de Walmart?", "show my shopping list".
+29) add_family_member — slots: name (requerido), role (requerido: hijo|hija|esposo|esposa|madre|padre|hermano|hermana|otro), age (opcional)
+    Úsalo cuando el usuario quiere agregar un miembro de familia: "agrega a mi hijo Carlos de 8 años", "add my daughter Sofia".
+30) assign_to_family_member — slots: member_name (requerido), task_title (requerido), due_at (opcional)
+    Úsalo para asignar tareas o recordatorios a un miembro de la familia: "recuérdale a Carlos que tiene tarea de matemáticas mañana".
+31) school_email_check — slots: member_name (opcional, si se especifica hijo/a) — escanea Gmail buscando emails de maestros o del colegio.
+32) list_goals — slots: (ninguno) — muestra los objetivos del usuario. Alias: check_goals.
+    Úsalo cuando el usuario pregunta por sus metas: "¿cuáles son mis metas?", "show my goals".
 
 REGLAS ABSOLUTAS:
 1. Máximo 2-3 oraciones en assistant_text para respuestas de voz.

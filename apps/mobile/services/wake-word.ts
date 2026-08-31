@@ -12,8 +12,9 @@
 
 import { Audio } from 'expo-av';
 import type { AudioMode } from 'expo-av';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import type { AppStateStatus } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { voiceAPI } from '@/lib/api';
 
 // Minimum dB level to consider speech present — gate prevents sending silent clips.
@@ -47,15 +48,16 @@ class WakeWordService {
     this.onDetected = opts.onDetected;
     this.language = opts.language ?? 'en';
 
-    // Pause when app goes to background to save battery.
-    this.appStateSub = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'active') {
-        if (this.running && this.paused) this._resume();
-      } else {
-        if (this.running && !this.paused) this._suspend();
-      }
+    // iOS: UIBackgroundModes: audio + staysActiveInBackground keeps recording alive.
+    // Android: staysActiveInBackground + FOREGROUND_SERVICE permission keeps process alive.
+    // We show a persistent Android notification so the OS doesn't kill the process.
+    // No pause on background — Leeloo stays ready to hear her name at all times.
+    this.appStateSub = AppState.addEventListener('change', (_state: AppStateStatus) => {
+      // Intentionally empty — wake word runs in background on both platforms.
+      // Use pause()/resume() API explicitly when the voice UI is active.
     });
 
+    void this._showBackgroundNotification();
     this._scheduleCycle(200);
   }
 
@@ -80,18 +82,37 @@ class WakeWordService {
     this.appStateSub = null;
     this._cancelCycle();
     this._stopRecording();
+    void this._dismissBackgroundNotification();
   }
 
-  // Internal: suspend without clearing running state (app background)
-  private _suspend() {
-    this.paused = true;
-    this._cancelCycle();
-    this._stopRecording();
+  private async _showBackgroundNotification() {
+    if (Platform.OS !== 'android') return;
+    try {
+      await Notifications.setNotificationChannelAsync('wake-word', {
+        name: 'Leeloo Wake Word',
+        importance: Notifications.AndroidImportance.LOW,
+        enableVibrate: false,
+        showBadge: false,
+      });
+      const content: any = {
+        title: 'Leeloo está lista',
+        body: 'Di "Leeloo" para activarme',
+        data: { type: 'wake_word_listening' },
+        sticky: true,
+        ongoing: true,
+      };
+      await Notifications.scheduleNotificationAsync({
+        content,
+        trigger: null,
+      });
+    } catch { /* non-fatal — app still works without notification */ }
   }
 
-  private _resume() {
-    this.paused = false;
-    this._scheduleCycle(300);
+  private async _dismissBackgroundNotification() {
+    if (Platform.OS !== 'android') return;
+    try {
+      await Notifications.dismissAllNotificationsAsync();
+    } catch { /* non-fatal */ }
   }
 
   private _scheduleCycle(delay: number) {
@@ -132,7 +153,7 @@ class WakeWordService {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
+        staysActiveInBackground: true,
       } as AudioMode);
 
       const rec = new Audio.Recording();

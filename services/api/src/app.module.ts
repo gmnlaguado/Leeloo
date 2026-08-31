@@ -22,6 +22,8 @@ import { MediaModule } from './media/media.module';
 import { GoalsModule } from './goals/goals.module';
 import { VerseModule } from './verse/verse.module';
 import { RemindersModule } from './reminders/reminders.module';
+import { ShoppingListModule } from './shopping-list/shopping-list.module';
+import { FamilyModule } from './family/family.module';
 import { CryptoModule } from './common/crypto/crypto.module';
 
 @Module({
@@ -57,6 +59,8 @@ import { CryptoModule } from './common/crypto/crypto.module';
     DiagnosticsModule,
     HouseholdModule,
     ContactsModule,
+    ShoppingListModule,
+    FamilyModule,
   ],
   providers: [
     {

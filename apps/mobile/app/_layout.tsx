@@ -232,13 +232,31 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, []);
 
-  // Handle action button taps (Snooze / Done)
+  // Handle action button taps (Snooze / Done) + default tap (speak + open mic)
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener(async (response) => {
       const action = response.actionIdentifier;
       const data = response.notification.request.content.data as Record<string, unknown>;
       const taskId = typeof data?.task_id === 'string' ? data.task_id : null;
+      const speakText = typeof data?.speak_text === 'string' ? data.speak_text : null;
       const n = getNotif();
+
+      // Default tap: user taps the notification body — speak and open mic
+      if (action === Notifications.DEFAULT_ACTION_IDENTIFIER && speakText) {
+        Speech.speak(speakText, {
+          language: n.speech_lang,
+          rate: 0.95,
+          onDone: () => {
+            setTimeout(() => {
+              const { isListening, isProcessing } = useVoiceStore.getState();
+              if (!isListening && !isProcessing) {
+                void useVoiceStore.getState().startListening();
+              }
+            }, 600);
+          },
+        });
+        return;
+      }
 
       if (action === 'mark_done' && taskId) {
         try {

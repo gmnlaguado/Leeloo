@@ -136,6 +136,133 @@ export class RemindersScheduler implements OnModuleInit {
     return 'UTC';
   }
 
+  private async morningBriefing(now: Date) {
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS morning_briefing_sent (
+        user_id uuid NOT NULL,
+        date date NOT NULL,
+        PRIMARY KEY (user_id, date)
+      )
+    `);
+
+    // Select users with a push token — check timezone per user below
+    const usersRes = await this.db.query(`
+      SELECT DISTINCT p.id as user_id, p.preferred_language, p.expo_push_token, p.preferences
+      FROM profiles p
+      WHERE p.expo_push_token IS NOT NULL AND p.expo_push_token <> ''
+      LIMIT 200
+    `);
+
+    for (const u of usersRes.rows) {
+      const token = String(u.expo_push_token || '').trim();
+      if (!token) continue;
+
+      const lang = toSafeLang(u.preferred_language);
+      const userId = String(u.user_id);
+
+      // Resolve user timezone and check if it's 7:00-7:02 AM for them
+      const tz = ((): string => {
+        const prefs = u.preferences;
+        const t = typeof prefs?.timezone === 'string' ? prefs.timezone.trim() : '';
+        return t || 'UTC';
+      })();
+
+      const localHour = (() => {
+        try {
+          const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(now);
+          return Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+        } catch { return now.getUTCHours(); }
+      })();
+      const localMin = (() => {
+        try {
+          const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(now);
+          return Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+        } catch { return now.getUTCMinutes(); }
+      })();
+
+      if (localHour !== 7 || localMin > 2) continue;
+
+      // Get the local date string for dedup
+      const localDateStr = (() => {
+        try {
+          return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now); // YYYY-MM-DD
+        } catch { return now.toISOString().slice(0, 10); }
+      })();
+
+      const alreadySent = await this.db.query(
+        'SELECT 1 FROM morning_briefing_sent WHERE user_id = $1 AND date = $2 LIMIT 1',
+        [userId, localDateStr],
+      );
+      if ((alreadySent.rows || []).length > 0) continue;
+
+      const todayStart = localDateStr + 'T00:00:00.000Z';
+      const todayEnd   = localDateStr + 'T23:59:59.999Z';
+
+      const evRes = await this.db.query(`
+        SELECT title, start_at, location FROM calendar_events
+        WHERE user_id = $1 AND start_at >= $2 AND start_at <= $3
+        ORDER BY start_at LIMIT 5
+      `, [userId, todayStart, todayEnd]);
+
+      const taskRes2 = await this.db.query(`
+        SELECT title FROM tasks
+        WHERE user_id = $1 AND status IN ('pending', 'in_progress')
+          AND (due_at >= $2 OR due_at IS NULL)
+        ORDER BY due_at ASC NULLS LAST LIMIT 5
+      `, [userId, todayStart]);
+
+      const events = evRes.rows;
+      const tasks  = taskRes2.rows;
+      const locale = { en: 'en-US', es: 'es-ES', pt: 'pt-BR', fr: 'fr-FR' }[lang];
+
+      const formatTime = (iso: string) => {
+        try {
+          return new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+        } catch { return ''; }
+      };
+
+      let speakText: string;
+      const greeting = { en: 'Good morning', es: 'Buenos días', pt: 'Bom dia', fr: 'Bonjour' }[lang];
+      const noAgenda = { en: 'Your day is clear', es: 'Tu día está libre', pt: 'Seu dia está livre', fr: 'Ta journée est libre' }[lang];
+
+      if (!events.length && !tasks.length) {
+        speakText = `${greeting}! ${noAgenda}.`;
+      } else {
+        const parts: string[] = [];
+        if (events.length) {
+          const evList = events.map((e: any) => {
+            const t = formatTime(e.start_at);
+            return t ? `${e.title} a las ${t}` : e.title;
+          }).join(', ');
+          const evLabel = { en: `${events.length} event${events.length > 1 ? 's' : ''}`, es: `${events.length} evento${events.length > 1 ? 's' : ''}`, pt: `${events.length} evento${events.length > 1 ? 's' : ''}`, fr: `${events.length} événement${events.length > 1 ? 's' : ''}` }[lang];
+          parts.push(`${evLabel}: ${evList}`);
+        }
+        if (tasks.length) {
+          const tList = tasks.map((t: any) => t.title).join(', ');
+          const tLabel = { en: `${tasks.length} task${tasks.length > 1 ? 's' : ''}`, es: `${tasks.length} tarea${tasks.length > 1 ? 's' : ''}`, pt: `${tasks.length} tarefa${tasks.length > 1 ? 's' : ''}`, fr: `${tasks.length} tâche${tasks.length > 1 ? 's' : ''}` }[lang];
+          parts.push(`${tLabel}: ${tList}`);
+        }
+        speakText = `${greeting}! ${parts.join('. ')}.`;
+      }
+
+      const notifTitle = { en: '☀️ Good morning', es: '☀️ Buenos días', pt: '☀️ Bom dia', fr: '☀️ Bonjour' }[lang];
+      const pushed = await this.sendExpoPush(token, {
+        title: notifTitle,
+        body: speakText.slice(0, 200),
+        categoryId: 'reminder',
+        data: { kind: 'morning_briefing', speak_text: speakText },
+      });
+
+      if (pushed) {
+        await this.db.query(
+          `INSERT INTO morning_briefing_sent (user_id, date) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [userId, localDateStr],
+        );
+        console.log('[LeelooApi] morning.briefing.sent', { userId, lang, tz });
+      }
+    }
+  }
+
   private async tick() {
     if (this.running) return;
     this.running = true;
@@ -385,9 +512,13 @@ export class RemindersScheduler implements OnModuleInit {
         }
       }
 
-      if (sent > 0) {
+        if (sent > 0) {
         console.log('[LeelooApi] reminders.tick.sent', { sent });
       }
+
+      await this.morningBriefing(now).catch((e: any) => {
+        console.warn('[LeelooApi] morning.briefing.error', { message: e?.message });
+      });
     } catch (err: any) {
       console.error('[LeelooApi] reminders.tick.error', {
         message: err?.message,
