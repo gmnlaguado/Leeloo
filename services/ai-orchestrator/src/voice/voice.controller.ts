@@ -72,6 +72,25 @@ export class VoiceController {
     });
   }
 
+  @Post('wake-detect')
+  @UseInterceptors(
+    FileInterceptor('audio', {
+      storage: multer.memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  async wakeDetect(
+    @UploadedFile() audio: Express.Multer.File | undefined,
+    @Body() body: any,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const userId = this.requireUserId(request);
+    if (!audio) throw new BadRequestException('audio is required');
+    const language = typeof body?.language === 'string' ? body.language : undefined;
+    const detected = await this.voiceService.detectWakeWord({ userId, audio, language });
+    return { detected };
+  }
+
   @Post('test')
   async test(
     @Body() body: any,

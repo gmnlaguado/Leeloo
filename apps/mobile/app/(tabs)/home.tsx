@@ -20,6 +20,7 @@ import type { Locale } from 'date-fns';
 import { profilesAPI, verseAPI } from '@/lib/api';
 import { useSettingsStore } from '@/store/settings';
 import { deviceLogger } from '@/services/device-logger';
+import { wakeWordService } from '@/services/wake-word';
 
 // ─── Minimal UI translations (4 languages) ────────────────────────────────────
 const UI_STRINGS = {
@@ -406,6 +407,7 @@ export default function HomeScreen() {
   const lastError = useVoiceStore((s) => s.lastError);
   const sendText = useVoiceStore((s) => s.sendText);
   const isSpeaking = useVoiceStore((s) => s.isSpeaking);
+  const isListening = useVoiceStore((s) => s.isListening);
   const session = useAuthStore((s) => s.session);
   const hydrateTasks = useTasksStore((s) => s.hydrate);
   const tasks = useTasksStore((s) => s.tasks);
@@ -415,6 +417,43 @@ export default function HomeScreen() {
   const language = useSettingsStore((s) => s.language);
   const t = UI_STRINGS[language] ?? UI_STRINGS.en;
   const dateLocale = DATE_LOCALES[language] ?? enUS;
+  const [wakeActive, setWakeActive] = useState(false);
+
+  // ── LeelooEars: always-listening wake word detection ──────────────────────
+  useEffect(() => {
+    if (!session) return;
+
+    wakeWordService.start({
+      language,
+      onDetected: () => {
+        // Stop the wake word loop and start full conversation recording
+        wakeWordService.pause();
+        useVoiceStore.getState().startListeningFromWakeWord();
+      },
+    });
+    setWakeActive(true);
+
+    return () => {
+      wakeWordService.stop();
+      setWakeActive(false);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  // When conversation ends → resume wake word detection
+  useEffect(() => {
+    const wasActive = wakeActive;
+    if (!wasActive) return;
+
+    const busy = isListening || isProcessing || isSpeaking;
+    if (!busy) {
+      // Small delay so TTS finishes before we start listening for "Leeloo" again
+      const t = setTimeout(() => wakeWordService.resume(), 800);
+      return () => clearTimeout(t);
+    } else {
+      wakeWordService.pause();
+    }
+  }, [isListening, isProcessing, isSpeaking, wakeActive]);
 
   useEffect(() => { void hydrateTasks(); }, [hydrateTasks]);
 
@@ -528,7 +567,7 @@ export default function HomeScreen() {
           </LinearGradient>
 
           {/* ── VOICE BUTTON ──────────────────────────── */}
-          <VoiceButton />
+          <VoiceButton alwaysListening={wakeActive} />
 
           {/* ── AI RESPONSE ───────────────────────────── */}
           {!!response && (

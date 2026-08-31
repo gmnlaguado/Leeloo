@@ -268,6 +268,39 @@ export const voiceAPI = {
     }
   },
 
+  wakeDetect: async (
+    audioUri: string,
+    language?: string,
+  ): Promise<{ data: unknown; status: number }> => {
+    const { token } = await resolveBearerToken();
+    const userId = await resolveUserId();
+    const url = `${AI_V1_BASE_URL}/voice/wake-detect`;
+
+    const formData = new FormData();
+    formData.append('user_id', userId);
+    formData.append('audio', { uri: audioUri, name: 'wake.m4a', type: 'audio/m4a' } as unknown as Blob);
+    if (language) formData.append('language', language);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5_000);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), Accept: '*/*' },
+        body: formData as unknown as BodyInit,
+        signal: controller.signal,
+      });
+      const data = res.headers.get('content-type')?.includes('json')
+        ? await res.json()
+        : { detected: false };
+      return { data, status: res.status };
+    } catch {
+      return { data: { detected: false }, status: 0 };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  },
+
   processText: async (
     text: string,
     opts?: {

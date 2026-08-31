@@ -520,6 +520,28 @@ export class VoiceService {
       : 'Something went wrong. Can you repeat it in one short sentence?';
   }
 
+  async detectWakeWord(input: {
+    userId: string;
+    audio: Express.Multer.File;
+    language?: string;
+  }): Promise<boolean> {
+    const WAKE_KEYWORDS = ['leeloo', 'leelo', 'liloo', 'lilo', 'leo leeloo', 'hey leeloo', 'hé leeloo'];
+    try {
+      const text = await this.openAiQueue.transcribe({
+        userId: input.userId,
+        filename: input.audio.originalname || 'wake.m4a',
+        bytes: input.audio.buffer,
+        language: input.language,
+      });
+      const lower = text.toLowerCase().trim();
+      this.logger.debug(`[WAKE] transcription="${lower.slice(0, 60)}"`);
+      return WAKE_KEYWORDS.some((kw) => lower.includes(kw));
+    } catch (err: any) {
+      this.logger.warn(`[WAKE] detectWakeWord error — ${err?.message ?? String(err)}`);
+      return false;
+    }
+  }
+
   private normalizeLanguage(raw?: string): SupportedLanguage {
     const s = String(raw || '')
       .trim()
