@@ -99,7 +99,7 @@ export class VoiceService {
     }
 
     const validPersonalities: LeelooPersonality[] = [
-      'default', 'christian', 'coach', 'mentor', 'business', 'counselor', 'faith',
+      'default', 'christian', 'coach', 'mentor', 'business', 'counselor', 'faith', 'motivation', 'nurturing',
     ];
     const personality: LeelooPersonality =
       validPersonalities.includes(input.personality as LeelooPersonality)
@@ -410,6 +410,8 @@ export class VoiceService {
           counselor: `${name ? `${name}, your` : 'Your'} day is wide open. That's a gift. How do you want to use it for yourself?`,
           mentor: `${name ? `${name}, n` : 'N'}o external commitments today. Free days are for building what matters. What goal are you moving forward?`,
           faith: `${name ? `${name}, the` : 'The'} day is open. Every hour is a gift. What will you do with it?`,
+          motivation: `${name ? `${name}!` : 'Hey!'} Clear day — no limits. This is your moment. What are we going after today?`,
+          nurturing: `Good morning${name ? `, ${name}` : ''}. A free day — please use some of it just for you. You give so much. Today, receive a little too.`,
           default: `${name ? `Hi ${name}!` : 'Hi!'} Your calendar is clear today. The day is yours!`,
         };
         return empty[personality] ?? empty.default;
@@ -428,6 +430,8 @@ export class VoiceService {
         counselor: `${name ? `${name}, hoy tienes` : 'Hoy tienes'} el día abierto. Eso es un regalo. ¿Cómo quieres usarlo para ti misma?`,
         mentor: `${name ? `${name}, sin` : 'Sin'} compromisos externos hoy. Los días libres son para construir lo que importa. ¿Qué meta avanzas?`,
         faith: `${name ? `${name}, el` : 'El'} día está abierto. Cada hora es un regalo. ¿Qué harás con ella?`,
+        motivation: `¡${name ? `${name}!` : 'Oye!'} Día libre — sin límites. Este es tu momento. ¿Qué vamos a conquistar hoy?`,
+        nurturing: `Buenos días${name ? `, ${name}` : ''}. Tienes el día libre — usa algo de ese tiempo para ti. Das tanto. Hoy, recibe un poco también.`,
         default: `${name ? `Hola ${name},` : '¡Hola!'} hoy tienes el calendario libre. ¡El día es tuyo!`,
       };
       return empty[personality] ?? empty.default;
@@ -463,12 +467,16 @@ export class VoiceService {
         counselor: `${n}let's look at your day together. You have ${summary}. `,
         mentor: `${n}today you have ${summary}. May each one bring you closer to your goals. `,
         faith: `${n}today you have ${summary}. Every commitment is a purpose. `,
+        motivation: `${name ? `${name}!` : 'Hey!'} You have ${summary} today. Let's make every single one count. `,
+        nurturing: `${n}today you have ${summary}. Let's make sure you take care of yourself in between. `,
         default: `${name ? `Hi ${name},` : 'Hi!'} for today you have ${summary}. `,
       };
       const suffix: Record<string, string> = {
         coach: ' Which one are we starting with?',
         business: ' Would you like me to prepare something for the first meeting?',
         counselor: ' How do you feel looking at them?',
+        motivation: ' Which one lights you up the most?',
+        nurturing: ' Remember to drink water and breathe between them.',
         default: '',
       };
       const prefix = prefixes[personality] ?? prefixes.default;
@@ -487,12 +495,16 @@ export class VoiceService {
       counselor: `${name ? `${name}, ` : ''}veamos tu día${name ? '' : ' juntos'}. Tienes ${summaryEs}. `,
       mentor: `${name ? `${name}, ` : ''}hoy son ${summaryEs}. Que cada uno te acerque a tus metas. `,
       faith: `${name ? `${name}, ` : ''}hoy tienes ${summaryEs}. Cada compromiso es un propósito. `,
+      motivation: `¡${name ? `${name}!` : 'Hey!'} Son ${summaryEs} para hoy. Hagamos que cada uno cuente. `,
+      nurturing: `${name ? `${name}, ` : ''}hoy tienes ${summaryEs}. Asegurémonos de que te cuides entre uno y otro. `,
       default: `${name ? `Hola ${name},` : '¡Hola!'} para hoy tienes ${summaryEs}. `,
     };
     const suffixEs: Record<string, string> = {
       coach: ' ¿Por cuál arrancamos?',
       business: ' ¿Quieres que prepare algo para la primera reunión?',
       counselor: ' ¿Cómo te sientes al verlos?',
+      motivation: ' ¿Cuál te emociona más?',
+      nurturing: ' Recuerda tomar agua y respirar entre cada uno.',
       default: '',
     };
     const prefix = prefixesEs[personality] ?? prefixesEs.default;
@@ -528,13 +540,15 @@ export class VoiceService {
   private static readonly PERSONALITY_TTS: Record<string, {
     stability: number; similarityBoost: number; style: number;
   }> = {
-    counselor: { stability: 0.75, similarityBoost: 0.85, style: 0.08 }, // slow, warm, grounded
-    coach:     { stability: 0.28, similarityBoost: 0.80, style: 0.72 }, // energetic, dynamic
-    business:  { stability: 0.65, similarityBoost: 0.85, style: 0.12 }, // professional, clear
-    christian: { stability: 0.62, similarityBoost: 0.82, style: 0.22 }, // serene, gentle
-    mentor:    { stability: 0.52, similarityBoost: 0.80, style: 0.38 }, // thoughtful, measured
-    faith:     { stability: 0.60, similarityBoost: 0.82, style: 0.20 }, // warm, reverential
-    default:   { stability: 0.45, similarityBoost: 0.80, style: 0.35 }, // balanced
+    counselor:  { stability: 0.75, similarityBoost: 0.85, style: 0.08 }, // slow, warm, therapeutic
+    coach:      { stability: 0.28, similarityBoost: 0.80, style: 0.72 }, // energetic, dynamic
+    business:   { stability: 0.65, similarityBoost: 0.85, style: 0.12 }, // professional, clear
+    christian:  { stability: 0.62, similarityBoost: 0.82, style: 0.22 }, // serene, gentle
+    mentor:     { stability: 0.52, similarityBoost: 0.80, style: 0.38 }, // thoughtful, measured
+    faith:      { stability: 0.60, similarityBoost: 0.82, style: 0.20 }, // warm, reverential
+    motivation: { stability: 0.22, similarityBoost: 0.82, style: 0.85 }, // high energy, belief-driven
+    nurturing:  { stability: 0.80, similarityBoost: 0.88, style: 0.05 }, // softest, most tender
+    default:    { stability: 0.45, similarityBoost: 0.80, style: 0.35 }, // balanced
   };
 
   // Intents whose assistant_text from Claude is the final spoken text — safe to
