@@ -4,6 +4,11 @@ import type { LeelooEmotion } from './elevenlabs.service';
 export interface TtsSynthesizeOptions {
   emotion?: LeelooEmotion;
   language?: string;
+  // ElevenLabs voice-control parameters (ignored by OpenAI TTS)
+  stability?: number;
+  similarityBoost?: number;
+  style?: number;
+  useSpeakerBoost?: boolean;
 }
 
 export interface TtsService {

@@ -84,20 +84,7 @@ export class VoiceService {
       };
     }
 
-    let memories = '';
-    try {
-      this.logger.log(`[PIPE] memory start +${ms()}ms`);
-      memories = await this.openAiQueue.fetchMemoryContext({
-        userId: input.userId,
-        query: transcription,
-        limit: 5,
-      });
-      this.logger.log(`[PIPE] memory done +${ms()}ms — ${memories.length} chars`);
-    } catch {
-      this.logger.warn(`[PIPE] memory failed +${ms()}ms — continuing without`);
-      memories = '';
-    }
-
+    // Fire memory + userCtx in parallel — saves 3s when DB is slow (sequential before)
     const validPersonalities: LeelooPersonality[] = [
       'default', 'christian', 'coach', 'mentor', 'business', 'counselor', 'faith', 'motivation', 'nurturing',
     ];
@@ -110,17 +97,27 @@ export class VoiceService {
     const timeOfDay =
       hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
 
-    this.logger.log(`[PIPE] userCtx start +${ms()}ms — userName=${!!input.userName}`);
-    const userCtx = await Promise.race([
-      this.openAiQueue.fetchUserContext(input.userId),
-      new Promise<{ todayTasks: string[]; upcomingEvents: string[]; pendingApprovals: number }>(
-        (resolve) => setTimeout(() => {
-          this.logger.warn(`[PIPE] userCtx timeout after 3s — skipping`);
-          resolve({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 });
-        }, 3_000),
-      ),
-    ]).catch(() => ({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 }));
-    this.logger.log(`[PIPE] userCtx done +${ms()}ms`);
+    this.logger.log(`[PIPE] memory+userCtx start +${ms()}ms`);
+    const [memories, userCtx] = await Promise.all([
+      this.openAiQueue.fetchMemoryContext({
+        userId: input.userId,
+        query: transcription,
+        limit: 5,
+      }).catch(() => {
+        this.logger.warn(`[PIPE] memory failed — continuing without`);
+        return '';
+      }),
+      Promise.race([
+        this.openAiQueue.fetchUserContext(input.userId),
+        new Promise<{ todayTasks: string[]; upcomingEvents: string[]; pendingApprovals: number }>(
+          (resolve) => setTimeout(() => {
+            this.logger.warn(`[PIPE] userCtx timeout after 3s — skipping`);
+            resolve({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 });
+          }, 3_000),
+        ),
+      ]).catch(() => ({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 })),
+    ]);
+    this.logger.log(`[PIPE] memory+userCtx done +${ms()}ms — mem=${String(memories).length}chars`);
 
     // Always use LEELOO_SYSTEM_PROMPT — it contains the mandatory JSON format schema.
     // buildSystemPrompt() lacks those instructions and causes Claude to return prose.

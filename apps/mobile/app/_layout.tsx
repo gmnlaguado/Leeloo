@@ -27,6 +27,8 @@ import {
   registerWakeWordDetection,
   unregisterWakeWordDetection,
   subscribeWakeWord,
+  pauseWakeWord,
+  resumeWakeWord,
 } from '@/services/wake-word.service';
 import { useVoiceStore } from '@/store/voice';
 import type { PendingReminder } from '@/store/voice';
@@ -209,10 +211,12 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
       const isReminder = kind === 'task_reminder' || kind === 'calendar_reminder';
       const n = getNotif();
 
+      pauseWakeWord();
       Speech.speak(speakText, {
         language: n.speech_lang,
         rate: 0.95,
         onDone: () => {
+          resumeWakeWord();
           if (isReminder && taskId) {
             const reminder: PendingReminder = {
               taskId,
@@ -227,6 +231,8 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
             }, 800);
           }
         },
+        onStopped: () => resumeWakeWord(),
+        onError: () => resumeWakeWord(),
       });
     });
     return () => sub.remove();
@@ -243,10 +249,12 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
 
       // Default tap: user taps the notification body — speak and open mic
       if (action === Notifications.DEFAULT_ACTION_IDENTIFIER && speakText) {
+        pauseWakeWord();
         Speech.speak(speakText, {
           language: n.speech_lang,
           rate: 0.95,
           onDone: () => {
+            resumeWakeWord();
             setTimeout(() => {
               const { isListening, isProcessing } = useVoiceStore.getState();
               if (!isListening && !isProcessing) {
@@ -254,6 +262,8 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
               }
             }, 600);
           },
+          onStopped: () => resumeWakeWord(),
+          onError: () => resumeWakeWord(),
         });
         return;
       }

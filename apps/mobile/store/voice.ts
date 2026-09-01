@@ -9,6 +9,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { voiceAPI, profilesAPI, tasksAPI } from '@/lib/api';
 import { deviceLogger } from '@/services/device-logger';
 import { useSettingsStore } from '@/store/settings';
+import { pauseWakeWord, resumeWakeWord } from '@/services/wake-word.service';
 
 const getProfileOpts = async (): Promise<{ personality?: string; user_name?: string }> => {
   try {
@@ -93,6 +94,9 @@ const speakTextAndWait = async (text: string, language?: string) => {
 };
 
 const playAudioUrl = async (uri: string) => {
+  // Pause wake word BEFORE changing AudioMode — prevents mic/speaker interference
+  // and stops Leeloo from hearing her own voice and looping.
+  pauseWakeWord();
   try {
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
@@ -147,6 +151,8 @@ const playAudioUrl = async (uri: string) => {
     } catch {
       // ignore
     }
+    // Resume wake word after playback finishes (or fails)
+    resumeWakeWord();
   }
 };
 
