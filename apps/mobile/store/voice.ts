@@ -366,6 +366,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   // Called automatically after Leeloo finishes speaking. Uses a longer silence
   // threshold (3s) so the user has time to think, and preserves conversation history.
   startConversationContinue: async () => {
+    // Guard: never start a new cycle if still recording, processing, or speaking
+    const cur = useVoiceStore.getState();
+    if (cur.isListening || cur.isProcessing || cur.isSpeaking) return;
+
     try {
       set({ lastError: null });
       const perm = await Audio.requestPermissionsAsync();
@@ -612,7 +616,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
           if (!s.isListening && !s.isProcessing && !s.isSpeaking && s.isConversationMode) {
             s.startConversationContinue();
           }
-        }, 600);
+        }, 1500);
       }
 
       // Open native phone dialer when Leeloo resolved a call intent
@@ -875,6 +879,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       }
     } finally {
       set({ isProcessing: false });
+      if (useVoiceStore.getState().status !== 'awaiting_confirmation') {
+        set({ status: 'idle' });
+      }
     }
   },
 

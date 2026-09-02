@@ -717,7 +717,26 @@ export class VoiceService {
       }
 
       if (intent === 'send_email') {
-        const to = String(slots.to || '').trim();
+        const rawTo = String(slots.to || '').trim();
+        // Normalize voice-dictated email: "arroba"→"@", "punto"→".", remove spaces
+        const to = rawTo
+          .toLowerCase()
+          .replace(/\barroba\b/g, '@')
+          .replace(/\bat\b/g, '@')
+          .replace(/\bpunto\s+com\b/g, '.com')
+          .replace(/\bdot\s+com\b/g, '.com')
+          .replace(/\bpunto\s+co\b/g, '.co')
+          .replace(/\bgmail\s+com\b/g, 'gmail.com')
+          .replace(/\bhotmail\s+com\b/g, 'hotmail.com')
+          .replace(/\byahoo\s+com\b/g, 'yahoo.com')
+          .replace(/\boutlook\s+com\b/g, 'outlook.com')
+          .replace(/\bpunto\b/g, '.')
+          .replace(/\bdot\b/g, '.')
+          .replace(/\bguion\s+bajo\b/g, '_')
+          .replace(/\bguion\b/g, '-')
+          .replace(/\s+/g, '')
+          .replace(/\.{2,}/g, '.')
+          .replace(/@{2,}/g, '@');
         const subject = String(slots.subject || '').trim();
         const body = String(slots.body || '').trim();
         const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
