@@ -168,11 +168,18 @@ class WakeWordService {
     let peakDb = -100;
 
     try {
+      // Re-check paused here: TTS playback may have called pause() while this cycle
+      // was already past the entry guard above. Without this check, setAudioModeAsync
+      // runs AFTER TTS switched to playback mode → "Audio not loaded" on Android.
+      if (this.paused) return;
+
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
         staysActiveInBackground: true,
       } as AudioMode);
+
+      if (this.paused) return;
 
       const rec = new Audio.Recording();
       await rec.prepareToRecordAsync({

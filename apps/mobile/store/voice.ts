@@ -104,6 +104,11 @@ const playAudioUrl = async (uri: string) => {
       staysActiveInBackground: false,
       shouldDuckAndroid: true,
     } as AudioMode);
+    // Android audio session needs time to switch from recording to playback mode.
+    // Without this delay, Sound.createAsync gets "Audio not loaded" immediately.
+    if (Platform.OS === 'android') {
+      await new Promise((r) => setTimeout(r, 250));
+    }
   } catch {
     // ignore
   }
@@ -578,8 +583,22 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       if (audioUrl && typeof audioUrl === 'string') {
         try {
           set({ isSpeaking: true, status: 'speaking' });
-          await playAudioUrl(audioUrl);
-          played = true;
+          if (Platform.OS === 'android' && audioUrl.startsWith('http')) {
+            let tmpPath: string | null = null;
+            try {
+              tmpPath = `${FileSystem.cacheDirectory}leeloo_tts_url_${Date.now()}.mp3`;
+              await FileSystem.downloadAsync(audioUrl, tmpPath);
+              await playAudioUrl(tmpPath);
+              played = true;
+            } catch (err) {
+              deviceLogger.log('[voice] android url tts failed', { err: String(err) });
+            } finally {
+              if (tmpPath) FileSystem.deleteAsync(tmpPath, { idempotent: true }).catch(() => {});
+            }
+          } else {
+            await playAudioUrl(audioUrl);
+            played = true;
+          }
         } catch (err) {
           console.log('[voice] audio playback failed:', String(err));
         } finally {
@@ -788,8 +807,22 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       if (audioUrl && typeof audioUrl === 'string') {
         try {
           set({ isSpeaking: true, status: 'speaking' });
-          await playAudioUrl(audioUrl);
-          played = true;
+          if (Platform.OS === 'android' && audioUrl.startsWith('http')) {
+            let tmpPath: string | null = null;
+            try {
+              tmpPath = `${FileSystem.cacheDirectory}leeloo_tts_url_${Date.now()}.mp3`;
+              await FileSystem.downloadAsync(audioUrl, tmpPath);
+              await playAudioUrl(tmpPath);
+              played = true;
+            } catch (err) {
+              deviceLogger.log('[voice] android url tts failed', { err: String(err) });
+            } finally {
+              if (tmpPath) FileSystem.deleteAsync(tmpPath, { idempotent: true }).catch(() => {});
+            }
+          } else {
+            await playAudioUrl(audioUrl);
+            played = true;
+          }
         } catch (err) {
           console.log('[voice] audio playback failed:', String(err));
         } finally {
