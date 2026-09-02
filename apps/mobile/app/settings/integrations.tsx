@@ -120,18 +120,18 @@ export default function IntegrationsScreen() {
       const url: string = (res.data as any)?.url;
       if (!url) throw new Error('No URL returned');
 
-      // openAuthSessionAsync closes the browser when it detects the leeloo:// scheme redirect
+      // openAuthSessionAsync closes the browser when it detects the leeloo:// scheme redirect.
+      // On Android, Chrome Custom Tab sometimes closes via the deep link Intent rather than
+      // returning 'success' — in that case we get 'cancel' or 'dismiss'. We refetch status
+      // from the backend either way because the token was already saved server-side.
       const result = await WebBrowser.openAuthSessionAsync(url, 'leeloo://');
       if (result.type === 'success' && result.url) {
         const params = new URLSearchParams(result.url.split('?')[1] || '');
-        const success = params.get('success');
         const error = params.get('error');
         if (error) throw new Error(error);
-        if (success === 'true') {
-          setIntegrations((prev) => prev.map((i) => i.provider === provider ? { ...i, connected: true } : i));
-          await loadIntegrations(); // refresh from backend to confirm
-        }
       }
+      // Always refresh — backend saved the token even if the redirect type was 'cancel'
+      await loadIntegrations();
     } catch {
       Alert.alert('Error', st.errConnect);
     } finally { setActionLoading(null); }
