@@ -298,8 +298,10 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
 function warmupBackends() {
   const api = process.env.EXPO_PUBLIC_API_URL ?? 'https://leeloo-api-55i5.onrender.com';
   const ai  = process.env.EXPO_PUBLIC_AI_ORCHESTRATOR_URL ?? 'https://leeloo-ai.onrender.com';
+  const stt = process.env.EXPO_PUBLIC_STT_URL ?? 'https://leeloo-stt.onrender.com';
   // AbortSignal.timeout() is not available in all Hermes versions — plain fetch is safe here.
-  [api, ai].forEach((base) => {
+  // leeloo-stt handles wake word STT — warm it up so the first wake attempt isn't delayed 30s.
+  [api, ai, stt].forEach((base) => {
     fetch(`${base}/health`).catch(() => {});
   });
 }

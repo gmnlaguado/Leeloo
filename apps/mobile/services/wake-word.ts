@@ -18,16 +18,26 @@ import * as Notifications from 'expo-notifications';
 import { voiceAPI } from '@/lib/api';
 
 // Minimum dB level to consider speech present — gate prevents sending silent clips.
-const ENERGY_GATE_DB = -38;
+// -42 works on Android microphones that report lower levels than iOS.
+const ENERGY_GATE_DB = -42;
 
 // Each clip is this long. 2s is enough to catch "Hey Leeloo" + a brief pause.
 const CLIP_DURATION_MS = 2_000;
 
 // How often we poll the metering during a clip.
-const METER_POLL_MS = 150;
+const METER_POLL_MS = 100;
 
-// Keyword variants (Whisper sometimes mishears proper nouns).
-const WAKE_KEYWORDS = ['leeloo', 'leelo', 'liloo', 'lilo', 'leo leeloo', 'hey leeloo', 'hé leeloo'];
+// Keyword variants — covers all phonetic mis-transcriptions of "Leeloo" across
+// Spanish/English/Portuguese/French speakers and Whisper model variants.
+const WAKE_KEYWORDS = [
+  'leeloo', 'leelo', 'liloo', 'lilo', 'lelu', 'leelu', 'lilu', 'lyloo',
+  'leo', 'leelo', 'lielo', 'lelo', 'lylo',
+  'hey leeloo', 'hey leelo', 'hey lilu', 'hey lelu',
+  'oye leeloo', 'oye lelu', 'oye lilu',
+  'hola leeloo', 'hola lelu',
+  'hé leeloo', 'hé lilu',
+  'ey leeloo', 'ey lelu', 'ey lilu',
+];
 
 class WakeWordService {
   private running = false;

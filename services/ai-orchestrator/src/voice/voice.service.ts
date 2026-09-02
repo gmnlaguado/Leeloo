@@ -597,7 +597,15 @@ export class VoiceService {
     audio: Express.Multer.File;
     language?: string;
   }): Promise<boolean> {
-    const WAKE_KEYWORDS = ['leeloo', 'leelo', 'liloo', 'lilo', 'leo leeloo', 'hey leeloo', 'hé leeloo'];
+    const WAKE_KEYWORDS = [
+      'leeloo', 'leelo', 'liloo', 'lilo', 'lelu', 'leelu', 'lilu', 'lyloo',
+      'leo', 'lielo', 'lelo', 'lylo',
+      'hey leeloo', 'hey leelo', 'hey lilu', 'hey lelu',
+      'oye leeloo', 'oye lelu', 'oye lilu',
+      'hola leeloo', 'hola lelu',
+      'hé leeloo', 'hé lilu',
+      'ey leeloo', 'ey lelu', 'ey lilu',
+    ];
     try {
       const text = await this.openAiQueue.transcribe({
         userId: input.userId,
