@@ -30,12 +30,20 @@ const METER_POLL_MS = 100;
 // Keyword variants — covers all phonetic mis-transcriptions of "Leeloo" across
 // Spanish/English/Portuguese/French speakers and Whisper model variants.
 const WAKE_KEYWORDS = [
+  // Core variants
   'leeloo', 'leelo', 'liloo', 'lilo', 'lelu', 'leelu', 'lilu', 'lyloo',
-  'leo', 'leelo', 'lielo', 'lelo', 'lylo',
-  'hey leeloo', 'hey leelo', 'hey lilu', 'hey lelu',
-  'oye leeloo', 'oye lelu', 'oye lilu',
-  'hola leeloo', 'hola lelu',
-  'hé leeloo', 'hé lilu',
+  'leo', 'lielo', 'lelo', 'lylo',
+  // Groq STT consistently transcribes "Leeloo" as "Lilou" — verified from prod logs
+  'lilou',
+  // With greetings — EN
+  'hey leeloo', 'hey leelo', 'hey lilu', 'hey lelu', 'hey lilou',
+  'hi leeloo', 'hi lilou', 'hi lilu',
+  'hello leeloo',
+  // With greetings — ES
+  'oye leeloo', 'oye lelu', 'oye lilu', 'oye lilou',
+  'hola leeloo', 'hola lelu', 'hola lilou',
+  // With greetings — FR
+  'he leeloo', 'he lilu', 'he lilou',
   'ey leeloo', 'ey lelu', 'ey lilu',
 ];
 

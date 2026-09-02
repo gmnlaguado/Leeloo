@@ -596,6 +596,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         set({ conversationHistory: updated });
       }
 
+      // Apply language change from set_language intent (voice flow)
+      const newLang = (data as any)?.action?._languageChange;
+      if (newLang && ['es', 'en', 'pt', 'fr'].includes(String(newLang))) {
+        useSettingsStore.getState().setLanguage(newLang as any);
+      }
+
       // ChatGPT-style turn-taking: after Leeloo speaks, auto-listen for a follow-up.
       // If the user doesn't speak within 3s, conversation mode exits naturally.
       const isConvoMode = useVoiceStore.getState().isConversationMode;
@@ -700,10 +706,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       });
       const language = useSettingsStore.getState().language;
       const profileOpts = await getProfileOpts();
+      const history = useVoiceStore.getState().conversationHistory;
+      const historyStr = history.length
+        ? history.map((t) => `User: ${t.user}\nLeeloo: ${t.assistant}`).join('\n')
+        : undefined;
 
       let res: Awaited<ReturnType<typeof voiceAPI.processText>>;
       try {
-        res = await voiceAPI.processText(trimmed, { language, ...profileOpts });
+        res = await voiceAPI.processText(trimmed, { language, ...profileOpts, conversationHistory: historyStr });
       } catch (firstErr: unknown) {
         const isNet = (firstErr as { message?: string })?.message === 'Network Error';
         const isTimeout = (firstErr as { code?: string })?.code === 'ECONNABORTED';
@@ -787,6 +797,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         set({ isSpeaking: true, status: 'speaking' });
         await speakTextAndWait(assistantText, language);
         set({ isSpeaking: false, status: 'idle' });
+      }
+
+      // Update conversation history so multi-turn flows work (email, tasks, etc.)
+      if (trimmed && assistantText) {
+        const prev = useVoiceStore.getState().conversationHistory;
+        const updated = [...prev, { user: trimmed, assistant: assistantText }].slice(-5);
+        set({ conversationHistory: updated });
+      }
+
+      // Apply language change if Leeloo set_language intent fired
+      const newLang = (data as any)?.action?._languageChange;
+      if (newLang && ['es', 'en', 'pt', 'fr'].includes(String(newLang))) {
+        useSettingsStore.getState().setLanguage(newLang as any);
       }
     } catch (e: unknown) {
       const err = e as {

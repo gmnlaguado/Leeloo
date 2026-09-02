@@ -38,7 +38,18 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       String(process.env.SUPABASE_DB_URL || '').trim() ||
       String(process.env.DATABASE_URL || '').trim();
     if (dbUrl) {
-      this.pool = new Pool({ connectionString: dbUrl });
+      this.pool = new Pool({
+        connectionString: dbUrl,
+        connectionTimeoutMillis: 2_500,
+        idleTimeoutMillis: 10_000,
+        max: 5,
+        ssl: { rejectUnauthorized: false },
+      });
+      this.pool.query('SELECT 1')
+        .then(() => this.logger.log('[DB] Supabase pool connected ✓'))
+        .catch((e: any) => this.logger.error(`[DB] Supabase FAILED: ${e?.message} — memory/ctx unavailable`));
+    } else {
+      this.logger.warn('[DB] No SUPABASE_DB_URL or DATABASE_URL — memory disabled');
     }
   }
 

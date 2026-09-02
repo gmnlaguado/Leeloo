@@ -8,19 +8,19 @@
 import { Injectable } from '@nestjs/common';
 
 export const WAKE_PHRASES = [
-  'hey leeloo',
-  'hi leeloo',
-  'hello leeloo',
-  'oye leeloo',
-  'hola leeloo',
-  'ei leeloo',
-  'hey leelo',
-  'hei leeloo',
-  'leeloo',
-  'lilu',
-  'lilo',
-  'lelu',
-  'lelo',
+  // Exact phrases
+  'hey leeloo', 'hi leeloo', 'hello leeloo',
+  'oye leeloo', 'hola leeloo',
+  'ei leeloo', 'ey leeloo',
+  'hey leelo', 'hei leeloo',
+  // Groq commonly transcribes "Leeloo" as these — verified from prod logs
+  'lilou', 'hi lilou', 'hey lilou', 'hola lilou', 'oye lilou',
+  // Standalone keyword variants
+  'leeloo', 'leelo', 'liloo', 'liloo',
+  'lilu', 'lilo', 'lelu', 'lelo',
+  'leelu', 'lyloo', 'lylo', 'lielo',
+  // French
+  'he leeloo', 'he lilu',
 ];
 
 export function normalizeForWake(input: string): string {

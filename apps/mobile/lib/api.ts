@@ -311,6 +311,7 @@ export const voiceAPI = {
       confirmation?: 'confirmed' | 'cancel';
       personality?: string;
       user_name?: string;
+      conversationHistory?: string;
     },
   ): Promise<{ data: unknown; status: number }> => {
     // Uses fetch (same as processVoice) — Axios XHR adapter has known issues on
@@ -337,6 +338,7 @@ export const voiceAPI = {
           ...(opts?.confirmation ? { confirmation: opts.confirmation } : {}),
           ...(opts?.personality ? { personality: opts.personality } : {}),
           ...(opts?.user_name ? { user_name: opts.user_name } : {}),
+          ...(opts?.conversationHistory ? { conversation_history: opts.conversationHistory } : {}),
         }),
         signal: controller.signal,
       });

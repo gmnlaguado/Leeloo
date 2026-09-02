@@ -109,6 +109,10 @@ export class VoiceController {
       body?.confirmation === 'confirmed' || body?.confirmation === 'cancel'
         ? body.confirmation
         : undefined;
+    const personality = typeof body?.personality === 'string' ? body.personality : undefined;
+    const userName = typeof body?.user_name === 'string' ? body.user_name : undefined;
+    const conversationHistory =
+      typeof body?.conversation_history === 'string' ? body.conversation_history : undefined;
 
     return this.voiceService.processVoice({
       userId,
@@ -117,6 +121,9 @@ export class VoiceController {
       text,
       authorization,
       confirmation,
+      personality,
+      userName,
+      conversation_history: conversationHistory,
     });
   }
 
