@@ -139,7 +139,7 @@ export class VoiceService {
       ? `\n\nRECENT_CONVERSATION (most recent last — use for context, do not repeat):\n${input.conversation_history}`
       : '';
 
-    memories = ctxLines + historyBlock + (memories ? '\n\n' + memories : '');
+    const memoryContext = ctxLines + historyBlock + (memories ? '\n\n' + memories : '');
 
     let intent: IntentResult;
     try {
@@ -148,7 +148,7 @@ export class VoiceService {
         userId: input.userId,
         language,
         transcription,
-        memoryContext: memories,
+        memoryContext: memoryContext,
         systemPrompt,
         systemPromptVersion: LEELOO_SYSTEM_PROMPT_VERSION,
       });
