@@ -47,6 +47,7 @@ export class VoiceService {
     const t0 = Date.now();
     const ms = () => Date.now() - t0;
 
+    const inputMethod: 'voice' | 'text' = input.text ? 'text' : 'voice';
     let transcription = '';
     try {
       transcription = input.text
@@ -57,11 +58,12 @@ export class VoiceService {
             bytes: input.audio?.buffer || Buffer.from(''),
             language,
           });
-      this.logger.log(`[PIPE] stt done +${ms()}ms — "${transcription.slice(0, 60)}"`);
+      this.logger.log(`[PIPE] stt done +${ms()}ms input_method=${inputMethod} — "${transcription.slice(0, 60)}"`);
     } catch (err: any) {
-      this.logger.error(`[PIPE] stt FAILED +${ms()}ms — ${(err as any)?.message}`);
+      this.logger.error(`[PIPE] stt FAILED +${ms()}ms input_method=${inputMethod} — ${(err as any)?.message}`);
       return {
         ok: false,
+        input_method: inputMethod,
         transcription: input.text ? String(input.text) : '',
         intent: {
           intent: 'chat',
@@ -88,9 +90,13 @@ export class VoiceService {
     const validPersonalities: LeelooPersonality[] = [
       'default', 'christian', 'coach', 'mentor', 'business', 'counselor', 'faith', 'motivation', 'nurturing',
     ];
+    // Personality may arrive as a comma-separated list (multi-select UI: "coach,mentor").
+    // Take the first valid value; "balanced" maps to "default" (no dedicated TTS preset yet).
+    const rawPersonality = String(input.personality || '').trim();
+    const firstPersonality = rawPersonality.split(',')[0].trim().replace(/^balanced$/, 'default');
     const personality: LeelooPersonality =
-      validPersonalities.includes(input.personality as LeelooPersonality)
-        ? (input.personality as LeelooPersonality)
+      validPersonalities.includes(firstPersonality as LeelooPersonality)
+        ? (firstPersonality as LeelooPersonality)
         : 'default';
 
     const hour = new Date().getHours();
@@ -343,6 +349,7 @@ export class VoiceService {
 
     return {
       ok: true,
+      input_method: inputMethod,
       status: 'ok',
       transcription,
       intent,
@@ -548,14 +555,16 @@ export class VoiceService {
     default:    { stability: 0.45, similarityBoost: 0.80, style: 0.35 }, // balanced
   };
 
-  // Intents whose assistant_text from Claude is the final spoken text — safe to
-  // start TTS generation in parallel with the action dispatch, saving 0.5-1.5s.
+  // Intents safe for parallel TTS: assistant_text is final regardless of action outcome.
+  // EXCLUDED: create_task, create_reminder, create_alarm, create_event — these must
+  // confirm the backend action succeeded BEFORE speaking "Done!". If the POST fails,
+  // the user hears a false success. TTS waits for actionResult for these intents.
   private static readonly PARALLEL_TTS_INTENTS = new Set([
     'chat', 'emotional_support', 'save_memory', 'set_language',
-    'create_task', 'create_reminder', 'complete_task', 'set_goal',
+    'complete_task', 'set_goal',
     'daily_verse', 'suggest_meal', 'get_recipe', 'recommend_restaurant',
     'play_media', 'make_call', 'school_email_check',
-    'create_alarm', 'add_to_shopping_list', 'view_shopping_list',
+    'add_to_shopping_list', 'view_shopping_list',
     'add_family_member', 'assign_to_family_member', 'list_goals', 'check_goals',
   ]);
 
@@ -635,6 +644,12 @@ export class VoiceService {
   }
 
   private buildAssistantText(intent: IntentResult, actionResult: any) {
+    // Action failed — always speak the error, never the success text.
+    // This prevents Leeloo from saying "Done! Task created!" when the POST actually failed.
+    if (actionResult?.ok === false && actionResult?.fallback_text) {
+      return String(actionResult.fallback_text);
+    }
+
     const base = String(intent?.assistant_text || '').trim();
     if (base) return base;
 

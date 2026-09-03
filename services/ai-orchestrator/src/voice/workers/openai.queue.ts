@@ -57,16 +57,34 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     await this.pool?.end();
   }
 
+  // Circuit breaker for leeloo-stt: after 2 consecutive failures, bypass for 5 min.
+  // This prevents 500ms+ latency per request when the self-hosted model isn't loading.
+  private static sttFailures = 0;
+  private static sttBypassUntil = 0;
+
   async transcribe(input: { userId: string; filename: string; bytes: Buffer; language?: string }): Promise<string> {
     await this.assertWithinOpenAiRateLimit(input.userId);
 
     // Use self-hosted leeloo-stt first (<2s, already paid $25/mo on Render Standard).
     // Falls back to Groq only if the STT service is unreachable or returns an error.
-    try {
-      const text = await this.transcribeViaSTTService({ filename: input.filename, bytes: input.bytes });
-      if (text) return text;
-    } catch (err: any) {
-      this.logger.warn(`[STT] leeloo-stt failed — falling back to Groq — ${err?.message ?? String(err)}`);
+    const sttBypassed = Date.now() < OpenAiQueue.sttBypassUntil;
+    if (sttBypassed) {
+      this.logger.warn(`[STT] leeloo-stt circuit open — bypassing for ${Math.ceil((OpenAiQueue.sttBypassUntil - Date.now()) / 1000)}s more`);
+    } else {
+      try {
+        const text = await this.transcribeViaSTTService({ filename: input.filename, bytes: input.bytes });
+        if (text) {
+          OpenAiQueue.sttFailures = 0; // reset on success
+          return text;
+        }
+      } catch (err: any) {
+        OpenAiQueue.sttFailures += 1;
+        this.logger.warn(`[STT] leeloo-stt failed (consecutive=${OpenAiQueue.sttFailures}) — falling back to Groq — ${err?.message ?? String(err)}`);
+        if (OpenAiQueue.sttFailures >= 2) {
+          OpenAiQueue.sttBypassUntil = Date.now() + 5 * 60 * 1000;
+          this.logger.error(`[STT] leeloo-stt circuit OPEN — bypassing for 5min after ${OpenAiQueue.sttFailures} consecutive failures`);
+        }
+      }
     }
 
     // Groq fallback (cloud Whisper, ~3-8s with turbo model)
