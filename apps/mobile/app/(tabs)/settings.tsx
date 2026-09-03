@@ -42,6 +42,7 @@ const S_STRINGS = {
     personality: 'Personality', personalitySub: 'Choose how you want Leeloo to be',
     integrations: 'Integrations', integrationsSub: 'Google, Microsoft, Calendar',
     language: 'Language',
+    myProfile: 'About Me', myProfileSub: 'What Leeloo knows about you',
     profile: 'My profile', notifications: 'Notifications', notificationsSub: 'Alerts and reminders',
     help: 'Help & FAQ', rate: 'Rate Leeloo',
     signOut: 'Sign out', signOutTitle: 'Sign out', signOutMsg: 'Are you sure you want to sign out?',
@@ -53,6 +54,7 @@ const S_STRINGS = {
     personality: 'Personalidad', personalitySub: 'Elige cómo quieres que sea Leeloo',
     integrations: 'Integraciones', integrationsSub: 'Google, Microsoft, Calendar',
     language: 'Idioma',
+    myProfile: 'Hoja de vida', myProfileSub: 'Lo que Leeloo sabe de ti',
     profile: 'Mi perfil', notifications: 'Notificaciones', notificationsSub: 'Alertas y recordatorios',
     help: 'Ayuda y FAQ', rate: 'Calificar Leeloo',
     signOut: 'Cerrar sesión', signOutTitle: 'Cerrar sesión', signOutMsg: '¿Segura que quieres salir?',
@@ -64,6 +66,7 @@ const S_STRINGS = {
     personality: 'Personalidade', personalitySub: 'Escolha como você quer que a Leeloo seja',
     integrations: 'Integrações', integrationsSub: 'Google, Microsoft, Calendário',
     language: 'Idioma',
+    myProfile: 'Sobre mim', myProfileSub: 'O que a Leeloo sabe sobre você',
     profile: 'Meu perfil', notifications: 'Notificações', notificationsSub: 'Alertas e lembretes',
     help: 'Ajuda e FAQ', rate: 'Avaliar Leeloo',
     signOut: 'Sair', signOutTitle: 'Sair', signOutMsg: 'Tem certeza que quer sair?',
@@ -75,6 +78,7 @@ const S_STRINGS = {
     personality: 'Personnalité', personalitySub: 'Choisissez comment vous voulez que Leeloo soit',
     integrations: 'Intégrations', integrationsSub: 'Google, Microsoft, Calendrier',
     language: 'Langue',
+    myProfile: 'À propos de moi', myProfileSub: 'Ce que Leeloo sait de vous',
     profile: 'Mon profil', notifications: 'Notifications', notificationsSub: 'Alertes et rappels',
     help: 'Aide et FAQ', rate: 'Noter Leeloo',
     signOut: 'Se déconnecter', signOutTitle: 'Se déconnecter', signOutMsg: 'Êtes-vous sûr(e) de vouloir vous déconnecter ?',
@@ -129,6 +133,13 @@ export default function SettingsScreen() {
             />
             <View style={s.divider} />
             <Row
+              emoji="🪪"
+              label={st.myProfile}
+              subtitle={st.myProfileSub}
+              onPress={() => router.push('/settings/profile')}
+            />
+            <View style={s.divider} />
+            <Row
               emoji="🔗"
               label={st.integrations}
               subtitle={st.integrationsSub}
@@ -144,7 +155,7 @@ export default function SettingsScreen() {
           </Section>
 
           <Section title={st.secAccount}>
-            <Row emoji="👤" label={st.profile} subtitle={session?.userId ?? ''} onPress={() => {}} />
+            <Row emoji="👤" label={st.profile} subtitle={session?.userId ?? ''} onPress={() => router.push('/settings/profile')} />
             <View style={s.divider} />
             <Row emoji="🔔" label={st.notifications} subtitle={st.notificationsSub} onPress={() => {}} />
           </Section>

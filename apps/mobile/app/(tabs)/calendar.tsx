@@ -8,8 +8,8 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { WaveBackground } from '@/components/WaveBackground';
 import { T } from '@/lib/theme';
@@ -18,10 +18,14 @@ import { calendarAPI, integrationsAPI } from '@/lib/api';
 type CalendarEvent = {
   id: string;
   title: string;
-  starts_at: string | null;
-  ends_at: string | null;
+  // API returns start_at / end_at (DB column names)
+  start_at: string | null;
+  end_at: string | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
   location?: string;
   description?: string;
+  notes?: string;
 };
 
 const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
@@ -53,21 +57,27 @@ export default function CalendarScreen() {
     return d;
   });
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(selectedDate); }, [selectedDate]);
 
-  const loadData = async () => {
+  // Refetch when coming back to this tab so voice-created events appear
+  useFocusEffect(useCallback(() => { loadData(selectedDate); }, [selectedDate]));
+
+  const loadData = async (forDate: Date) => {
     setLoading(true);
     try {
       const intRes = await integrationsAPI.getIntegrations().catch(() => null);
-      const connected: string[] = Array.isArray((intRes?.data as any)?.connected)
-        ? (intRes?.data as any).connected : [];
-      setHasIntegration(connected.length > 0);
+      const intData = intRes?.data as any;
+      // API returns { integrations: [{provider,...}] } — not a flat .connected array
+      const rows: Array<{ provider: string }> = Array.isArray(intData?.integrations)
+        ? intData.integrations
+        : Array.isArray(intData?.connected)
+          ? (intData.connected as string[]).map((p: string) => ({ provider: p }))
+          : [];
+      setHasIntegration(rows.length > 0);
 
-      const start = new Date();
-      start.setDate(start.getDate() - 7);
-      const end = new Date();
-      end.setDate(end.getDate() + 30);
-      const res = await calendarAPI.getEvents(start.toISOString(), end.toISOString());
+      // API endpoint: GET /calendar/events?day=YYYY-MM-DD returns { events: [...] }
+      const dayStr = forDate.toLocaleDateString('en-CA'); // YYYY-MM-DD
+      const res = await calendarAPI.getEventsForDay(dayStr);
       const data = Array.isArray((res.data as any)?.events)
         ? (res.data as any).events
         : Array.isArray(res.data) ? res.data : [];
@@ -84,7 +94,7 @@ export default function CalendarScreen() {
     try {
       await integrationsAPI.syncGoogleCalendar().catch(() => {});
       await integrationsAPI.syncMicrosoftCalendar().catch(() => {});
-      await loadData();
+      await loadData(selectedDate);
       Alert.alert('Sincronizado', 'Tu calendario está actualizado.');
     } catch {
       Alert.alert('Error', 'No se pudo sincronizar.');
@@ -93,9 +103,15 @@ export default function CalendarScreen() {
     }
   };
 
+  // API uses start_at / end_at; older shape may use starts_at / ends_at — support both
+  const eventStartAt = (e: CalendarEvent) => e.start_at || e.starts_at || null;
+  const eventEndAt = (e: CalendarEvent) => e.end_at || e.ends_at || null;
+
+  // Events are already filtered to selectedDate by the API; filter again as a safety net
   const dayEvents = events.filter((e) => {
-    if (!e.starts_at) return false;
-    return isSameDay(new Date(e.starts_at), selectedDate);
+    const s = eventStartAt(e);
+    if (!s) return true; // all-day events with no start_at — include them
+    try { return isSameDay(new Date(s), selectedDate); } catch { return false; }
   });
 
   return (
@@ -132,7 +148,7 @@ export default function CalendarScreen() {
           {weekDays.map((d, i) => {
             const isSelected = isSameDay(d, selectedDate);
             const isToday = isSameDay(d, today);
-            const hasEv = events.some((e) => e.starts_at && isSameDay(new Date(e.starts_at), d));
+            const hasEv = events.some((e) => { const s = eventStartAt(e); return !!s && isSameDay(new Date(s), d); });
             return (
               <TouchableOpacity
                 key={i}
@@ -190,15 +206,15 @@ export default function CalendarScreen() {
               {dayEvents.map((event) => (
                 <View key={event.id} style={s.eventCard}>
                   <View style={s.eventTimeCol}>
-                    <Text style={s.eventTimeText}>{formatTime(event.starts_at)}</Text>
-                    {event.ends_at && <Text style={s.eventTimeEnd}>{formatTime(event.ends_at)}</Text>}
+                    <Text style={s.eventTimeText}>{formatTime(eventStartAt(event))}</Text>
+                    {eventEndAt(event) && <Text style={s.eventTimeEnd}>{formatTime(eventEndAt(event))}</Text>}
                   </View>
                   <View style={s.eventBar} />
                   <View style={s.eventInfo}>
                     <Text style={s.eventTitle}>{event.title}</Text>
                     {!!event.location && <Text style={s.eventMeta}>📍 {event.location}</Text>}
-                    {!!event.description && (
-                      <Text style={s.eventMeta} numberOfLines={2}>{event.description}</Text>
+                    {!!(event.description || event.notes) && (
+                      <Text style={s.eventMeta} numberOfLines={2}>{event.description || event.notes}</Text>
                     )}
                   </View>
                 </View>

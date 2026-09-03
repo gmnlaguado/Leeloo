@@ -129,7 +129,11 @@ export class VoiceService {
     // buildSystemPrompt() lacks those instructions and causes Claude to return prose.
     // User context (name, tasks, events) is injected into the memory context string.
     const systemPrompt = LEELOO_SYSTEM_PROMPT;
+    const now = new Date();
+    const todayISO = now.toISOString().slice(0, 10); // YYYY-MM-DD
     const ctxLines = [
+      `TODAY: ${todayISO}`,
+      `DAY_OF_WEEK: ${now.toLocaleDateString('en-US', { weekday: 'long' })}`,
       ...(input.userName ? [`USER_NAME: ${input.userName}`] : []),
       `TIME_OF_DAY: ${timeOfDay}`,
       `PERSONALITY: ${personality}`,
@@ -208,6 +212,11 @@ export class VoiceService {
         language,
         input.userName || '',
       );
+    }
+
+    // Web search — replace placeholder with actual search results
+    if (intent.intent === 'web_search' && actionResult?._searchSummary) {
+      assistantText = String(actionResult._searchSummary);
     }
 
     const needsConfirmation = Boolean(intent?.needs_confirmation);
@@ -679,6 +688,7 @@ export class VoiceService {
     if (i === 'postpone_event') return 'Done. Event postponed.';
     if (i === 'set_personality') return intent?.assistant_text || 'Done. Personality updated.';
     if (i === 'update_profile') return 'Got it. I\'ll remember that.';
+    if (i === 'web_search') return actionResult?._searchSummary ? String(actionResult._searchSummary) : (String(intent?.assistant_text || '').trim() || 'Buscando en internet...');
 
     if (actionResult?.fallback_text) return String(actionResult.fallback_text);
     return 'Done.';
@@ -1359,6 +1369,50 @@ export class VoiceService {
           { headers },
         );
         return { ok: true, provider: 'api', endpoint: '/v1/tasks', data: res.data };
+      }
+
+      if (intent === 'web_search') {
+        const query = String(slots.query || '').trim();
+        if (!query) return { ok: false, fallback_text: lang === 'es' ? '¿Qué quieres buscar?' : 'What should I search for?' };
+        const tavilyKey = process.env.TAVILY_API_KEY;
+        if (!tavilyKey) {
+          this.logger.warn('[WEB_SEARCH] TAVILY_API_KEY not set — returning fallback');
+          return { ok: false, fallback_text: lang === 'es' ? 'La búsqueda en internet no está disponible en este momento.' : 'Web search is not available right now.' };
+        }
+        try {
+          // Tavily: free 1,000 searches/month — returns `answer` (AI-synthesized) + `results` (snippets)
+          const searchRes = await axios.post(
+            'https://api.tavily.com/search',
+            { api_key: tavilyKey, query, search_depth: 'basic', max_results: 3, include_answer: true },
+            { timeout: 10_000 },
+          );
+          const answer: string = String(searchRes.data?.answer || '').trim();
+          const results: Array<{ title?: string; content?: string }> = searchRes.data?.results || [];
+
+          let summary: string;
+          if (answer) {
+            // Tavily returns a direct synthesized answer — ideal for TTS
+            const prefix = lang === 'es' ? '' : lang === 'pt' ? '' : '';
+            summary = prefix + answer.slice(0, 450);
+          } else if (results.length) {
+            // Fallback: build summary from top snippets
+            const snippets = results
+              .filter((r) => r.content)
+              .map((r) => r.content!.slice(0, 120))
+              .join(' | ');
+            const prefix = lang === 'es' ? `Sobre "${query}": ` : lang === 'pt' ? `Sobre "${query}": ` : `About "${query}": `;
+            summary = prefix + snippets.slice(0, 400);
+          } else {
+            summary = lang === 'es' ? `No encontré resultados para "${query}".` : `No results found for "${query}".`;
+          }
+
+          this.logger.log(`[WEB_SEARCH] query="${query}" answer_len=${answer.length}`);
+          return { ok: true, provider: 'tavily', endpoint: 'search', data: searchRes.data, _searchSummary: summary };
+        } catch (searchErr: any) {
+          this.logger.error('[WEB_SEARCH] Tavily search failed', searchErr?.message);
+          const errText = lang === 'es' ? 'No pude conectarme a internet para buscar eso.' : 'I couldn\'t connect to the internet to search for that.';
+          return { ok: false, fallback_text: errText };
+        }
       }
 
       return { ok: true, provider: 'none', endpoint: null, data: null };

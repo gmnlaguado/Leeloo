@@ -397,8 +397,14 @@ export const calendarAPI = {
     return api.post(`/calendar/sync/${provider}`);
   },
 
-  getEvents: async (startDate: string, endDate: string) => {
-    return api.get('/calendar/events', { params: { startDate, endDate } });
+  // Backend accepts ?day=YYYY-MM-DD and returns { day, timezone, events: [...] }
+  getEvents: async (_startDate: string, _endDate: string) => {
+    // Legacy signature kept for compatibility; fetch today's events
+    return api.get('/calendar/events');
+  },
+
+  getEventsForDay: async (day: string) => {
+    return api.get('/calendar/events', { params: { day } as QueryParams });
   },
 };
 
@@ -480,6 +486,13 @@ export const profilesAPI = {
   }) => {
     return api.patch('/profiles/me', updates satisfies RequestBody);
   },
+};
+
+export const memoriesAPI = {
+  list: async (params?: { category?: string; limit?: number }) =>
+    api.get('/memories', { params }),
+  save: async (content: string, category: string) =>
+    api.post('/memories/save', { content, category }),
 };
 
 export const verseAPI = {

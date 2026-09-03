@@ -213,14 +213,14 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
   }
 
   async fetchMemoryContext(input: { userId: string; query: string; limit: number }): Promise<string> {
-    // Hard cap: if DB is slow / pool is connecting, don't block the voice pipeline.
+    // 8s timeout — Supabase Pooler cold-start can take 4-6s; 3s was too tight.
     return Promise.race([
       this.fetchMemoriesPgvector(input),
       new Promise<string>((resolve) =>
         setTimeout(() => {
-          this.logger.warn('[MEMORY] DB timeout after 3s — skipping memory context');
+          this.logger.warn('[MEMORY] DB timeout after 8s — skipping memory context');
           resolve('');
-        }, 3_000),
+        }, 8_000),
       ),
     ]);
   }

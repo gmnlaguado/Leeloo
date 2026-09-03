@@ -1,6 +1,8 @@
 import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { Check, Circle } from 'lucide-react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
 import { tasksAPI } from '@/lib/api';
 
 interface TaskListProps {
@@ -10,13 +12,23 @@ interface TaskListProps {
 export function TaskList({ limit }: TaskListProps) {
   const queryClient = useQueryClient();
 
-  const { data: tasks, isLoading } = useQuery({
+  const { data: tasks, isLoading, refetch } = useQuery({
     queryKey: ['tasks', { limit }],
     queryFn: async () => {
       const response = await tasksAPI.getTasks({ limit, status: 'pending' });
       return response.data;
     },
+    // Always refetch when mounted so voice-created tasks appear immediately
+    refetchOnMount: 'always',
+    staleTime: 0,
   });
+
+  // Refetch every time this tab comes into focus so voice-created tasks appear
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch]),
+  );
 
   const toggleTaskMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {

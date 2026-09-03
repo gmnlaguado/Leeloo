@@ -104,9 +104,15 @@ export default function IntegrationsScreen() {
   const loadIntegrations = async () => {
     try {
       const res = await integrationsAPI.getIntegrations();
-      const connected: string[] = Array.isArray((res.data as any)?.connected)
-        ? (res.data as any).connected : [];
-      setIntegrations((prev) => prev.map((i) => ({ ...i, connected: connected.includes(i.provider) })));
+      const data = res.data as any;
+      // API returns { integrations: [{provider, ...}] }  (not a flat .connected array)
+      const rows: Array<{ provider: string }> = Array.isArray(data?.integrations)
+        ? data.integrations
+        : Array.isArray(data?.connected)
+          ? (data.connected as string[]).map((p: string) => ({ provider: p }))
+          : [];
+      const connectedSet = new Set(rows.map((r) => r.provider));
+      setIntegrations((prev) => prev.map((i) => ({ ...i, connected: connectedSet.has(i.provider) })));
     } catch { /* keep defaults */ } finally { setLoading(false); }
   };
 

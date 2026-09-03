@@ -211,12 +211,16 @@ const playAudioUrl = async (uri: string) => {
       sound.setOnPlaybackStatusUpdate((status) => {
         if (!status.isLoaded) {
           const s = status as AVPlaybackStatus;
-          const errMsg =
-            'error' in s && typeof (s as unknown as { error?: unknown }).error === 'string'
-              ? String((s as unknown as { error?: string }).error)
-              : 'Audio not loaded';
-          deviceLogger.log('[voice] sound status error', { errMsg });
-          settleOnce(() => reject(new Error(errMsg)));
+          // Only reject if there is an actual error, not the initial unloaded transient state.
+          // expo-av fires isLoaded=false immediately on createAsync before the audio is ready.
+          const hasError =
+            'error' in s &&
+            typeof (s as unknown as { error?: unknown }).error === 'string';
+          if (hasError) {
+            const errMsg = String((s as unknown as { error: string }).error);
+            deviceLogger.log('[voice] sound status error', { errMsg });
+            settleOnce(() => reject(new Error(errMsg)));
+          }
           return;
         }
 
@@ -607,6 +611,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
           response: assistantText,
           awaitingConfirmation: true,
           pendingConfirmationText: assistantText,
+          pendingOriginalText: transcription,
           status: 'awaiting_confirmation',
         });
       } else {
@@ -741,13 +746,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         });
       }
 
-      // Schedule native alarm (rings on device) when orchestrator returns create_alarm
-      if (data.action?.provider === 'device' && data.action?.action === 'create_alarm') {
-        deviceLogger.log('[voice] scheduling native alarm', { title: data.action.title, time: data.action.time });
+      // Schedule native alarm (rings on device) when orchestrator returns create_alarm.
+      // Guard: only schedule once per stopListening call — awaiting_confirmation blocks this path too.
+      const alarmAction = data.action;
+      if (
+        alarmAction?.provider === 'device' &&
+        alarmAction?.action === 'create_alarm' &&
+        useVoiceStore.getState().status !== 'awaiting_confirmation'
+      ) {
+        deviceLogger.log('[voice] scheduling native alarm', { title: alarmAction.title, time: alarmAction.time });
         void scheduleNativeAlarm({
-          title: String(data.action.title || 'Alarm'),
-          time: String(data.action.time || ''),
-          recurrence: String(data.action.recurrence || 'once'),
+          title: String(alarmAction.title || 'Alarm'),
+          time: String(alarmAction.time || ''),
+          recurrence: String(alarmAction.recurrence || 'once'),
         });
       }
     } catch (e: unknown) {
@@ -1053,7 +1064,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
 
   confirm: async () => {
     const { pendingOriginalText } = useVoiceStore.getState();
-    if (!pendingOriginalText.trim()) return;
+    if (!pendingOriginalText.trim()) {
+      // Guard: if no pending text (e.g. from a stale modal), just close the modal.
+      set({ awaitingConfirmation: false, pendingConfirmationText: '', status: 'idle' });
+      resumeWakeWord();
+      return;
+    }
 
     try {
       set({ isProcessing: true, status: 'processing', lastError: null });
@@ -1065,21 +1081,22 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       const data = (res?.data ?? {}) as RawVoiceApiResponse;
       const assistantText =
         data.assistant_text ?? data.response ?? data.reply ?? data.message ?? '';
-      set({ response: assistantText, awaitingConfirmation: false, pendingConfirmationText: '' });
+      set({ response: assistantText, awaitingConfirmation: false, pendingConfirmationText: '', pendingOriginalText: '' });
       await speakTextAndWait(assistantText, language);
     } catch (e: unknown) {
       const msg = (e as { message?: unknown } | null)?.message;
       set({ lastError: typeof msg === 'string' ? msg : 'Confirmation failed.' });
     } finally {
-      set({ isProcessing: false });
-      set({ status: 'idle' });
+      set({ isProcessing: false, status: 'idle' });
+      resumeWakeWord();
     }
   },
 
   cancel: async () => {
     const { pendingOriginalText } = useVoiceStore.getState();
     if (!pendingOriginalText.trim()) {
-      set({ awaitingConfirmation: false, pendingConfirmationText: '' });
+      set({ awaitingConfirmation: false, pendingConfirmationText: '', status: 'idle' });
+      resumeWakeWord();
       return;
     }
 
@@ -1093,14 +1110,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       const data = (res?.data ?? {}) as RawVoiceApiResponse;
       const assistantText =
         data.assistant_text ?? data.response ?? data.reply ?? data.message ?? '';
-      set({ response: assistantText, awaitingConfirmation: false, pendingConfirmationText: '' });
+      set({ response: assistantText, awaitingConfirmation: false, pendingConfirmationText: '', pendingOriginalText: '' });
       await speakTextAndWait(assistantText, language);
     } catch (e: unknown) {
       const msg = (e as { message?: unknown } | null)?.message;
       set({ lastError: typeof msg === 'string' ? msg : 'Cancel failed.' });
     } finally {
-      set({ isProcessing: false });
-      set({ status: 'idle' });
+      set({ isProcessing: false, status: 'idle' });
+      resumeWakeWord();
     }
   },
 
