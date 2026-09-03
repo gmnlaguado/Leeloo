@@ -51,6 +51,13 @@ export class CalendarController {
     return this.calendarService.deleteEvent(req.user.id, id);
   }
 
+  @Get('events/search')
+  @ApiOperation({ summary: 'Search upcoming events by title (fuzzy)' })
+  async searchEvents(@Req() req: AuthedRequest, @Query('q') q: string) {
+    if (!q?.trim()) return [];
+    return this.calendarService.searchEvents(req.user.id, q.trim());
+  }
+
   @Get('events')
   @ApiOperation({ summary: 'Get events for a given day' })
   async getEventsForDay(@Req() req: AuthedRequest, @Query('day') day: string) {

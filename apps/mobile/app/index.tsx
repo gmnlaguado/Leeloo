@@ -3,8 +3,29 @@ import { View, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@clerk/clerk-expo';
 import { useAuthStore } from '@/store/auth';
+import { useSettingsStore } from '@/store/settings';
+import { profilesAPI } from '@/lib/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { deviceLogger } from '@/services/device-logger';
+
+const SUPPORTED_LANGS = ['es', 'en', 'pt', 'fr'] as const;
+
+async function applyServerLanguage() {
+  try {
+    const res = await profilesAPI.getMe();
+    const data = (res?.data ?? res) as Record<string, unknown> | null;
+    const raw =
+      (data?.preferred_language as string | undefined) ||
+      (typeof data?.locale === 'string' ? (data.locale as string).split(/[-_]/)[0] : undefined);
+    const lang = (raw || '').toLowerCase();
+    if (SUPPORTED_LANGS.includes(lang as (typeof SUPPORTED_LANGS)[number])) {
+      await useSettingsStore.getState().setLanguage(lang as 'es' | 'en' | 'pt' | 'fr');
+      deviceLogger.log('[index] language loaded from profile', { lang });
+    }
+  } catch {
+    // Network/auth failure — keep local AsyncStorage value
+  }
+}
 
 export default function Index() {
   const router = useRouter();
@@ -63,6 +84,7 @@ export default function Index() {
       }
 
       setHasCompletedOnboarding(true, userId ?? undefined);
+      void applyServerLanguage();
       router.replace('/(tabs)/home');
     };
 

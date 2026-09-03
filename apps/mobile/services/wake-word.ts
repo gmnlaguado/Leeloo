@@ -16,6 +16,7 @@ import { AppState, Platform } from 'react-native';
 import type { AppStateStatus } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { voiceAPI } from '@/lib/api';
+import { deviceLogger } from '@/services/device-logger';
 
 // Minimum dB level to consider speech present — gate prevents sending silent clips.
 // -42 works on Android microphones that report lower levels than iOS.
@@ -28,23 +29,37 @@ const CLIP_DURATION_MS = 2_000;
 const METER_POLL_MS = 100;
 
 // Keyword variants — covers all phonetic mis-transcriptions of "Leeloo" across
-// Spanish/English/Portuguese/French speakers and Whisper model variants.
+// Spanish/English/Portuguese/French speakers and all STT model variants (Groq, Whisper, leeloo-stt).
+// "Leeloo" in natural speech ≈ /liːluː/ — sounds like "lee-loo", "li-lu", "li-lo", "lee-lu"
 const WAKE_KEYWORDS = [
-  // Core variants
-  'leeloo', 'leelo', 'liloo', 'lilo', 'lelu', 'leelu', 'lilu', 'lyloo',
-  'leo', 'lielo', 'lelo', 'lylo',
-  // Groq STT consistently transcribes "Leeloo" as "Lilou" — verified from prod logs
-  'lilou',
-  // With greetings — EN
-  'hey leeloo', 'hey leelo', 'hey lilu', 'hey lelu', 'hey lilou',
-  'hi leeloo', 'hi lilou', 'hi lilu',
-  'hello leeloo',
-  // With greetings — ES
-  'oye leeloo', 'oye lelu', 'oye lilu', 'oye lilou',
-  'hola leeloo', 'hola lelu', 'hola lilou',
-  // With greetings — FR
+  // ── Core phonetic variants ──────────────────────────────────────────────
+  'leeloo', 'leelo', 'leelu', 'leeloo',
+  'liloo', 'lilu', 'lilo', 'lilu',
+  'lyloo', 'lylo', 'lylu',
+  'lelu', 'leelu', 'lelou',
+  'lielo', 'lelo', 'leloo',
+  'leolu', 'leolou',
+  // Two-word splits STT sometimes produces
+  'lee loo', 'lee lu', 'li loo', 'li lu', 'lee lo',
+  // ── Groq/Whisper confirmed mis-transcriptions ──────────────────────────
+  'lilou',  // Groq EN: most common
+  'leelou', 'leeloue',
+  'leo',    // Short clipping
+  'liou', 'lioux',
+  // ── With trigger words — EN ────────────────────────────────────────────
+  'hey leeloo', 'hey leelo', 'hey lilu', 'hey lelu', 'hey lilou', 'hey leo',
+  'hi leeloo', 'hi lilou', 'hi lilu', 'hi lelo', 'hi leo',
+  'hello leeloo', 'hello lilu', 'hello lilou',
+  'ok leeloo', 'okay leeloo', 'ok lilu', 'ok leo',
+  // ── With trigger words — ES ────────────────────────────────────────────
+  'oye leeloo', 'oye lelu', 'oye lilu', 'oye lilou', 'oye leo', 'oye lilo',
+  'hola leeloo', 'hola lelu', 'hola lilou', 'hola lilu', 'hola lilo',
+  'ey leeloo', 'ey lelu', 'ey lilu', 'ey lilou',
+  // ── With trigger words — PT ────────────────────────────────────────────
+  'oi leeloo', 'oi lilu', 'oi lilou', 'oi leo',
+  // ── With trigger words — FR ────────────────────────────────────────────
+  'hé leeloo', 'hé lilu', 'hé lilou',
   'he leeloo', 'he lilu', 'he lilou',
-  'ey leeloo', 'ey lelu', 'ey lilu',
 ];
 
 class WakeWordService {
@@ -225,10 +240,13 @@ class WakeWordService {
     }
 
     // Stage 2: only send clip when speech energy is present
-    if (uri && peakDb >= ENERGY_GATE_DB && this.running && !this.paused) {
+    const aboveGate = peakDb >= ENERGY_GATE_DB;
+    deviceLogger.log('[wake] cycle', { peakDb: peakDb.toFixed(1), gate: ENERGY_GATE_DB, aboveGate });
+    if (uri && aboveGate && this.running && !this.paused) {
       const detected = await this._sendClip(uri);
+      deviceLogger.log('[wake] clip sent', { detected });
       if (detected && this.running && !this.paused) {
-        // Caller must call pause() from onDetected, then resume() when done
+        deviceLogger.log('[wake] ACTIVATED — wake word detected');
         this.onDetected?.();
         return;
       }

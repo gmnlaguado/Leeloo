@@ -6,10 +6,93 @@ import type { AudioMode } from 'expo-av';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as Notifications from 'expo-notifications';
 import { voiceAPI, profilesAPI, tasksAPI } from '@/lib/api';
 import { deviceLogger } from '@/services/device-logger';
 import { useSettingsStore } from '@/store/settings';
 import { pauseWakeWord, resumeWakeWord } from '@/services/wake-word.service';
+
+// Parse alarm time strings from the orchestrator:
+//   "07:30"        → today at 07:30 (or tomorrow if already past)
+//   "+30min"       → now + 30 minutes
+//   "+2h"          → now + 2 hours
+//   ISO string     → exact moment
+function parseAlarmTime(timeStr: string): Date | null {
+  if (!timeStr) return null;
+
+  // Relative: +Xmin or +Xhr
+  const rel = timeStr.match(/^\+(\d+)(min|h)$/i);
+  if (rel) {
+    const n = Number(rel[1]);
+    const ms = rel[2].toLowerCase() === 'h' ? n * 3600_000 : n * 60_000;
+    return new Date(Date.now() + ms);
+  }
+
+  // HH:MM (24h or 12h)
+  const hhmm = timeStr.match(/^(\d{1,2}):(\d{2})(?:\s*(am|pm))?$/i);
+  if (hhmm) {
+    let h = Number(hhmm[1]);
+    const m = Number(hhmm[2]);
+    const ampm = (hhmm[3] || '').toLowerCase();
+    if (ampm === 'pm' && h < 12) h += 12;
+    if (ampm === 'am' && h === 12) h = 0;
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1); // already past → tomorrow
+    return d;
+  }
+
+  // ISO or any parseable date
+  const t = new Date(timeStr);
+  if (!Number.isNaN(t.getTime())) return t;
+
+  return null;
+}
+
+async function scheduleNativeAlarm(opts: { title: string; time: string; recurrence: string }) {
+  try {
+    // Ensure alarm notification channel exists (Android)
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('leeloo-alarms', {
+        name: 'Leeloo Alarms',
+        importance: Notifications.AndroidImportance.MAX,
+        enableVibrate: true,
+        vibrationPattern: [0, 500, 250, 500],
+        sound: 'default',
+        bypassDnd: true,
+      });
+    }
+
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== 'granted') {
+      deviceLogger.log('[alarm] notification permission denied — alarm not scheduled');
+      return;
+    }
+
+    const fireDate = parseAlarmTime(opts.time);
+    if (!fireDate) {
+      deviceLogger.log('[alarm] could not parse time', { time: opts.time });
+      return;
+    }
+
+    const secondsFromNow = Math.max(5, Math.floor((fireDate.getTime() - Date.now()) / 1000));
+
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `⏰ ${opts.title}`,
+        body: `Alarma de Leeloo — ${opts.time}`,
+        sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.MAX,
+        ...(Platform.OS === 'android' ? { channelId: 'leeloo-alarms' } : {}),
+      },
+      trigger: { type: 'timeInterval', seconds: secondsFromNow, repeats: false } as any,
+    });
+
+    deviceLogger.log('[alarm] scheduled', { id, title: opts.title, time: opts.time, fireIn: `${secondsFromNow}s` });
+  } catch (err) {
+    deviceLogger.log('[alarm] scheduleNativeAlarm failed', { err: String(err) });
+  }
+}
 
 const getProfileOpts = async (): Promise<{ personality?: string; user_name?: string }> => {
   try {
@@ -600,13 +683,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
             played = true;
           }
         } catch (err) {
-          console.log('[voice] audio playback failed:', String(err));
+          deviceLogger.log('[voice] audioUrl playback failed — played stays false', { err: String(err) });
         } finally {
           set({ isSpeaking: false, status: 'idle' });
         }
       }
 
       if (!played) {
+        deviceLogger.log('[voice] ElevenLabs audio unavailable — fallback a expo-speech (voz del sistema)', { text: assistantText.slice(0, 80) });
         set({ isSpeaking: true, status: 'speaking' });
         await speakTextAndWait(assistantText, language);
         set({ isSpeaking: false, status: 'idle' });
@@ -623,6 +707,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       const newLang = (data as any)?.action?._languageChange;
       if (newLang && ['es', 'en', 'pt', 'fr'].includes(String(newLang))) {
         useSettingsStore.getState().setLanguage(newLang as any);
+        profilesAPI.updateMe({ preferred_language: String(newLang) }).catch(() => {});
       }
 
       // ChatGPT-style turn-taking: after Leeloo speaks, auto-listen for a follow-up.
@@ -642,7 +727,27 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       if (data.action?.provider === 'phone' && typeof data.action?.phone_number === 'string') {
         const tel = `tel:${data.action.phone_number}`;
         Linking.openURL(tel).catch(() => {
-          console.log('[voice] could not open phone dialer for', tel);
+          deviceLogger.log('[voice] could not open phone dialer', { tel });
+        });
+      }
+
+      // Open WhatsApp / SMS deep link when SMS backend returns a deepLink (no Twilio configured)
+      const smsActionData = data.action?.data as Record<string, unknown> | null | undefined;
+      const smsDeepLink = typeof smsActionData?.deepLink === 'string' ? smsActionData.deepLink : null;
+      if (smsDeepLink && smsDeepLink.startsWith('https://')) {
+        deviceLogger.log('[voice] opening SMS deepLink', { provider: smsActionData?.provider });
+        Linking.openURL(smsDeepLink).catch(() => {
+          deviceLogger.log('[voice] could not open SMS deepLink', { smsDeepLink });
+        });
+      }
+
+      // Schedule native alarm (rings on device) when orchestrator returns create_alarm
+      if (data.action?.provider === 'device' && data.action?.action === 'create_alarm') {
+        deviceLogger.log('[voice] scheduling native alarm', { title: data.action.title, time: data.action.time });
+        void scheduleNativeAlarm({
+          title: String(data.action.title || 'Alarm'),
+          time: String(data.action.time || ''),
+          recurrence: String(data.action.recurrence || 'once'),
         });
       }
     } catch (e: unknown) {
@@ -824,13 +929,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
             played = true;
           }
         } catch (err) {
-          console.log('[voice] audio playback failed:', String(err));
+          deviceLogger.log('[voice] audioUrl playback failed — played stays false', { err: String(err) });
         } finally {
           set({ isSpeaking: false, status: 'idle' });
         }
       }
 
       if (!played) {
+        deviceLogger.log('[voice] ElevenLabs audio unavailable — fallback a expo-speech (voz del sistema)', { text: assistantText.slice(0, 80) });
         set({ isSpeaking: true, status: 'speaking' });
         await speakTextAndWait(assistantText, language);
         set({ isSpeaking: false, status: 'idle' });
@@ -847,6 +953,33 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       const newLang = (data as any)?.action?._languageChange;
       if (newLang && ['es', 'en', 'pt', 'fr'].includes(String(newLang))) {
         useSettingsStore.getState().setLanguage(newLang as any);
+        profilesAPI.updateMe({ preferred_language: String(newLang) }).catch(() => {});
+      }
+
+      // Open phone dialer for make_call intent (text flow)
+      if ((data as any).action?.provider === 'phone' && typeof (data as any).action?.phone_number === 'string') {
+        const tel = `tel:${(data as any).action.phone_number}`;
+        Linking.openURL(tel).catch(() => {
+          deviceLogger.log('[voice] sendText: could not open phone dialer', { tel });
+        });
+      }
+
+      // Open WhatsApp / SMS deep link (text flow)
+      const smsActionDataT = (data as any).action?.data as Record<string, unknown> | null | undefined;
+      const smsDeepLinkT = typeof smsActionDataT?.deepLink === 'string' ? smsActionDataT.deepLink : null;
+      if (smsDeepLinkT && smsDeepLinkT.startsWith('https://')) {
+        deviceLogger.log('[voice] sendText: opening SMS deepLink');
+        Linking.openURL(smsDeepLinkT).catch(() => {});
+      }
+
+      // Schedule native alarm (text flow)
+      if ((data as any).action?.provider === 'device' && (data as any).action?.action === 'create_alarm') {
+        deviceLogger.log('[voice] sendText: scheduling native alarm', { time: (data as any).action.time });
+        void scheduleNativeAlarm({
+          title: String((data as any).action.title || 'Alarm'),
+          time: String((data as any).action.time || ''),
+          recurrence: String((data as any).action.recurrence || 'once'),
+        });
       }
     } catch (e: unknown) {
       const err = e as {

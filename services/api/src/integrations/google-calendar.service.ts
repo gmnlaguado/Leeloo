@@ -220,10 +220,10 @@ export class GoogleCalendarService {
       const rowId = randomUUID();
       await this.db.query(
         `INSERT INTO calendar_events (
-          id, user_id, title, start_at, end_at, location, notes,
+          id, user_id, title, start_at, end_at, start_time, end_time, location, notes,
           external_provider, external_id, external_updated_at, external_etag, updated_at
         ) VALUES (
-          $1, $2, $3, $4::timestamptz, $5::timestamptz, $6, $7,
+          $1, $2, $3, $4::timestamptz, $5::timestamptz, $4::timestamptz, $5::timestamptz, $6, $7,
           'google', $8, $9::timestamptz, $10, NOW()
         )
         ON CONFLICT (user_id, external_provider, external_id)
@@ -231,6 +231,8 @@ export class GoogleCalendarService {
           title = EXCLUDED.title,
           start_at = EXCLUDED.start_at,
           end_at = EXCLUDED.end_at,
+          start_time = EXCLUDED.start_time,
+          end_time = EXCLUDED.end_time,
           location = EXCLUDED.location,
           notes = EXCLUDED.notes,
           external_updated_at = EXCLUDED.external_updated_at,
@@ -354,15 +356,17 @@ export class GoogleCalendarService {
 
       await this.db.query(
         `INSERT INTO calendar_events (
-          id, user_id, title, start_at, end_at, location, notes, external_provider, external_id, updated_at
+          id, user_id, title, start_at, end_at, start_time, end_time, location, notes, external_provider, external_id, updated_at
         ) VALUES (
-          $1, $2, $3, $4::timestamptz, $5::timestamptz, $6, $7, 'google', $8, NOW()
+          $1, $2, $3, $4::timestamptz, $5::timestamptz, $4::timestamptz, $5::timestamptz, $6, $7, 'google', $8, NOW()
         )
         ON CONFLICT (user_id, external_provider, external_id)
         DO UPDATE SET
           title = EXCLUDED.title,
           start_at = EXCLUDED.start_at,
           end_at = EXCLUDED.end_at,
+          start_time = EXCLUDED.start_time,
+          end_time = EXCLUDED.end_time,
           location = EXCLUDED.location,
           notes = EXCLUDED.notes,
           updated_at = NOW()`,

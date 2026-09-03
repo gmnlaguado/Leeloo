@@ -566,6 +566,7 @@ export class VoiceService {
     'play_media', 'make_call', 'school_email_check',
     'add_to_shopping_list', 'view_shopping_list',
     'add_family_member', 'assign_to_family_member', 'list_goals', 'check_goals',
+    'set_personality', 'update_profile',
   ]);
 
   private async safeTts(input: { userId: string; text: string; personality?: string }) {
@@ -607,13 +608,27 @@ export class VoiceService {
     language?: string;
   }): Promise<boolean> {
     const WAKE_KEYWORDS = [
-      'leeloo', 'leelo', 'liloo', 'lilo', 'lelu', 'leelu', 'lilu', 'lyloo',
-      'leo', 'lielo', 'lelo', 'lylo',
-      'hey leeloo', 'hey leelo', 'hey lilu', 'hey lelu',
-      'oye leeloo', 'oye lelu', 'oye lilu',
-      'hola leeloo', 'hola lelu',
-      'hé leeloo', 'hé lilu',
-      'ey leeloo', 'ey lelu', 'ey lilu',
+      // Core phonetic variants of "Leeloo" (/liːluː/)
+      'leeloo', 'leelo', 'leelu', 'liloo', 'lilu', 'lilo', 'lyloo', 'lylo', 'lylu',
+      'lelu', 'leelu', 'lelou', 'lielo', 'lelo', 'leloo', 'leolu',
+      'leo', 'liou',
+      // Two-word STT splits
+      'lee loo', 'lee lu', 'li loo', 'li lu', 'lee lo',
+      // Groq/Whisper confirmed variants from production logs
+      'lilou', 'leelou', 'leeloue',
+      // With trigger words — EN
+      'hey leeloo', 'hey leelo', 'hey lilu', 'hey lelu', 'hey lilou', 'hey leo',
+      'hi leeloo', 'hi lilou', 'hi lilu', 'hi lelo', 'hi leo',
+      'hello leeloo', 'hello lilu', 'hello lilou',
+      'ok leeloo', 'okay leeloo', 'ok lilu', 'ok leo',
+      // With trigger words — ES
+      'oye leeloo', 'oye lelu', 'oye lilu', 'oye lilou', 'oye leo', 'oye lilo',
+      'hola leeloo', 'hola lelu', 'hola lilou', 'hola lilu', 'hola lilo',
+      'ey leeloo', 'ey lelu', 'ey lilu', 'ey lilou',
+      // With trigger words — PT
+      'oi leeloo', 'oi lilu', 'oi lilou', 'oi leo',
+      // With trigger words — FR
+      'hé leeloo', 'hé lilu', 'hé lilou', 'he leeloo', 'he lilu', 'he lilou',
     ];
     try {
       const text = await this.openAiQueue.transcribe({
@@ -657,6 +672,13 @@ export class VoiceService {
     if (i === 'create_task') return 'Done. I created the task.';
     if (i === 'send_email') return 'Done. I sent the email.';
     if (i === 'agenda_today') return 'Here is your agenda for today.';
+    if (i === 'update_task') return actionResult?.data?.title ? `Done. Updated task: "${actionResult.data.title}".` : 'Done. Task updated.';
+    if (i === 'delete_task') return actionResult?.data?.title ? `Done. I deleted "${actionResult.data.title}".` : 'Done. Task deleted.';
+    if (i === 'update_event') return 'Done. Event updated.';
+    if (i === 'delete_event') return actionResult?.data?.title ? `Done. I cancelled "${actionResult.data.title}".` : 'Done. Event cancelled.';
+    if (i === 'postpone_event') return 'Done. Event postponed.';
+    if (i === 'set_personality') return intent?.assistant_text || 'Done. Personality updated.';
+    if (i === 'update_profile') return 'Got it. I\'ll remember that.';
 
     if (actionResult?.fallback_text) return String(actionResult.fallback_text);
     return 'Done.';
@@ -1183,6 +1205,112 @@ export class VoiceService {
         if (!match?.id) return { ok: false, fallback_text: lang === 'es' ? `No encontré el recordatorio "${reminderTitle}".` : `Couldn't find reminder "${reminderTitle}".` };
         await axios.delete(`${apiBaseUrl.replace(/\/+$/, '')}/v1/reminders/${match.id}`, { headers });
         return { ok: true, provider: 'api', endpoint: `/v1/reminders/${match.id}`, data: { deleted: true } };
+      }
+
+      if (intent === 'update_task') {
+        const taskTitle = String(slots.task_title || '').trim();
+        if (!taskTitle) return { ok: false, fallback_text: lang === 'es' ? '¿Qué tarea quieres editar?' : 'Which task should I update?' };
+        const listRes = await axios.get(`${apiBaseUrl.replace(/\/+$/, '')}/v1/tasks`, { headers, timeout: 10000 });
+        const tasks: any[] = Array.isArray(listRes.data) ? listRes.data : (Array.isArray(listRes.data?.tasks) ? listRes.data.tasks : []);
+        const lower = taskTitle.toLowerCase();
+        const match = tasks.find((t: any) => String(t?.title || '').toLowerCase().includes(lower));
+        if (!match?.id) return { ok: false, fallback_text: lang === 'es' ? `No encontré la tarea "${taskTitle}".` : `Couldn't find task "${taskTitle}".` };
+        const updates: Record<string, any> = {};
+        if (slots.new_title) updates.title = String(slots.new_title).trim();
+        if (slots.new_due_at) updates.due_at = String(slots.new_due_at).trim();
+        if (Object.keys(updates).length === 0) return { ok: false, fallback_text: lang === 'es' ? '¿Qué quieres cambiar de la tarea?' : 'What should I change about the task?' };
+        const res = await axios.patch(`${apiBaseUrl.replace(/\/+$/, '')}/v1/tasks/${match.id}`, updates, { headers });
+        return { ok: true, provider: 'api', endpoint: `/v1/tasks/${match.id}`, data: res.data };
+      }
+
+      if (intent === 'delete_task') {
+        const taskTitle = String(slots.task_title || '').trim();
+        if (!taskTitle) return { ok: false, fallback_text: lang === 'es' ? '¿Qué tarea elimino?' : 'Which task should I delete?' };
+        const listRes = await axios.get(`${apiBaseUrl.replace(/\/+$/, '')}/v1/tasks`, { headers, timeout: 10000 });
+        const tasks: any[] = Array.isArray(listRes.data) ? listRes.data : (Array.isArray(listRes.data?.tasks) ? listRes.data.tasks : []);
+        const lower = taskTitle.toLowerCase();
+        const match = tasks.find((t: any) => String(t?.title || '').toLowerCase().includes(lower));
+        if (!match?.id) return { ok: false, fallback_text: lang === 'es' ? `No encontré la tarea "${taskTitle}".` : `Couldn't find task "${taskTitle}".` };
+        await axios.delete(`${apiBaseUrl.replace(/\/+$/, '')}/v1/tasks/${match.id}`, { headers });
+        return { ok: true, provider: 'api', endpoint: `/v1/tasks/${match.id}`, data: { deleted: true, title: match.title } };
+      }
+
+      if (intent === 'update_event') {
+        const eventTitle = String(slots.event_title || '').trim();
+        if (!eventTitle) return { ok: false, fallback_text: lang === 'es' ? '¿Qué evento quieres editar?' : 'Which event should I update?' };
+        const searchRes = await axios.get(`${apiBaseUrl.replace(/\/+$/, '')}/v1/calendar/events/search`, { headers, params: { q: eventTitle }, timeout: 10000 });
+        const events: any[] = Array.isArray(searchRes.data) ? searchRes.data : [];
+        const ev = events[0];
+        if (!ev?.id) return { ok: false, fallback_text: lang === 'es' ? `No encontré el evento "${eventTitle}".` : `Couldn't find event "${eventTitle}".` };
+        const updates: Record<string, any> = {};
+        if (slots.new_title) updates.title = String(slots.new_title).trim();
+        if (slots.new_date || slots.new_time) {
+          const date = slots.new_date || String(ev.start_at || '').split('T')[0];
+          const time = slots.new_time || String(ev.start_at || '').split('T')[1]?.slice(0, 5) || '00:00';
+          updates.start_at = `${date}T${time}`;
+        }
+        if (slots.new_location) updates.location = String(slots.new_location).trim();
+        if (Object.keys(updates).length === 0) return { ok: false, fallback_text: lang === 'es' ? '¿Qué quieres cambiar del evento?' : 'What should I change about the event?' };
+        const res = await axios.put(`${apiBaseUrl.replace(/\/+$/, '')}/v1/calendar/events/${ev.id}`, updates, { headers });
+        return { ok: true, provider: 'api', endpoint: `/v1/calendar/events/${ev.id}`, data: res.data };
+      }
+
+      if (intent === 'delete_event') {
+        const eventTitle = String(slots.event_title || '').trim();
+        if (!eventTitle) return { ok: false, fallback_text: lang === 'es' ? '¿Qué evento cancelo?' : 'Which event should I cancelar?' };
+        const searchRes = await axios.get(`${apiBaseUrl.replace(/\/+$/, '')}/v1/calendar/events/search`, { headers, params: { q: eventTitle }, timeout: 10000 });
+        const events: any[] = Array.isArray(searchRes.data) ? searchRes.data : [];
+        const ev = events[0];
+        if (!ev?.id) return { ok: false, fallback_text: lang === 'es' ? `No encontré el evento "${eventTitle}".` : `Couldn't find event "${eventTitle}".` };
+        await axios.delete(`${apiBaseUrl.replace(/\/+$/, '')}/v1/calendar/events/${ev.id}`, { headers });
+        return { ok: true, provider: 'api', endpoint: `/v1/calendar/events/${ev.id}`, data: { deleted: true, title: ev.title } };
+      }
+
+      if (intent === 'postpone_event') {
+        const eventTitle = String(slots.event_title || '').trim();
+        if (!eventTitle) return { ok: false, fallback_text: lang === 'es' ? '¿Qué evento quieres posponer?' : 'Which event should I postpone?' };
+        const searchRes = await axios.get(`${apiBaseUrl.replace(/\/+$/, '')}/v1/calendar/events/search`, { headers, params: { q: eventTitle }, timeout: 10000 });
+        const events: any[] = Array.isArray(searchRes.data) ? searchRes.data : [];
+        const ev = events[0];
+        if (!ev?.id) return { ok: false, fallback_text: lang === 'es' ? `No encontré el evento "${eventTitle}".` : `Couldn't find event "${eventTitle}".` };
+        let newStart: Date;
+        const delay = String(slots.delay || '').trim();
+        if (delay.startsWith('+')) {
+          const current = new Date(String(ev.start_at || ''));
+          const m = delay.match(/^\+(\d+)(min|h|d)/);
+          if (m) {
+            const n = Number(m[1]);
+            if (m[2] === 'min') newStart = new Date(current.getTime() + n * 60_000);
+            else if (m[2] === 'h') newStart = new Date(current.getTime() + n * 3600_000);
+            else newStart = new Date(current.getTime() + n * 86400_000);
+          } else { newStart = current; }
+        } else if (slots.new_date || slots.new_time) {
+          const date = slots.new_date || String(ev.start_at || '').split('T')[0];
+          const time = slots.new_time || String(ev.start_at || '').split('T')[1]?.slice(0, 5) || '00:00';
+          newStart = new Date(`${date}T${time}`);
+        } else {
+          return { ok: false, fallback_text: lang === 'es' ? '¿Para cuándo lo pospongo?' : 'When should I postpone it to?' };
+        }
+        const duration = ev.end_at ? new Date(String(ev.end_at)).getTime() - new Date(String(ev.start_at)).getTime() : 30 * 60_000;
+        const newEnd = new Date(newStart.getTime() + duration);
+        const res = await axios.put(`${apiBaseUrl.replace(/\/+$/, '')}/v1/calendar/events/${ev.id}`, { start_at: newStart.toISOString(), end_at: newEnd.toISOString() }, { headers });
+        return { ok: true, provider: 'api', endpoint: `/v1/calendar/events/${ev.id}`, data: res.data };
+      }
+
+      if (intent === 'set_personality') {
+        const mode = String(slots.mode || 'default').trim().toLowerCase();
+        const validModes = ['default', 'christian', 'coach', 'business', 'mentor', 'counselor', 'faith', 'motivation', 'nurturing'];
+        const finalMode = validModes.includes(mode) ? mode : 'default';
+        const res = await axios.patch(`${apiBaseUrl.replace(/\/+$/, '')}/v1/profiles/me`, { leeloo_personality: finalMode }, { headers });
+        return { ok: true, provider: 'api', endpoint: '/v1/profiles/me', data: res.data, _personalityChange: finalMode };
+      }
+
+      if (intent === 'update_profile') {
+        const key = String(slots.key || '').trim();
+        const value = String(slots.value || '').trim();
+        if (!key || !value) return { ok: false, fallback_text: lang === 'es' ? '¿Qué preferencia quieres guardar?' : 'What preference should I remember?' };
+        const res = await axios.post(`${apiBaseUrl.replace(/\/+$/, '')}/v1/memories/save`, { content: `${key}: ${value}`, category: 'preference' }, { headers });
+        return { ok: true, provider: 'api', endpoint: '/v1/memories/save', data: res.data };
       }
 
       if (intent === 'add_to_shopping_list') {

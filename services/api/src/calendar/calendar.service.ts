@@ -608,6 +608,20 @@ export class CalendarService implements OnModuleInit {
     return { ok: true, updated: true, event: updatedEvent };
   }
 
+  async searchEvents(clerkUserId: string, q: string) {
+    const profileId = await this.getProfileId(clerkUserId);
+    const res = await this.db.query(
+      `SELECT * FROM calendar_events
+       WHERE user_id = $1
+         AND title ILIKE $2
+         AND start_at >= NOW() - INTERVAL '1 day'
+       ORDER BY start_at ASC
+       LIMIT 10`,
+      [profileId, `%${q}%`],
+    );
+    return res.rows || [];
+  }
+
   async deleteEvent(clerkUserId: string, id: string) {
     const profileId = await this.getProfileId(clerkUserId);
     const res = await this.db.query(
