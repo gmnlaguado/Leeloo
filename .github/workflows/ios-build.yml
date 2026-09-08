@@ -62,8 +62,24 @@ jobs:
           path: apps/mobile/${{ steps.ipa.outputs.path }}
           retention-days: 30
 
-      - name: Submit to App Store Connect
+      - name: Submit to App Store Connect (with retry)
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas submit --platform ios --path ${{ steps.ipa.outputs.path }} --non-interactive
+        run: |
+          IPA="${{ steps.ipa.outputs.path }}"
+          echo "Submitting IPA: $IPA"
+          for attempt in 1 2 3; do
+            echo "--- Submit attempt $attempt/3 ---"
+            if eas submit --platform ios --path "$IPA" --non-interactive; then
+              echo "✅ Submit succeeded on attempt $attempt"
+              exit 0
+            fi
+            if [ $attempt -lt 3 ]; then
+              echo "⚠️ Submit failed, waiting 60s before retry..."
+              sleep 60
+            fi
+          done
+          echo "❌ All 3 submit attempts failed. IPA is saved as artifact — submit manually from App Store Connect."
+          echo "Download the IPA artifact from this run and use Transporter or the App Store Connect website."
+          exit 1
