@@ -319,7 +319,7 @@ export default function RootLayout() {
 
   deviceLogger.log('RootLayout mounting', { publishableKey: CLERK_PUBLISHABLE_KEY?.slice(0, 20) + '...' });
   return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
+    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
       <ClerkBridge>
         <GestureHandlerRootView style={{ flex: 1 }}>
           <QueryClientProvider client={queryClient}>
