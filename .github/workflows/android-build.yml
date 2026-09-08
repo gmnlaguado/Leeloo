@@ -19,7 +19,14 @@ jobs:
 
       - name: Free disk space (prevents ENOSPC on 86MB APK copy)
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          # Remove large pre-installed tools NOT needed for Android builds
+          # DO NOT touch /usr/local/lib/android — NDK/SDK lives there
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/share/swift
           sudo docker image prune --all --force 2>/dev/null || true
           df -h
 
