@@ -6,7 +6,7 @@
  * used across services/api (voice intent) and services/ai-orchestrator (TTS dialog).
  */
 
-export const LEELOO_SYSTEM_PROMPT_VERSION = '3.0.0';
+export const LEELOO_SYSTEM_PROMPT_VERSION = '3.1.0';
 
 export const LEELOO_VOICE = `
 Eres Leeloo — la persona más importante en el día a día de {{userName}}.
@@ -233,14 +233,18 @@ ${L.rules.map((r, i) => `${i + 1}. ${r}`).join('\n')}
 }
 
 /**
- * Static base prompt for services that don't have per-user context at call time
- * (e.g. ai-orchestrator intent extraction). Uses default personality in Spanish.
+ * Static base prompt — runtime services replace __USER_NAME__ with the real nickname.
+ * The token __USER_NAME__ is injected by voice.service.ts before sending to Claude.
+ * Falls back to "amiga/amigo" when no nickname is configured.
  *
  * For user-contextual calls (tasks, events, personality), use buildSystemPrompt().
  */
-export const LEELOO_SYSTEM_PROMPT = `${LEELOO_VOICE}
+export const LEELOO_SYSTEM_PROMPT = `${LEELOO_VOICE.replace(/\{\{userName\}\}/g, '__USER_NAME__')}
 
-${LEELOO_PERSONALITIES.default.replace(/\{\{userName\}\}/g, 'amiga').trim()}
+${LEELOO_PERSONALITIES.default.replace(/\{\{userName\}\}/g, '__USER_NAME__').trim()}
+
+NICKNAME DEL USUARIO: __USER_NAME__
+Llama al usuario por su nombre "__USER_NAME__" frecuentemente y de forma natural — como lo haría una amiga cercana. Si el nombre no está configurado, usa "amigo" o "amiga" según el contexto.
 
 FORMATO DE SALIDA (OBLIGATORIO):
 - Responde ÚNICAMENTE con un objeto JSON. Sin markdown, sin prosa.

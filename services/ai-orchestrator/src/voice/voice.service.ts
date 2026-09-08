@@ -127,8 +127,9 @@ export class VoiceService {
 
     // Always use LEELOO_SYSTEM_PROMPT — it contains the mandatory JSON format schema.
     // buildSystemPrompt() lacks those instructions and causes Claude to return prose.
-    // User context (name, tasks, events) is injected into the memory context string.
-    const systemPrompt = LEELOO_SYSTEM_PROMPT;
+    // Replace __USER_NAME__ token with the real nickname so Leeloo calls user by name.
+    const safeName = (input.userName || '').trim() || 'amigo';
+    const systemPrompt = LEELOO_SYSTEM_PROMPT.replace(/__USER_NAME__/g, safeName);
     const now = new Date();
     const todayISO = now.toISOString().slice(0, 10); // YYYY-MM-DD
     const ctxLines = [

@@ -242,18 +242,29 @@ class WakeWordService {
     // Stage 2: only send clip when speech energy is present
     const aboveGate = peakDb >= ENERGY_GATE_DB;
     deviceLogger.log('[wake] cycle', { peakDb: peakDb.toFixed(1), gate: ENERGY_GATE_DB, aboveGate });
+
     if (uri && aboveGate && this.running && !this.paused) {
+      // iOS BACKGROUND FIX — Pipeline approach:
+      // Start the NEXT recording cycle IMMEDIATELY before sending the clip to STT.
+      // This keeps the audio session continuously active with no gap.
+      // Without this, the 200-500ms STT round trip creates a lapse where
+      // iOS can suspend the process under memory pressure.
+      this._scheduleCycle(0);
       const detected = await this._sendClip(uri);
       deviceLogger.log('[wake] clip sent', { detected });
       if (detected && this.running && !this.paused) {
+        // Wake word confirmed — cancel the pre-started next cycle and fire callback.
+        this._cancelCycle();
+        this._stopRecording();
         deviceLogger.log('[wake] ACTIVATED — wake word detected');
         this.onDetected?.();
-        return;
       }
+      // If not detected, next cycle is already running — nothing to do.
+      return;
     }
 
-    // Next cycle immediately (small gap avoids overlap)
-    this._scheduleCycle(50);
+    // No speech energy — next cycle immediately (minimal gap)
+    this._scheduleCycle(0);
   }
 
   private async _sendClip(audioUri: string): Promise<boolean> {
