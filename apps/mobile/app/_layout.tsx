@@ -33,6 +33,8 @@ import {
 import { useVoiceStore } from '@/store/voice';
 import type { PendingReminder } from '@/store/voice';
 import { tasksAPI } from '@/lib/api';
+import { contactsAPI } from '@/lib/api';
+import * as Contacts from 'expo-contacts';
 import { deviceLogger } from '@/services/device-logger';
 
 // Activar logging ANTES de cualquier render — captura errores de Clerk desde el primer ms
@@ -152,6 +154,34 @@ const tokenCache = {
 const CLERK_PUBLISHABLE_KEY =
   process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? 'pk_live_Y2xlcmsubGVlbG9vLnVzJA';
 
+const CONTACTS_SYNCED_KEY = 'leeloo_contacts_synced_v1';
+
+async function syncPhoneContactsOnce() {
+  try {
+    const already = await AsyncStorage.getItem(CONTACTS_SYNCED_KEY);
+    if (already === 'true') return;
+    const { status } = await Contacts.requestPermissionsAsync();
+    if (status !== 'granted') return;
+    const { data } = await Contacts.getContactsAsync({
+      fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers, Contacts.Fields.Emails],
+    });
+    const mapped = data
+      .filter((c) => c.name)
+      .map((c) => ({
+        name: c.name!,
+        phone: c.phoneNumbers?.[0]?.number ?? undefined,
+        email: c.emails?.[0]?.email ?? undefined,
+        source: 'phone' as const,
+      }));
+    if (mapped.length > 0) {
+      await contactsAPI.sync(mapped);
+    }
+    await AsyncStorage.setItem(CONTACTS_SYNCED_KEY, 'true');
+  } catch (e) {
+    console.warn('[Leeloo] phone contacts sync failed:', String(e));
+  }
+}
+
 function ClerkBridge({ children }: { children: React.ReactNode }) {
   const { getToken, userId, isSignedIn, isLoaded, signOut } = useAuth();
   const setSession = useAuthStore((state) => state.setSession);
@@ -179,6 +209,7 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
       void registerNotificationCategories(language).catch((e) => {
         console.warn('[Leeloo] registerNotificationCategories failed:', String(e));
       });
+      void syncPhoneContactsOnce().catch(() => {});
     }
   }, [isSignedIn, userId, language]);
 

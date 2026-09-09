@@ -499,4 +499,9 @@ export const verseAPI = {
   daily: async () => api.get('/verse/daily'),
 };
 
+export const contactsAPI = {
+  sync: async (contacts: Array<{ name: string; phone?: string; email?: string; source?: string }>) =>
+    api.post('/contacts/sync', { contacts }),
+};
+
 export default api;

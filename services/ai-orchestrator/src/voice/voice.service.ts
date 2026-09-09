@@ -1140,20 +1140,20 @@ export class VoiceService {
         }
 
         try {
-          const searchRes = await axios.get(
-            `${apiBaseUrl.replace(/\/+$/, '')}/v1/contacts/search`,
+          // Use /find (exact match first) not /search (ILIKE alphabetical) so "Vida" beats "Mi Vida"
+          const findRes = await axios.get(
+            `${apiBaseUrl.replace(/\/+$/, '')}/v1/contacts/find`,
             { headers, params: { q: contactName }, timeout: 10000 },
           );
-          const contacts: any[] = Array.isArray(searchRes.data?.contacts) ? searchRes.data.contacts : [];
-          const match = contacts.find((c: any) => c?.phone);
-          if (match?.phone) {
-            const clean = String(match.phone).replace(/[^\d+]/g, '');
-            return { ok: true, provider: 'phone', phone_number: clean, contact_name: match.name || contactName };
+          const contact: any = findRes.data?.contact;
+          if (contact?.phone) {
+            const clean = String(contact.phone).replace(/[^\d+]/g, '');
+            return { ok: true, provider: 'phone', phone_number: clean, contact_name: contact.name || contactName };
           }
-          const errMsg = contacts.length > 0
+          const errMsg = contact
             ? (input.language === 'es'
-                ? `Encontré a ${contactName} pero no tengo su número. ¿Me lo dictas?`
-                : `I found ${contactName} but don't have their number. What is it?`)
+                ? `Encontré a ${contact.name || contactName} pero no tengo su número. ¿Me lo dictas?`
+                : `I found ${contact.name || contactName} but don't have their number. What is it?`)
             : (input.language === 'es'
                 ? `No encontré a ${contactName} en tus contactos. ¿Me das el número?`
                 : `I couldn't find ${contactName} in your contacts. What's their number?`);

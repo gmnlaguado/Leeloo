@@ -29,6 +29,13 @@ export class ContactsController {
     return { contacts: await this.contactsService.searchContacts(req.user.id, q || '') };
   }
 
+  @Get('find')
+  @ApiOperation({ summary: 'Find single contact — exact name/nickname match first, then partial' })
+  async find(@Req() req: AuthedRequest, @Query('q') q: string) {
+    const contact = await this.contactsService.findByName(req.user.id, q || '');
+    return { contact };
+  }
+
   @Get()
   @ApiOperation({ summary: 'List all contacts for current user' })
   async list(@Req() req: AuthedRequest) {
