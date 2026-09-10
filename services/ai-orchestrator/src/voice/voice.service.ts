@@ -3,6 +3,7 @@ import axios from 'axios';
 import {
   LEELOO_SYSTEM_PROMPT,
   LEELOO_SYSTEM_PROMPT_VERSION,
+  LEELOO_PERSONALITIES,
   type LeelooPersonality,
 } from '@leeloo/ai-prompts';
 import { OpenAiQueue } from './workers/openai.queue';
@@ -126,11 +127,18 @@ export class VoiceService {
     ]);
     this.logger.log(`[PIPE] memory+userCtx done +${ms()}ms — mem=${String(memories).length}chars`);
 
-    // Always use LEELOO_SYSTEM_PROMPT — it contains the mandatory JSON format schema.
-    // buildSystemPrompt() lacks those instructions and causes Claude to return prose.
-    // Replace __USER_NAME__ token with the real nickname so Leeloo calls user by name.
+    // Build system prompt: base JSON schema + personality-specific voice description.
+    // LEELOO_SYSTEM_PROMPT hardcodes 'default' personality — inject the active one on top
+    // so Claude adopts the user's chosen mode (coach, christian, counselor, etc.) correctly.
     const safeName = (input.userName || '').trim() || 'amigo';
-    const systemPrompt = LEELOO_SYSTEM_PROMPT.replace(/__USER_NAME__/g, safeName);
+    const personalityDesc = (LEELOO_PERSONALITIES[personality] ?? LEELOO_PERSONALITIES.default)
+      .replace(/\{\{userName\}\}/g, safeName)
+      .trim();
+    const systemPrompt =
+      LEELOO_SYSTEM_PROMPT.replace(/__USER_NAME__/g, safeName) +
+      (personality !== 'default'
+        ? `\n\nMODO ACTIVO — ${personality.toUpperCase()}:\n${personalityDesc}`
+        : '');
     const now = new Date();
     const todayISO = now.toISOString().slice(0, 10); // YYYY-MM-DD
     const ctxLines = [
@@ -219,6 +227,47 @@ export class VoiceService {
     // Web search — replace placeholder with actual search results
     if (intent.intent === 'web_search' && actionResult?._searchSummary) {
       assistantText = String(actionResult._searchSummary);
+    }
+
+    // Weather — replace placeholder with real weather data
+    if (intent.intent === 'get_weather') {
+      if (actionResult?._weatherSummary) {
+        assistantText = String(actionResult._weatherSummary);
+      } else if (actionResult?._searchSummary) {
+        assistantText = String(actionResult._searchSummary);
+      } else if (actionResult?._weatherMissing) {
+        assistantText = language === 'es' ? '¿Para qué ciudad quieres el clima?' : 'Which city should I check the weather for?';
+      }
+    }
+
+    // Agenda week — format events list for voice
+    if (intent.intent === 'agenda_week' && actionResult?.ok && actionResult?.data) {
+      const events: any[] = Array.isArray(actionResult.data) ? actionResult.data : (actionResult.data?.data || []);
+      if (!events.length) {
+        assistantText = language === 'es' ? 'No tienes eventos esta semana.' : 'You have no events this week.';
+      } else {
+        const lines = events.slice(0, 5).map((e: any) => {
+          const d = new Date(e.start_at || e.date || '');
+          const day = d.toLocaleDateString(language === 'es' ? 'es-CO' : 'en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+          return `${day}: ${e.title || e.summary}`;
+        });
+        assistantText = language === 'es'
+          ? `Esta semana tienes: ${lines.join('. ')}.`
+          : `This week you have: ${lines.join('. ')}.`;
+      }
+    }
+
+    // Family check — format family members for voice
+    if (intent.intent === 'check_family' && actionResult?.ok && actionResult?.data) {
+      const members: any[] = Array.isArray(actionResult.data) ? actionResult.data : (actionResult.data?.data || []);
+      if (!members.length) {
+        assistantText = language === 'es' ? 'No tienes miembros de familia registrados aún.' : 'No family members registered yet.';
+      } else {
+        const names = members.map((m: any) => m.name || m.member_name).filter(Boolean).join(', ');
+        assistantText = language === 'es'
+          ? `Tu familia: ${names}.`
+          : `Your family: ${names}.`;
+      }
     }
 
     const needsConfirmation = Boolean(intent?.needs_confirmation);
@@ -713,6 +762,10 @@ export class VoiceService {
     if (i === 'set_personality') return intent?.assistant_text || 'Done. Personality updated.';
     if (i === 'update_profile') return 'Got it. I\'ll remember that.';
     if (i === 'web_search') return actionResult?._searchSummary ? String(actionResult._searchSummary) : (String(intent?.assistant_text || '').trim() || 'Buscando en internet...');
+    if (i === 'get_weather') return actionResult?._weatherSummary || actionResult?._searchSummary || String(intent?.assistant_text || '').trim() || 'Revisando el clima...';
+    if (i === 'set_location') return String(intent?.assistant_text || '').trim() || 'Ubicación guardada.';
+    if (i === 'agenda_week') return String(intent?.assistant_text || '').trim() || 'Aquí está tu agenda semanal.';
+    if (i === 'check_family') return String(intent?.assistant_text || '').trim() || 'Aquí está tu familia.';
 
     if (actionResult?.fallback_text) return String(actionResult.fallback_text);
     return 'Done.';
@@ -1436,6 +1489,126 @@ export class VoiceService {
           this.logger.error('[WEB_SEARCH] Tavily search failed', searchErr?.message);
           const errText = lang === 'es' ? 'No pude conectarme a internet para buscar eso.' : 'I couldn\'t connect to the internet to search for that.';
           return { ok: false, fallback_text: errText };
+        }
+      }
+
+      if (intent === 'get_weather') {
+        const rawLocation = String(slots.location || '').trim();
+        const dateSlot = String(slots.date || 'today').trim();
+        const weatherKey = process.env.OPENWEATHER_API_KEY;
+
+        // Resolve location: slot → profile city → fallback to web_search
+        let city = rawLocation;
+        if (!city) {
+          try {
+            const profileRes = await axios.get(`${apiBaseUrl.replace(/\/+$/, '')}/v1/profiles/me`, { headers });
+            city = String(profileRes.data?.city || '').trim();
+          } catch { /* ignore */ }
+        }
+
+        if (!city) {
+          return { ok: true, provider: 'none', endpoint: null, data: null, _weatherMissing: true };
+        }
+
+        if (!weatherKey) {
+          // Fallback: re-route as web_search with weather query
+          const q = `clima ${city} ${dateSlot === 'today' ? 'hoy' : dateSlot === 'tomorrow' ? 'mañana' : 'esta semana'}`;
+          const tavilyKey = process.env.TAVILY_API_KEY;
+          if (tavilyKey) {
+            try {
+              const sr = await axios.post('https://api.tavily.com/search',
+                { api_key: tavilyKey, query: q, search_depth: 'basic', max_results: 2, include_answer: true },
+                { timeout: 10_000 });
+              const answer = String(sr.data?.answer || '').trim();
+              if (answer) return { ok: true, provider: 'tavily', endpoint: 'search', data: sr.data, _searchSummary: answer.slice(0, 400) };
+            } catch { /* fall through */ }
+          }
+          return { ok: false, fallback_text: lang === 'es' ? 'El servicio de clima no está disponible.' : 'Weather service is unavailable.' };
+        }
+
+        try {
+          const units = 'metric';
+          const endpoint = dateSlot === 'week'
+            ? `https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(city)}&units=${units}&cnt=7&appid=${weatherKey}`
+            : `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&units=${units}&appid=${weatherKey}`;
+          const wr = await axios.get(endpoint, { timeout: 8_000 });
+          const d = wr.data;
+
+          let summary: string;
+          if (dateSlot === 'week' && d.list) {
+            const days = (d.list as any[]).slice(0, 5).map((item: any) => {
+              const date = new Date(item.dt * 1000).toLocaleDateString(lang === 'es' ? 'es-CO' : 'en-US', { weekday: 'short' });
+              return `${date}: ${Math.round(item.main.temp)}°C ${item.weather?.[0]?.description || ''}`;
+            }).join(', ');
+            summary = lang === 'es' ? `Esta semana en ${city}: ${days}` : `This week in ${city}: ${days}`;
+          } else {
+            const temp = Math.round(d.main?.temp ?? 0);
+            const feels = Math.round(d.main?.feels_like ?? 0);
+            const desc = d.weather?.[0]?.description || '';
+            const humidity = d.main?.humidity ?? 0;
+            summary = lang === 'es'
+              ? `En ${city}: ${temp}°C, sensación de ${feels}°C, ${desc}. Humedad ${humidity}%.`
+              : `In ${city}: ${temp}°C, feels like ${feels}°C, ${desc}. Humidity ${humidity}%.`;
+          }
+
+          this.logger.log(`[WEATHER] city="${city}" date="${dateSlot}" temp=${d.main?.temp}`);
+          return { ok: true, provider: 'openweather', endpoint, data: d, _weatherSummary: summary };
+        } catch (we: any) {
+          this.logger.error('[WEATHER] OpenWeather failed', we?.message);
+          return { ok: false, fallback_text: lang === 'es' ? `No pude obtener el clima para ${city}.` : `Couldn't get weather for ${city}.` };
+        }
+      }
+
+      if (intent === 'set_location') {
+        const city = String(slots.city || '').trim();
+        const country = String(slots.country || '').trim();
+        if (!city) return { ok: false, fallback_text: lang === 'es' ? '¿Cuál ciudad?' : 'Which city?' };
+        try {
+          await axios.patch(
+            `${apiBaseUrl.replace(/\/+$/, '')}/v1/profiles/me`,
+            { city, country: country || undefined },
+            { headers },
+          );
+          return { ok: true, provider: 'api', endpoint: '/v1/profiles/me', data: { city, country } };
+        } catch (se: any) {
+          return { ok: false, fallback_text: lang === 'es' ? 'No pude guardar tu ubicación.' : "Couldn't save your location." };
+        }
+      }
+
+      if (intent === 'agenda_week') {
+        const week = String(slots.week || 'current').trim();
+        try {
+          const now = new Date();
+          const startOfWeek = new Date(now);
+          const dayOfWeek = now.getDay();
+          const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+          startOfWeek.setDate(diff);
+          if (week === 'next') startOfWeek.setDate(startOfWeek.getDate() + 7);
+          startOfWeek.setHours(0, 0, 0, 0);
+          const endOfWeek = new Date(startOfWeek);
+          endOfWeek.setDate(startOfWeek.getDate() + 6);
+          endOfWeek.setHours(23, 59, 59, 999);
+
+          const eventsRes = await axios.get(
+            `${apiBaseUrl.replace(/\/+$/, '')}/v1/events?from=${startOfWeek.toISOString()}&to=${endOfWeek.toISOString()}&limit=20`,
+            { headers },
+          );
+          return { ok: true, provider: 'api', endpoint: '/v1/events', data: eventsRes.data };
+        } catch (ae: any) {
+          return { ok: false, fallback_text: lang === 'es' ? 'No pude obtener tu agenda semanal.' : "Couldn't get your weekly agenda." };
+        }
+      }
+
+      if (intent === 'check_family') {
+        const memberName = String(slots.member_name || '').trim();
+        try {
+          const url = memberName
+            ? `${apiBaseUrl.replace(/\/+$/, '')}/v1/family?name=${encodeURIComponent(memberName)}`
+            : `${apiBaseUrl.replace(/\/+$/, '')}/v1/family`;
+          const famRes = await axios.get(url, { headers });
+          return { ok: true, provider: 'api', endpoint: '/v1/family', data: famRes.data };
+        } catch (fe: any) {
+          return { ok: false, fallback_text: lang === 'es' ? 'No encontré miembros de familia registrados.' : 'No family members found.' };
         }
       }
 

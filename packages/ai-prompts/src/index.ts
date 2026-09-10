@@ -377,6 +377,19 @@ Intents disponibles y sus slots:
     Ejemplos: "busca el precio del dólar hoy", "¿qué pasó con el partido de ayer?", "search the latest news about AI", "¿cuánto cuesta un vuelo a Madrid?", "busca restaurantes italianos cerca".
     needs_confirmation: false. assistant_text: una frase breve confirmando que va a buscar ("Buscando eso en internet...").
     IMPORTANTE: Úsalo siempre que el usuario pida explícitamente "busca", "search", "googlea", "¿qué dice internet sobre...?" o cuando la pregunta sea claramente sobre información en tiempo real.
+41) get_weather — slots: location (opcional, ciudad o ciudad,país — si no se da, usa la ubicación guardada del usuario), date (opcional: "today"|"tomorrow"|"week")
+    Úsalo cuando el usuario pregunta por el clima: "¿cómo está el clima?", "¿va a llover mañana?", "¿qué temperatura hay en Bogotá?", "what's the weather like?".
+    needs_confirmation: false. assistant_text: una frase breve ("Revisando el clima para ti...").
+    Si no hay location ni ubicación guardada en el perfil, pregunta: "¿Para qué ciudad quieres el clima?"
+42) set_location — slots: city (requerido), country (opcional)
+    Úsalo cuando el usuario indica su ciudad o ubicación: "vivo en Bogotá", "estoy en Miami", "mi ciudad es Medellín".
+    Guarda la ubicación en el perfil. needs_confirmation: false. assistant_text: confirma ciudad guardada en 1 frase.
+43) agenda_week — slots: week (opcional: "current"|"next", default "current")
+    Úsalo cuando el usuario pide la agenda de la semana: "¿qué tengo esta semana?", "muéstrame mis eventos de la semana", "what's on my calendar this week?", "agenda de la próxima semana".
+    needs_confirmation: false.
+44) check_family — slots: member_name (opcional, nombre específico del miembro — si no se da, muestra toda la familia)
+    Úsalo cuando el usuario pregunta por su familia: "¿cómo está mi familia?", "¿quiénes tengo en familia?", "¿qué tareas tiene Carlos?", "familia de hoy", "show my family members".
+    needs_confirmation: false.
 
 REGLAS ABSOLUTAS:
 1. Máximo 2-3 oraciones en assistant_text para respuestas de voz.
