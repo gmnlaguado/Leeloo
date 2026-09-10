@@ -892,12 +892,65 @@ export class VoiceService {
         } as const;
         const eT = emailT[lang as keyof typeof emailT] ?? emailT.en;
         if (!to) return { ok: false, fallback_text: eT.no_to };
-        if (!EMAIL_RE.test(to)) return { ok: false, fallback_text: eT.bad_email(to) };
+
+        // If `to` is a name (no @), resolve it to an email via contacts lookup
+        let resolvedTo = to;
+        if (!EMAIL_RE.test(to)) {
+          // Looks like a name — search contacts
+          try {
+            const findRes = await axios.get(
+              `${apiBaseUrl.replace(/\/+$/, '')}/v1/contacts/find`,
+              { headers, params: { q: to }, timeout: 8000 },
+            );
+            const contact: any = findRes.data?.contact;
+            if (contact?.email) {
+              resolvedTo = contact.email;
+              // Ask Claude-style confirmation with the resolved email
+              const confirmMsg = lang === 'es'
+                ? `Encontré a ${contact.name || to} con el correo ${contact.email}. ¿Cuál es el asunto?`
+                : `Found ${contact.name || to} with email ${contact.email}. What's the subject?`;
+              if (!subject) return { ok: false, fallback_text: confirmMsg };
+            } else {
+              // Contact found but no email, or not found at all
+              const notFoundMsg = lang === 'es'
+                ? `No encontré el correo de ${to} en tus contactos. ¿Me lo dictas?`
+                : `I couldn't find an email for ${to} in your contacts. Could you tell me the address?`;
+              return { ok: false, fallback_text: notFoundMsg };
+            }
+          } catch {
+            // Fallback: search with ILIKE
+            try {
+              const searchRes = await axios.get(
+                `${apiBaseUrl.replace(/\/+$/, '')}/v1/contacts/search`,
+                { headers, params: { q: to, limit: 1 }, timeout: 8000 },
+              );
+              const contacts: any[] = Array.isArray(searchRes.data?.contacts) ? searchRes.data.contacts : [];
+              const match = contacts.find((c: any) => c?.email);
+              if (match?.email) {
+                resolvedTo = match.email;
+                if (!subject) {
+                  const confirmMsg = lang === 'es'
+                    ? `Encontré a ${match.name || to} con el correo ${match.email}. ¿Cuál es el asunto?`
+                    : `Found ${match.name || to} with email ${match.email}. What's the subject?`;
+                  return { ok: false, fallback_text: confirmMsg };
+                }
+              } else {
+                return { ok: false, fallback_text: lang === 'es'
+                  ? `No encontré el correo de ${to}. ¿Me lo dictas?`
+                  : `No email found for ${to}. Could you tell me the address?` };
+              }
+            } catch {
+              return { ok: false, fallback_text: eT.bad_email(to) };
+            }
+          }
+        }
+
+        if (!EMAIL_RE.test(resolvedTo)) return { ok: false, fallback_text: eT.bad_email(resolvedTo) };
         if (!subject) return { ok: false, fallback_text: eT.no_subject };
         if (!body) return { ok: false, fallback_text: eT.no_body };
         const res = await axios.post(
           `${apiBaseUrl.replace(/\/+$/, '')}/v1/email/send`,
-          { to, subject, body },
+          { to: resolvedTo, subject, body },
           { headers },
         );
         return { ok: true, provider: 'api', endpoint: '/v1/email/send', data: res.data };
