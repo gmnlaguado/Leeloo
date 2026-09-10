@@ -58,6 +58,7 @@ export class VoiceService {
             bytes: input.audio?.buffer || Buffer.from(''),
             language,
           });
+      transcription = VoiceService.normalizeEmailInTranscript(transcription);
       this.logger.log(`[PIPE] stt done +${ms()}ms input_method=${inputMethod} — "${transcription.slice(0, 60)}"`);
     } catch (err: any) {
       this.logger.error(`[PIPE] stt FAILED +${ms()}ms input_method=${inputMethod} — ${(err as any)?.message}`);
@@ -596,6 +597,28 @@ export class VoiceService {
       );
       return null;
     }
+  }
+
+  // Repairs email addresses garbled by STT (Groq/Whisper merges tokens around "@").
+  // e.g. "magalva arroba gmail punto com" → "magalva@gmail.com"
+  //      "john at gmail dot com"          → "john@gmail.com"
+  private static normalizeEmailInTranscript(text: string): string {
+    // Replace spoken "@" variants with actual @
+    let t = text
+      .replace(/\barroba\b/gi, '@')
+      .replace(/\bat sign\b/gi, '@')
+      .replace(/\b(?:at)\b(?=\s+\w+\s+(?:punto|dot|\.)\s*(?:com|net|org|io|co|edu|gov|us|es|mx|br|fr|de))/gi, '@');
+
+    // Replace spoken "." variants inside what looks like an email context
+    t = t.replace(
+      /([a-z0-9@._+-]+)\s+(?:punto|dot|period)\s+([a-z]{2,6})/gi,
+      (_m, left: string, tld: string) => `${left}.${tld}`,
+    );
+
+    // Collapse spaces around "@" if surrounded by word chars (STT sometimes splits tokens)
+    t = t.replace(/([a-z0-9._+-]+)\s*@\s*([a-z0-9._+-]+)/gi, '$1@$2');
+
+    return t;
   }
 
   private fallbackText(language: SupportedLanguage, err?: any) {

@@ -173,10 +173,24 @@ async function syncPhoneContactsOnce() {
         email: c.emails?.[0]?.email ?? undefined,
         source: 'phone' as const,
       }));
-    if (mapped.length > 0) {
-      await contactsAPI.sync(mapped);
+    if (mapped.length === 0) {
+      await AsyncStorage.setItem(CONTACTS_SYNCED_KEY, 'true');
+      return;
     }
-    await AsyncStorage.setItem(CONTACTS_SYNCED_KEY, 'true');
+    // Delay 6 s to let warmupBackends() wake Render before the first sync attempt.
+    await new Promise((r) => setTimeout(r, 6000));
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await contactsAPI.sync(mapped);
+        await AsyncStorage.setItem(CONTACTS_SYNCED_KEY, 'true');
+        return;
+      } catch (e) {
+        lastErr = e;
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 10000 * (attempt + 1)));
+      }
+    }
+    console.warn('[Leeloo] phone contacts sync failed after retries:', String(lastErr));
   } catch (e) {
     console.warn('[Leeloo] phone contacts sync failed:', String(e));
   }

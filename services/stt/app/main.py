@@ -179,6 +179,7 @@ def transcribe(
             out_prefix,
             "-t",
             str(threads),
+            "--no-gpu",  # Render has no GPU; force CPU even if binary was compiled with GPU support
         ]
 
         if safe_language:
