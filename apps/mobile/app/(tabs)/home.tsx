@@ -401,7 +401,7 @@ function PersonalityWidget({ personality, verseText, userName, language }: {
   const cfg = PERSONALITY_WIDGETS[personality] ?? PERSONALITY_WIDGETS.default;
 
   const content = (() => {
-    const lang = language as keyof typeof COACH_CHALLENGES;
+    const lang = (['en', 'es', 'pt', 'fr'].includes(language) ? language : 'en') as 'en' | 'es' | 'pt' | 'fr';
     if (personality === 'christian') {
       const loading = { en: 'Loading verse...', es: 'Cargando versículo...', pt: 'Carregando versículo...', fr: 'Chargement du verset...' };
       return verseText || loading[lang] || loading.en;

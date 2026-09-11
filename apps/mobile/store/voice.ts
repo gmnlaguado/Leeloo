@@ -7,6 +7,7 @@ import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Notifications from 'expo-notifications';
+import * as IntentLauncher from 'expo-intent-launcher';
 import { voiceAPI, profilesAPI, tasksAPI } from '@/lib/api';
 import { deviceLogger } from '@/services/device-logger';
 import { useSettingsStore } from '@/store/settings';
@@ -50,8 +51,54 @@ function parseAlarmTime(timeStr: string): Date | null {
 }
 
 async function scheduleNativeAlarm(opts: { title: string; time: string; recurrence: string }) {
+  const fireDate = parseAlarmTime(opts.time);
+  if (!fireDate) {
+    deviceLogger.log('[alarm] could not parse time', { time: opts.time });
+    return;
+  }
+
+  // ── Android: use SET_ALARM system intent → creates a REAL Clock alarm ────────
+  // Survives app death, respects Do Not Disturb override, uses phone's alarm sound.
+  // SKIP_UI=true sets the alarm silently without opening the Clock app.
+  if (Platform.OS === 'android') {
+    try {
+      const hour = fireDate.getHours();
+      const minutes = fireDate.getMinutes();
+      const isRecurring = opts.recurrence && opts.recurrence !== 'once';
+
+      // Days for recurring alarms (1=Sun,2=Mon,...,7=Sat — Android Clock convention)
+      const dayMap: Record<string, number[]> = {
+        daily:    [1, 2, 3, 4, 5, 6, 7],
+        weekdays: [2, 3, 4, 5, 6],
+        weekends: [1, 7],
+        monday:   [2], tuesday: [3], wednesday: [4],
+        thursday: [5], friday: [6], saturday: [7], sunday: [1],
+      };
+      const days = isRecurring ? (dayMap[opts.recurrence.toLowerCase()] ?? []) : [];
+
+      await IntentLauncher.startActivityAsync('android.intent.action.SET_ALARM', {
+        extra: {
+          'android.intent.extra.alarm.HOUR': hour,
+          'android.intent.extra.alarm.MINUTES': minutes,
+          'android.intent.extra.alarm.MESSAGE': opts.title,
+          'android.intent.extra.alarm.SKIP_UI': true,
+          ...(days.length > 0 ? { 'android.intent.extra.alarm.DAYS': days } : {}),
+          'android.intent.extra.alarm.VIBRATE': true,
+        },
+      });
+
+      deviceLogger.log('[alarm] Android Clock alarm set', { hour, minutes, title: opts.title, recurrence: opts.recurrence });
+      return; // Done — real alarm created, no need for notification fallback
+    } catch (androidErr) {
+      // Clock app rejected the intent → fall through to notification fallback
+      deviceLogger.log('[alarm] Android SET_ALARM failed, falling back to notification', { err: String(androidErr) });
+    }
+  }
+
+  // ── iOS + Android fallback: expo-notifications scheduled notification ─────────
+  // iOS cannot create Clock alarms (Apple restriction). Android reaches here only
+  // if the SET_ALARM intent failed (rare — e.g., no Clock app on custom ROMs).
   try {
-    // Ensure alarm notification channel exists (Android)
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('leeloo-alarms', {
         name: 'Leeloo Alarms',
@@ -65,13 +112,7 @@ async function scheduleNativeAlarm(opts: { title: string; time: string; recurren
 
     const { status } = await Notifications.requestPermissionsAsync();
     if (status !== 'granted') {
-      deviceLogger.log('[alarm] notification permission denied — alarm not scheduled');
-      return;
-    }
-
-    const fireDate = parseAlarmTime(opts.time);
-    if (!fireDate) {
-      deviceLogger.log('[alarm] could not parse time', { time: opts.time });
+      deviceLogger.log('[alarm] notification permission denied');
       return;
     }
 
@@ -80,18 +121,52 @@ async function scheduleNativeAlarm(opts: { title: string; time: string; recurren
     const id = await Notifications.scheduleNotificationAsync({
       content: {
         title: `⏰ ${opts.title}`,
-        body: `Alarma de Leeloo — ${opts.time}`,
+        body: opts.time,
         sound: 'default',
         priority: Notifications.AndroidNotificationPriority.MAX,
         ...(Platform.OS === 'android' ? { channelId: 'leeloo-alarms' } : {}),
       },
-      trigger: { type: 'timeInterval', seconds: secondsFromNow, repeats: false } as any,
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: fireDate,
+      },
     });
 
-    deviceLogger.log('[alarm] scheduled', { id, title: opts.title, time: opts.time, fireIn: `${secondsFromNow}s` });
+    deviceLogger.log('[alarm] notification alarm scheduled', { id, title: opts.title, fireAt: fireDate.toISOString() });
   } catch (err) {
     deviceLogger.log('[alarm] scheduleNativeAlarm failed', { err: String(err) });
   }
+}
+
+// ── Auto-dial helper ───────────────────────────────────────────────────────────
+// Android: ACTION_CALL intent dials immediately (requires CALL_PHONE permission).
+// iOS: tel:// opens Phone.app with a confirmation dialog — Apple blocks auto-dial.
+async function initiateCall(phoneNumber: string, contactName?: string) {
+  const clean = String(phoneNumber).replace(/[^\d+]/g, '');
+  if (!clean) {
+    deviceLogger.log('[call] initiateCall: empty phone number');
+    return;
+  }
+
+  if (Platform.OS === 'android') {
+    try {
+      // ACTION_CALL dials immediately — no UI, no confirmation dialog
+      await IntentLauncher.startActivityAsync('android.intent.action.CALL', {
+        data: `tel:${clean}`,
+      });
+      deviceLogger.log('[call] Android ACTION_CALL initiated', { clean, contactName });
+      return;
+    } catch (androidErr) {
+      // CALL_PHONE permission denied or unavailable → fall back to dialer
+      deviceLogger.log('[call] Android ACTION_CALL failed, falling back to dialer', { err: String(androidErr) });
+    }
+  }
+
+  // iOS (and Android fallback): open dialer — user must tap "Call"
+  const tel = `tel:${clean}`;
+  Linking.openURL(tel).catch((e) => {
+    deviceLogger.log('[call] could not open phone dialer', { tel, err: String(e) });
+  });
 }
 
 const getProfileOpts = async (): Promise<{ personality?: string; user_name?: string }> => {
@@ -728,12 +803,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         }, 1500);
       }
 
-      // Open native phone dialer when Leeloo resolved a call intent
+      // Initiate call when Leeloo resolved a call intent
+      // Android: ACTION_CALL dials immediately. iOS: opens Phone.app confirmation dialog.
       if (data.action?.provider === 'phone' && typeof data.action?.phone_number === 'string') {
-        const tel = `tel:${data.action.phone_number}`;
-        Linking.openURL(tel).catch(() => {
-          deviceLogger.log('[voice] could not open phone dialer', { tel });
-        });
+        void initiateCall(data.action.phone_number, data.action.contact_name as string | undefined);
       }
 
       // Open WhatsApp / SMS deep link when SMS backend returns a deepLink (no Twilio configured)
@@ -967,12 +1040,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         profilesAPI.updateMe({ preferred_language: String(newLang) }).catch(() => {});
       }
 
-      // Open phone dialer for make_call intent (text flow)
+      // Initiate call for make_call intent (text flow)
+      // Android: ACTION_CALL dials immediately. iOS: opens Phone.app confirmation dialog.
       if ((data as any).action?.provider === 'phone' && typeof (data as any).action?.phone_number === 'string') {
-        const tel = `tel:${(data as any).action.phone_number}`;
-        Linking.openURL(tel).catch(() => {
-          deviceLogger.log('[voice] sendText: could not open phone dialer', { tel });
-        });
+        void initiateCall((data as any).action.phone_number, (data as any).action.contact_name);
       }
 
       // Open WhatsApp / SMS deep link (text flow)
