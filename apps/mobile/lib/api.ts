@@ -508,6 +508,11 @@ export const familyAPI = {
   list: async () => api.get('/family/members'),
 };
 
+export const weatherAPI = {
+  get: async (city?: string) =>
+    api.get('/weather', { params: city ? ({ city } as QueryParams) : {} }),
+};
+
 export const shoppingListAPI = {
   getItems: async (store?: string) =>
     api.get('/shopping-list', { params: store ? ({ store } as QueryParams) : {} }),

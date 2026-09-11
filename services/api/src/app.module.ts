@@ -24,6 +24,7 @@ import { VerseModule } from './verse/verse.module';
 import { RemindersModule } from './reminders/reminders.module';
 import { ShoppingListModule } from './shopping-list/shopping-list.module';
 import { FamilyModule } from './family/family.module';
+import { WeatherModule } from './weather/weather.module';
 import { CryptoModule } from './common/crypto/crypto.module';
 
 @Module({
@@ -61,6 +62,7 @@ import { CryptoModule } from './common/crypto/crypto.module';
     ContactsModule,
     ShoppingListModule,
     FamilyModule,
+    WeatherModule,
   ],
   providers: [
     {

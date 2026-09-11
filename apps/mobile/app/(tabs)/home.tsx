@@ -18,7 +18,7 @@ import { Search } from 'lucide-react-native';
 import { format } from 'date-fns';
 import { es, enUS, ptBR, fr as frLocale } from 'date-fns/locale';
 import type { Locale } from 'date-fns';
-import { profilesAPI, verseAPI } from '@/lib/api';
+import { profilesAPI, verseAPI, weatherAPI } from '@/lib/api';
 import { useSettingsStore } from '@/store/settings';
 import { deviceLogger } from '@/services/device-logger';
 import { wakeWordService } from '@/services/wake-word';
@@ -278,6 +278,118 @@ function usePersonalityWidget() {
   return { personality, verseText, leelooName, loaded };
 }
 
+// ─── Weather types ────────────────────────────────────────────────────────────
+type WeatherData = {
+  city: string;
+  country: string;
+  current: {
+    temp: number;
+    feels_like: number;
+    humidity: number;
+    condition: string;
+    description: string;
+    icon: string;
+    wind_kph: number;
+  };
+  today: { temp_min: number; temp_max: number };
+  rain_alert: {
+    period: string;
+    hour: number;
+    rain_mm: number;
+    message_es: string;
+    message_en: string;
+    message_pt: string;
+    message_fr: string;
+  } | null;
+};
+
+const WEATHER_ICONS: Record<string, string> = {
+  Clear: '☀️', Clouds: '☁️', Rain: '🌧️', Drizzle: '🌦️',
+  Thunderstorm: '⛈️', Snow: '❄️', Mist: '🌫️', Fog: '🌫️',
+  Haze: '🌫️', Smoke: '🌫️', Dust: '🌪️', Tornado: '🌪️',
+};
+
+function useWeather() {
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  useEffect(() => {
+    weatherAPI.get().then((res: any) => {
+      const d = res?.data;
+      if (d?.ok && d?.weather) setWeather(d.weather);
+    }).catch(() => {});
+  }, []);
+  return weather;
+}
+
+// ─── WeatherWidget component ──────────────────────────────────────────────────
+function WeatherWidget({ weather, language }: { weather: WeatherData; language: string }) {
+  const icon = WEATHER_ICONS[weather.current.condition] ?? '🌡️';
+  const rainMsg = weather.rain_alert
+    ? (language === 'en' ? weather.rain_alert.message_en
+      : language === 'pt' ? weather.rain_alert.message_pt
+      : language === 'fr' ? weather.rain_alert.message_fr
+      : weather.rain_alert.message_es)
+    : null;
+
+  return (
+    <View style={ww.card}>
+      <View style={ww.left}>
+        <Text style={ww.icon}>{icon}</Text>
+        <View>
+          <Text style={ww.temp}>{weather.current.temp}°</Text>
+          <Text style={ww.desc}>{weather.current.description}</Text>
+        </View>
+      </View>
+      <View style={ww.right}>
+        <Text style={ww.city}>{weather.city}</Text>
+        <Text style={ww.range}>↑{weather.today.temp_max}° ↓{weather.today.temp_min}°</Text>
+        <Text style={ww.feels}>
+          {language === 'en' ? `Feels ${weather.current.feels_like}°`
+            : language === 'pt' ? `Sensação ${weather.current.feels_like}°`
+            : language === 'fr' ? `Ressenti ${weather.current.feels_like}°`
+            : `Sensación ${weather.current.feels_like}°`}
+        </Text>
+      </View>
+      {!!rainMsg && (
+        <View style={ww.rainAlert}>
+          <Text style={ww.rainText}>☂️ {rainMsg}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const ww = StyleSheet.create({
+  card: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: 18,
+    padding: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  left: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  icon: { fontSize: 40 },
+  temp: { fontSize: 28, fontWeight: '800', color: T.colors.navy, fontFamily: T.fonts.bold },
+  desc: { fontSize: 12, color: '#6366F1', fontFamily: T.fonts.regular, textTransform: 'capitalize' },
+  right: { alignItems: 'flex-end', gap: 2 },
+  city: { fontSize: 13, fontWeight: '700', color: T.colors.navy, fontFamily: T.fonts.bold },
+  range: { fontSize: 12, color: T.colors.muted, fontFamily: T.fonts.regular },
+  feels: { fontSize: 11, color: T.colors.muted, fontFamily: T.fonts.regular },
+  rainAlert: {
+    width: '100%',
+    backgroundColor: '#DBEAFE',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  rainText: { fontSize: 13, color: '#1D4ED8', fontFamily: T.fonts.regular, lineHeight: 18 },
+});
+
 function PersonalityWidget({ personality, verseText, userName, language }: {
   personality: string;
   verseText: string;
@@ -421,6 +533,7 @@ export default function HomeScreen() {
   const [draft, setDraft] = useState('');
   const { personality, verseText, leelooName } = usePersonalityWidget();
   const language = useSettingsStore((s) => s.language);
+  const weather = useWeather();
   const t = UI_STRINGS[language] ?? UI_STRINGS.en;
   const dateLocale = DATE_LOCALES[language] ?? enUS;
   const [wakeActive, setWakeActive] = useState(false);
@@ -471,17 +584,33 @@ export default function HomeScreen() {
     let cancelled = false;
     AsyncStorage.getItem('leeloo_agenda_date').then((stored) => {
       if (cancelled || stored === todayKey) return;
-      // 4s delay so backends warm up and TTS is ready
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
         if (cancelled) return;
-        AsyncStorage.setItem('leeloo_agenda_date', todayKey);
-        sendText(t.agenda_cmd);
+        await AsyncStorage.setItem('leeloo_agenda_date', todayKey);
+        // Build agenda message — include rain alert if available
+        let agendaMsg = t.agenda_cmd;
+        if (weather?.rain_alert) {
+          const rainMsg = language === 'en' ? weather.rain_alert.message_en
+            : language === 'pt' ? weather.rain_alert.message_pt
+            : language === 'fr' ? weather.rain_alert.message_fr
+            : weather.rain_alert.message_es;
+          // Append weather reminder to the agenda query so the AI includes it
+          const weatherNote = language === 'en'
+            ? ` Also mention: ${rainMsg}`
+            : language === 'pt'
+            ? ` Também mencione: ${rainMsg}`
+            : language === 'fr'
+            ? ` Mentionnez aussi: ${rainMsg}`
+            : ` Además menciona: ${rainMsg}`;
+          agendaMsg = t.agenda_cmd + weatherNote;
+        }
+        sendText(agendaMsg);
       }, 4000);
       return () => clearTimeout(timer);
     }).catch(() => {});
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+  }, [session, weather]);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -551,6 +680,9 @@ export default function HomeScreen() {
 
           {/* ── PERSONALITY WIDGET ────────────────────── */}
           <PersonalityWidget personality={personality} verseText={verseText} userName={name} language={language} />
+
+          {/* ── WEATHER WIDGET ────────────────────────── */}
+          {!!weather && <WeatherWidget weather={weather} language={language} />}
 
           {/* ── VOICE + GREETING CARD ─────────────────── */}
           <LinearGradient
