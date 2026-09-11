@@ -1,10 +1,16 @@
 /**
  * Wake word detection — bridges to the custom LeelooEars implementation
  * in wake-word.ts (energy gate + Whisper STT, no Picovoice dependency).
+ * On Android, starts a ForegroundService to keep detection alive in background.
  */
 
+import { Platform } from 'react-native';
 import { wakeWordService } from './wake-word';
 import { useSettingsStore } from '@/store/settings';
+import {
+  startWakeWordForegroundService,
+  stopWakeWordForegroundService,
+} from '@/modules/leeloo-wake-word';
 
 type WakeListener = () => void;
 const wakeListeners = new Set<WakeListener>();
@@ -25,11 +31,17 @@ export async function registerWakeWordDetection(): Promise<void> {
   isRunning = true;
   const language = useSettingsStore.getState().language ?? 'en';
   wakeWordService.start({ onDetected: notifyListeners, language });
+  if (Platform.OS === 'android') {
+    startWakeWordForegroundService();
+  }
 }
 
 export async function unregisterWakeWordDetection(): Promise<void> {
   wakeWordService.stop();
   isRunning = false;
+  if (Platform.OS === 'android') {
+    stopWakeWordForegroundService();
+  }
 }
 
 export function pauseWakeWord(): void {

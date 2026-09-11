@@ -14,9 +14,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { WaveBackground } from '@/components/WaveBackground';
 import { T } from '@/lib/theme';
-import { memoriesAPI } from '@/lib/api';
+import { memoriesAPI, familyAPI, profilesAPI } from '@/lib/api';
 import { useSettingsStore } from '@/store/settings';
 
 type Memory = {
@@ -25,6 +26,19 @@ type Memory = {
   value: { content?: string } | string | null;
   category: string;
   created_at?: string;
+};
+
+type FamilyMember = {
+  id: string;
+  name: string;
+  role: string;
+  age?: number | null;
+};
+
+type ProfileData = {
+  leeloo_name?: string;
+  leeloo_personality?: string;
+  city?: string;
 };
 
 function memoryText(m: Memory): string {
@@ -115,27 +129,56 @@ function groupByCategory(memories: Memory[]): Map<string, Memory[]> {
   return map;
 }
 
+const PERSONALITY_LABELS: Record<string, string> = {
+  default: '⭐ Default',
+  christian: '✝️ Christian',
+  coach: '🏆 Coach',
+  business: '📊 Business',
+  mentor: '🧭 Mentor',
+  counselor: '💜 Counselor',
+  faith: '🌿 Faith',
+  motivation: '🔥 Motivation',
+  nurturing: '🌸 Nurturing',
+};
+
+const ROLE_EMOJIS: Record<string, string> = {
+  hijo: '👦', hija: '👧', esposo: '👨', esposa: '👩', padre: '👴',
+  madre: '👵', hermano: '👦', hermana: '👧', son: '👦', daughter: '👧',
+  husband: '👨', wife: '👩', father: '👴', mother: '👵',
+};
+
 export default function ProfileScreen() {
   const language = useSettingsStore((s) => s.language);
   const st = ST[language] ?? ST.es;
 
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [family, setFamily] = useState<FamilyMember[]>([]);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [newText, setNewText] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const loadMemories = useCallback(async () => {
+  const loadAll = useCallback(async () => {
     try {
-      const res = await memoriesAPI.list({ limit: 100 });
-      const data = res.data as any;
-      // API returns a plain array — exclude conversation turns (too noisy for profile view)
-      const raw: Memory[] = Array.isArray(data?.memories)
-        ? data.memories
-        : Array.isArray(data)
-          ? data
-          : [];
-      const items = raw.filter((m) => m.category !== 'conversation_turn');
-      setMemories(items);
+      const [memRes, famRes, profRes] = await Promise.allSettled([
+        memoriesAPI.list({ limit: 100 }),
+        familyAPI.list(),
+        profilesAPI.getMe(),
+      ]);
+      if (memRes.status === 'fulfilled') {
+        const data = memRes.value.data as any;
+        const raw: Memory[] = Array.isArray(data?.memories)
+          ? data.memories
+          : Array.isArray(data) ? data : [];
+        setMemories(raw.filter((m) => m.category !== 'conversation_turn'));
+      }
+      if (famRes.status === 'fulfilled') {
+        const d = famRes.value.data as any;
+        setFamily(Array.isArray(d?.members) ? d.members : []);
+      }
+      if (profRes.status === 'fulfilled') {
+        setProfile((profRes.value.data as any) ?? null);
+      }
     } catch {
       Alert.alert('Error', st.errLoad);
     } finally {
@@ -143,8 +186,8 @@ export default function ProfileScreen() {
     }
   }, [st.errLoad]);
 
-  useEffect(() => { loadMemories(); }, [loadMemories]);
-  useFocusEffect(useCallback(() => { loadMemories(); }, [loadMemories]));
+  useEffect(() => { loadAll(); }, [loadAll]);
+  useFocusEffect(useCallback(() => { loadAll(); }, [loadAll]));
 
   const handleSave = async () => {
     const text = newText.trim();
@@ -153,7 +196,7 @@ export default function ProfileScreen() {
     try {
       await memoriesAPI.save(text, 'preference');
       setNewText('');
-      await loadMemories();
+      await loadAll();
       Alert.alert('', st.saved);
     } catch {
       Alert.alert('Error', st.errSave);
@@ -188,9 +231,62 @@ export default function ProfileScreen() {
           contentContainerStyle={s.scroll}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Header */}
-          <Text style={s.heading}>{st.title}</Text>
+          {/* ── Profile Card ──────────────────────────────── */}
+          <LinearGradient
+            colors={['#2D266C', '#6B21A8']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={s.profileCard}
+          >
+            <View style={s.profileAvatar}>
+              <Text style={s.profileAvatarText}>
+                {(profile?.leeloo_name ?? st.title).charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.profileName}>
+                {profile?.leeloo_name || st.title}
+              </Text>
+              {!!profile?.city && (
+                <Text style={s.profileCity}>📍 {profile.city}</Text>
+              )}
+              <View style={s.personalityBadge}>
+                <Text style={s.personalityBadgeText}>
+                  {PERSONALITY_LABELS[profile?.leeloo_personality ?? 'default'] ?? '⭐ Default'}
+                </Text>
+              </View>
+            </View>
+          </LinearGradient>
+
           <Text style={s.sub}>{st.sub}</Text>
+
+          {/* ── Family Members ────────────────────────────── */}
+          {family.length > 0 && (
+            <View style={s.section}>
+              <View style={s.sectionHeader}>
+                <Text style={s.catIcon}>👨‍👩‍👧</Text>
+                <Text style={s.catTitle}>
+                  {language === 'en' ? 'Family' : language === 'pt' ? 'Família' : language === 'fr' ? 'Famille' : 'Familia'}
+                </Text>
+                <View style={s.countBadge}>
+                  <Text style={s.countText}>{family.length}</Text>
+                </View>
+              </View>
+              <View style={s.familyGrid}>
+                {family.map((m) => (
+                  <View key={m.id} style={s.familyChip}>
+                    <Text style={s.familyChipEmoji}>
+                      {ROLE_EMOJIS[m.role?.toLowerCase()] ?? '👤'}
+                    </Text>
+                    <View>
+                      <Text style={s.familyChipName}>{m.name}</Text>
+                      <Text style={s.familyChipRole}>{m.role}{m.age ? ` · ${m.age}` : ''}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
           {/* Add new */}
           <View style={s.addCard}>
@@ -388,5 +484,89 @@ const s = StyleSheet.create({
     fontSize: 11,
     color: T.colors.muted,
     fontFamily: T.fonts.regular,
+  },
+  // Profile card styles
+  profileCard: {
+    borderRadius: 20,
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 4,
+  },
+  profileAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileAvatarText: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#fff',
+    fontFamily: T.fonts.bold,
+  },
+  profileName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#fff',
+    fontFamily: T.fonts.bold,
+  },
+  profileCity: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.75)',
+    fontFamily: T.fonts.regular,
+    marginTop: 2,
+  },
+  personalityBadge: {
+    marginTop: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  personalityBadgeText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '600',
+    fontFamily: T.fonts.semiBold,
+  },
+  // Family grid
+  familyGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  familyChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: T.colors.white,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: T.colors.border,
+    shadowColor: T.colors.navy,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  familyChipEmoji: { fontSize: 22 },
+  familyChipName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: T.colors.navy,
+    fontFamily: T.fonts.bold,
+  },
+  familyChipRole: {
+    fontSize: 12,
+    color: T.colors.muted,
+    fontFamily: T.fonts.regular,
+    textTransform: 'capitalize',
   },
 });

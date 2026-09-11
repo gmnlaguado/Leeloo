@@ -504,4 +504,19 @@ export const contactsAPI = {
     api.post('/contacts/sync', { contacts }),
 };
 
+export const familyAPI = {
+  list: async () => api.get('/family/members'),
+};
+
+export const shoppingListAPI = {
+  getItems: async (store?: string) =>
+    api.get('/shopping-list', { params: store ? ({ store } as QueryParams) : {} }),
+  addItems: async (items: string[], store?: string) =>
+    api.post('/shopping-list/add', { items, ...(store ? { store } : {}) } satisfies RequestBody),
+  checkItem: async (id: string) =>
+    api.post(`/shopping-list/${id}/check`),
+  clearStore: async (store: string) =>
+    api.delete(`/shopping-list/clear/${store}`),
+};
+
 export default api;

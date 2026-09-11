@@ -5,6 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useVoiceStore } from '@/store/voice';
 import { VoiceButton } from '@/components/VoiceButton';
 import { useAuthStore } from '@/store/auth';
@@ -38,6 +39,7 @@ const UI_STRINGS = {
     action_emails: 'Emails',
     action_tasks: 'Tasks',
     action_mode: 'Leeloo mode',
+    action_shopping: 'Shopping',
     tag_home: 'HOME',
     tag_work: 'WORK',
     no_date: 'No date',
@@ -68,6 +70,7 @@ const UI_STRINGS = {
     action_emails: 'Correos',
     action_tasks: 'Tareas',
     action_mode: 'Modo Leeloo',
+    action_shopping: 'Compras',
     tag_home: 'HOGAR',
     tag_work: 'TRABAJO',
     no_date: 'Sin fecha',
@@ -98,6 +101,7 @@ const UI_STRINGS = {
     action_emails: 'E-mails',
     action_tasks: 'Tarefas',
     action_mode: 'Modo Leeloo',
+    action_shopping: 'Compras',
     tag_home: 'CASA',
     tag_work: 'TRABALHO',
     no_date: 'Sem data',
@@ -128,6 +132,7 @@ const UI_STRINGS = {
     action_emails: 'E-mails',
     action_tasks: 'Tâches',
     action_mode: 'Mode Leeloo',
+    action_shopping: 'Courses',
     tag_home: 'MAISON',
     tag_work: 'TRAVAIL',
     no_date: 'Sans date',
@@ -459,6 +464,25 @@ export default function HomeScreen() {
 
   useEffect(() => { void hydrateTasks(); }, [hydrateTasks]);
 
+  // ── Agenda proactiva: habla el resumen del día la primera vez que abre ────
+  useEffect(() => {
+    if (!session) return;
+    const todayKey = new Date().toISOString().slice(0, 10);
+    let cancelled = false;
+    AsyncStorage.getItem('leeloo_agenda_date').then((stored) => {
+      if (cancelled || stored === todayKey) return;
+      // 4s delay so backends warm up and TTS is ready
+      const timer = setTimeout(() => {
+        if (cancelled) return;
+        AsyncStorage.setItem('leeloo_agenda_date', todayKey);
+        sendText(t.agenda_cmd);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   const greeting = useMemo(() => {
     const h = new Date().getHours();
     if (h < 12) return t.greeting_morning;
@@ -629,7 +653,7 @@ export default function HomeScreen() {
                 { emoji: '🗓️', label: t.action_agenda, action: () => sendText(t.agenda_cmd) },
                 { emoji: '📧', label: t.action_emails, action: () => sendText(t.emails_cmd) },
                 { emoji: '✅', label: t.action_tasks, action: () => router.push('/(tabs)/tasks') },
-                { emoji: '🧠', label: t.action_mode, action: () => router.push('/settings/personality') },
+                { emoji: '🛒', label: t.action_shopping, action: () => router.push('/shopping') },
               ].map((a) => (
                 <TouchableOpacity key={a.label} style={styles.actionCard} onPress={a.action} activeOpacity={0.75}>
                   <Text style={styles.actionEmoji}>{a.emoji}</Text>
