@@ -752,9 +752,14 @@ export class VoiceService {
 
     // Personality-aware natural fallbacks — used only when Claude returns empty assistant_text
     const p = (personality ?? 'default') as LeelooPersonality;
-    const pc = PERSONALITY_CONFIRM[p] ?? PERSONALITY_CONFIRM.default;
+    const pcAll = PERSONALITY_CONFIRM[p] ?? PERSONALITY_CONFIRM.default;
     const lang = String(intent?.language || 'es').toLowerCase();
-    const isEn = lang.startsWith('en');
+    const langKey = lang.startsWith('en') ? 'en' : lang.startsWith('pt') ? 'pt' : lang.startsWith('fr') ? 'fr' : 'es';
+    const pc = pcAll[langKey];
+
+    // Helpers for multilingual static strings not in PERSONALITY_CONFIRM
+    const t = (es: string, en: string, pt: string, fr: string) =>
+      langKey === 'en' ? en : langKey === 'pt' ? pt : langKey === 'fr' ? fr : es;
 
     const i = String(intent?.intent || '').trim();
     if (i === 'create_task') return pc.task_created;
@@ -762,32 +767,32 @@ export class VoiceService {
     if (i === 'create_reminder') return pc.reminder_set;
     if (i === 'create_event') return pc.event_created;
     if (i === 'save_memory') return pc.saved;
-    if (i === 'send_email') return isEn ? 'Done! Email sent.' : '¡Listo! Correo enviado.';
-    if (i === 'agenda_today') return isEn ? 'Here is your agenda for today.' : 'Aquí está tu agenda de hoy.';
+    if (i === 'send_email') return t('¡Listo! Correo enviado.', 'Done! Email sent.', 'Pronto! E-mail enviado.', 'Fait ! E-mail envoyé.');
+    if (i === 'agenda_today') return t('Aquí está tu agenda de hoy.', 'Here is your agenda for today.', 'Aqui está sua agenda de hoje.', 'Voici ton agenda du jour.');
     if (i === 'update_task') return actionResult?.data?.title
-      ? (isEn ? `Done! Updated: "${actionResult.data.title}".` : `¡Listo! Actualicé: "${actionResult.data.title}".`)
-      : (isEn ? 'Done! Task updated.' : '¡Tarea actualizada!');
+      ? t(`¡Listo! Actualicé: "${actionResult.data.title}".`, `Done! Updated: "${actionResult.data.title}".`, `Pronto! Atualizei: "${actionResult.data.title}".`, `Fait ! Mis à jour : "${actionResult.data.title}".`)
+      : t('¡Tarea actualizada!', 'Done! Task updated.', 'Tarefa atualizada!', 'Tâche mise à jour !');
     if (i === 'delete_task') return actionResult?.data?.title
-      ? (isEn ? `Done, I removed "${actionResult.data.title}".` : `Listo, eliminé "${actionResult.data.title}".`)
-      : (isEn ? 'Task deleted.' : 'Tarea eliminada.');
-    if (i === 'update_event') return isEn ? 'Done! Event updated.' : '¡Listo! Evento actualizado.';
+      ? t(`Listo, eliminé "${actionResult.data.title}".`, `Done, I removed "${actionResult.data.title}".`, `Pronto, removi "${actionResult.data.title}".`, `Fait, j'ai supprimé "${actionResult.data.title}".`)
+      : t('Tarea eliminada.', 'Task deleted.', 'Tarefa excluída.', 'Tâche supprimée.');
+    if (i === 'update_event') return t('¡Listo! Evento actualizado.', 'Done! Event updated.', 'Pronto! Evento atualizado.', 'Fait ! Événement mis à jour.');
     if (i === 'delete_event') return actionResult?.data?.title
-      ? (isEn ? `Done, I cancelled "${actionResult.data.title}".` : `Listo, cancelé "${actionResult.data.title}".`)
-      : (isEn ? 'Event cancelled.' : 'Evento cancelado.');
-    if (i === 'postpone_event') return isEn ? 'Done! Event moved.' : '¡Listo! Evento pospuesto.';
-    if (i === 'set_personality') return intent?.assistant_text || (isEn ? 'Got it! Mode updated.' : '¡Listo! Modo actualizado.');
-    if (i === 'update_profile') return isEn ? 'Got it, I\'ll remember that.' : 'Guardado. Ya lo tengo en mente.';
+      ? t(`Listo, cancelé "${actionResult.data.title}".`, `Done, I cancelled "${actionResult.data.title}".`, `Pronto, cancelei "${actionResult.data.title}".`, `Fait, j'ai annulé "${actionResult.data.title}".`)
+      : t('Evento cancelado.', 'Event cancelled.', 'Evento cancelado.', 'Événement annulé.');
+    if (i === 'postpone_event') return t('¡Listo! Evento pospuesto.', 'Done! Event moved.', 'Pronto! Evento adiado.', 'Fait ! Événement reporté.');
+    if (i === 'set_personality') return intent?.assistant_text || t('¡Listo! Modo actualizado.', 'Got it! Mode updated.', 'Pronto! Modo atualizado.', 'C\'est fait ! Mode mis à jour.');
+    if (i === 'update_profile') return t('Guardado. Ya lo tengo en mente.', 'Got it, I\'ll remember that.', 'Guardado. Já tenho em mente.', 'Noté. Je m\'en souviens.');
     if (i === 'web_search') return actionResult?._searchSummary
       ? String(actionResult._searchSummary)
-      : (isEn ? 'Searching that right now...' : 'Buscando eso ahora mismo...');
+      : t('Buscando eso ahora mismo...', 'Searching that right now...', 'Pesquisando isso agora...', 'Je cherche ça maintenant...');
     if (i === 'get_weather') return actionResult?._weatherSummary || actionResult?._searchSummary
-      || (isEn ? 'Checking the weather for you...' : 'Revisando el clima para ti...');
-    if (i === 'set_location') return isEn ? 'Location saved!' : '¡Ubicación guardada!';
-    if (i === 'agenda_week') return isEn ? 'Here\'s your week.' : 'Aquí está tu semana.';
-    if (i === 'check_family') return isEn ? 'Here\'s your family.' : 'Aquí está tu familia.';
+      || t('Revisando el clima para ti...', 'Checking the weather for you...', 'Verificando o clima para você...', 'Je vérifie la météo pour toi...');
+    if (i === 'set_location') return t('¡Ubicación guardada!', 'Location saved!', 'Localização salva!', 'Localisation enregistrée !');
+    if (i === 'agenda_week') return t('Aquí está tu semana.', 'Here\'s your week.', 'Aqui está sua semana.', 'Voici ta semaine.');
+    if (i === 'check_family') return t('Aquí está tu familia.', 'Here\'s your family.', 'Aqui está sua família.', 'Voici ta famille.');
 
     if (actionResult?.fallback_text) return String(actionResult.fallback_text);
-    return isEn ? pc.generic_done_en : pc.generic_done;
+    return pc.generic_done;
   }
 
   private async dispatchAction(input: {
