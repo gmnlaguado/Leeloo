@@ -11,6 +11,10 @@ import {
   startWakeWordForegroundService,
   stopWakeWordForegroundService,
 } from '@/modules/leeloo-wake-word';
+import {
+  startBackgroundAudioKeepAlive,
+  stopBackgroundAudioKeepAlive,
+} from './background-audio-keepalive';
 
 type WakeListener = () => void;
 const wakeListeners = new Set<WakeListener>();
@@ -33,6 +37,9 @@ export async function registerWakeWordDetection(): Promise<void> {
   wakeWordService.start({ onDetected: notifyListeners, language });
   if (Platform.OS === 'android') {
     startWakeWordForegroundService();
+  } else if (Platform.OS === 'ios') {
+    // iOS: mantiene la sesión de audio activa en background
+    startBackgroundAudioKeepAlive().catch(() => {});
   }
 }
 
@@ -41,6 +48,8 @@ export async function unregisterWakeWordDetection(): Promise<void> {
   isRunning = false;
   if (Platform.OS === 'android') {
     stopWakeWordForegroundService();
+  } else if (Platform.OS === 'ios') {
+    stopBackgroundAudioKeepAlive().catch(() => {});
   }
 }
 

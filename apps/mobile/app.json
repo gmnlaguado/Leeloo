@@ -60,6 +60,7 @@
     },
     "plugins": [
       "./plugins/withLeelooWakeWord",
+      "./plugins/withLeelooShortcuts",
       "expo-router",
       [
         "expo-notifications",

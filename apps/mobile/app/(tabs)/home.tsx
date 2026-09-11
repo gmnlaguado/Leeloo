@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Linking from 'expo-linking';
 import { useVoiceStore } from '@/store/voice';
 import { VoiceButton } from '@/components/VoiceButton';
 import { useAuthStore } from '@/store/auth';
@@ -558,6 +559,21 @@ export default function HomeScreen() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
+
+  // ── Deep link handler: leeloo://voice (desde notificación/shortcut) ─────────
+  useEffect(() => {
+    const handleUrl = (event: { url: string }) => {
+      if (event.url === 'leeloo://voice' || event.url?.endsWith('//voice')) {
+        // Activar escucha directamente igual que si el usuario presionara el botón
+        useVoiceStore.getState().startListeningFromWakeWord?.();
+      }
+    };
+    // Maneja el caso de la app ya abierta
+    const sub = Linking.addEventListener('url', handleUrl);
+    // Maneja el caso de la app abierta desde cold start
+    Linking.getInitialURL().then((url) => { if (url) handleUrl({ url }); }).catch(() => {});
+    return () => sub.remove();
+  }, []);
 
   // Pause/resume wake word detector based on voice activity.
   // In conversation mode, the voice store handles its own auto-continue loop,
