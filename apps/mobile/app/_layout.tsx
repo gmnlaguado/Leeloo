@@ -30,6 +30,7 @@ import {
   pauseWakeWord,
   resumeWakeWord,
 } from '@/services/wake-word.service';
+import { initSiriShortcut } from '@/services/siri-shortcut';
 import { useVoiceStore } from '@/store/voice';
 import type { PendingReminder } from '@/store/voice';
 import { tasksAPI } from '@/lib/api';
@@ -226,6 +227,12 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
       void syncPhoneContactsOnce().catch(() => {});
     }
   }, [isSignedIn, userId, language]);
+
+  // Siri Shortcut donation (iOS only — silent, non-blocking)
+  useEffect(() => {
+    if (!isSignedIn) return;
+    void initSiriShortcut();
+  }, [isSignedIn]);
 
   // Wake word detection
   useEffect(() => {

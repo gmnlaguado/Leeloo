@@ -62,6 +62,7 @@
     "plugins": [
       "./plugins/withLeelooWakeWord",
       "./plugins/withLeelooShortcuts",
+      "./plugins/withLeelooSiri",
       "expo-router",
       [
         "expo-notifications",
