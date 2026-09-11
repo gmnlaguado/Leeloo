@@ -4,6 +4,7 @@ import {
   LEELOO_SYSTEM_PROMPT,
   LEELOO_SYSTEM_PROMPT_VERSION,
   LEELOO_PERSONALITIES,
+  PERSONALITY_CONFIRM,
   type LeelooPersonality,
 } from '@leeloo/ai-prompts';
 import { OpenAiQueue } from './workers/openai.queue';
@@ -212,7 +213,7 @@ export class VoiceService {
     ]);
     this.logger.log(`[PIPE] action done +${ms()}ms — parallelTts=${canParallelTts}`);
 
-    let assistantText = this.buildAssistantText(intent, actionResult);
+    let assistantText = this.buildAssistantText(intent, actionResult, personality);
 
     // Personality-aware agenda brief — override static text with real formatted data
     if (intent.intent === 'agenda_today' && actionResult?._agendaData) {
@@ -325,7 +326,7 @@ export class VoiceService {
         pendingAttendeeName: input.pending_attendee_name,
         language,
       });
-      const confirmedText = this.buildAssistantText(intent, confirmedAction);
+      const confirmedText = this.buildAssistantText(intent, confirmedAction, personality);
       const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: confirmedText, personality });
       this.saveTurnFireAndForget({
         authorization: input.authorization,
@@ -740,9 +741,8 @@ export class VoiceService {
     return 'en';
   }
 
-  private buildAssistantText(intent: IntentResult, actionResult: any) {
+  private buildAssistantText(intent: IntentResult, actionResult: any, personality?: string) {
     // Action failed — always speak the error, never the success text.
-    // This prevents Leeloo from saying "Done! Task created!" when the POST actually failed.
     if (actionResult?.ok === false && actionResult?.fallback_text) {
       return String(actionResult.fallback_text);
     }
@@ -750,25 +750,44 @@ export class VoiceService {
     const base = String(intent?.assistant_text || '').trim();
     if (base) return base;
 
+    // Personality-aware natural fallbacks — used only when Claude returns empty assistant_text
+    const p = (personality ?? 'default') as LeelooPersonality;
+    const pc = PERSONALITY_CONFIRM[p] ?? PERSONALITY_CONFIRM.default;
+    const lang = String(intent?.language || 'es').toLowerCase();
+    const isEn = lang.startsWith('en');
+
     const i = String(intent?.intent || '').trim();
-    if (i === 'create_task') return 'Done. I created the task.';
-    if (i === 'send_email') return 'Done. I sent the email.';
-    if (i === 'agenda_today') return 'Here is your agenda for today.';
-    if (i === 'update_task') return actionResult?.data?.title ? `Done. Updated task: "${actionResult.data.title}".` : 'Done. Task updated.';
-    if (i === 'delete_task') return actionResult?.data?.title ? `Done. I deleted "${actionResult.data.title}".` : 'Done. Task deleted.';
-    if (i === 'update_event') return 'Done. Event updated.';
-    if (i === 'delete_event') return actionResult?.data?.title ? `Done. I cancelled "${actionResult.data.title}".` : 'Done. Event cancelled.';
-    if (i === 'postpone_event') return 'Done. Event postponed.';
-    if (i === 'set_personality') return intent?.assistant_text || 'Done. Personality updated.';
-    if (i === 'update_profile') return 'Got it. I\'ll remember that.';
-    if (i === 'web_search') return actionResult?._searchSummary ? String(actionResult._searchSummary) : (String(intent?.assistant_text || '').trim() || 'Buscando en internet...');
-    if (i === 'get_weather') return actionResult?._weatherSummary || actionResult?._searchSummary || String(intent?.assistant_text || '').trim() || 'Revisando el clima...';
-    if (i === 'set_location') return String(intent?.assistant_text || '').trim() || 'Ubicación guardada.';
-    if (i === 'agenda_week') return String(intent?.assistant_text || '').trim() || 'Aquí está tu agenda semanal.';
-    if (i === 'check_family') return String(intent?.assistant_text || '').trim() || 'Aquí está tu familia.';
+    if (i === 'create_task') return pc.task_created;
+    if (i === 'complete_task') return pc.task_done;
+    if (i === 'create_reminder') return pc.reminder_set;
+    if (i === 'create_event') return pc.event_created;
+    if (i === 'save_memory') return pc.saved;
+    if (i === 'send_email') return isEn ? 'Done! Email sent.' : '¡Listo! Correo enviado.';
+    if (i === 'agenda_today') return isEn ? 'Here is your agenda for today.' : 'Aquí está tu agenda de hoy.';
+    if (i === 'update_task') return actionResult?.data?.title
+      ? (isEn ? `Done! Updated: "${actionResult.data.title}".` : `¡Listo! Actualicé: "${actionResult.data.title}".`)
+      : (isEn ? 'Done! Task updated.' : '¡Tarea actualizada!');
+    if (i === 'delete_task') return actionResult?.data?.title
+      ? (isEn ? `Done, I removed "${actionResult.data.title}".` : `Listo, eliminé "${actionResult.data.title}".`)
+      : (isEn ? 'Task deleted.' : 'Tarea eliminada.');
+    if (i === 'update_event') return isEn ? 'Done! Event updated.' : '¡Listo! Evento actualizado.';
+    if (i === 'delete_event') return actionResult?.data?.title
+      ? (isEn ? `Done, I cancelled "${actionResult.data.title}".` : `Listo, cancelé "${actionResult.data.title}".`)
+      : (isEn ? 'Event cancelled.' : 'Evento cancelado.');
+    if (i === 'postpone_event') return isEn ? 'Done! Event moved.' : '¡Listo! Evento pospuesto.';
+    if (i === 'set_personality') return intent?.assistant_text || (isEn ? 'Got it! Mode updated.' : '¡Listo! Modo actualizado.');
+    if (i === 'update_profile') return isEn ? 'Got it, I\'ll remember that.' : 'Guardado. Ya lo tengo en mente.';
+    if (i === 'web_search') return actionResult?._searchSummary
+      ? String(actionResult._searchSummary)
+      : (isEn ? 'Searching that right now...' : 'Buscando eso ahora mismo...');
+    if (i === 'get_weather') return actionResult?._weatherSummary || actionResult?._searchSummary
+      || (isEn ? 'Checking the weather for you...' : 'Revisando el clima para ti...');
+    if (i === 'set_location') return isEn ? 'Location saved!' : '¡Ubicación guardada!';
+    if (i === 'agenda_week') return isEn ? 'Here\'s your week.' : 'Aquí está tu semana.';
+    if (i === 'check_family') return isEn ? 'Here\'s your family.' : 'Aquí está tu familia.';
 
     if (actionResult?.fallback_text) return String(actionResult.fallback_text);
-    return 'Done.';
+    return isEn ? pc.generic_done_en : pc.generic_done;
   }
 
   private async dispatchAction(input: {
