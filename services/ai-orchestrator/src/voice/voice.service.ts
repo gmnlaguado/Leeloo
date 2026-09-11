@@ -230,6 +230,11 @@ export class VoiceService {
       assistantText = String(actionResult._searchSummary);
     }
 
+    // Walmart search — replace placeholder with product results summary
+    if (intent.intent === 'search_walmart' && actionResult?._searchSummary) {
+      assistantText = String(actionResult._searchSummary);
+    }
+
     // Weather — replace placeholder with real weather data
     if (intent.intent === 'get_weather') {
       if (actionResult?._weatherSummary) {
@@ -628,6 +633,7 @@ export class VoiceService {
     'add_to_shopping_list', 'view_shopping_list',
     'add_family_member', 'assign_to_family_member', 'list_goals', 'check_goals',
     'set_personality', 'update_profile',
+    'search_walmart',
   ]);
 
   private async safeTts(input: { userId: string; text: string; personality?: string }) {
@@ -785,6 +791,9 @@ export class VoiceService {
     if (i === 'web_search') return actionResult?._searchSummary
       ? String(actionResult._searchSummary)
       : t('Buscando eso ahora mismo...', 'Searching that right now...', 'Pesquisando isso agora...', 'Je cherche ça maintenant...');
+    if (i === 'search_walmart') return actionResult?._searchSummary
+      ? String(actionResult._searchSummary)
+      : t('Buscando en Walmart ahora mismo...', 'Searching Walmart right now...', 'Pesquisando no Walmart agora...', 'Je cherche sur Walmart maintenant...');
     if (i === 'get_weather') return actionResult?._weatherSummary || actionResult?._searchSummary
       || t('Revisando el clima para ti...', 'Checking the weather for you...', 'Verificando o clima para você...', 'Je vérifie la météo pour toi...');
     if (i === 'set_location') return t('¡Ubicación guardada!', 'Location saved!', 'Localização salva!', 'Localisation enregistrée !');
@@ -1566,6 +1575,104 @@ export class VoiceService {
           this.logger.error('[WEB_SEARCH] Tavily search failed', searchErr?.message);
           const errText = lang === 'es' ? 'No pude conectarme a internet para buscar eso.' : 'I couldn\'t connect to the internet to search for that.';
           return { ok: false, fallback_text: errText };
+        }
+      }
+
+      if (intent === 'search_walmart') {
+        const query = String(slots.query || '').trim();
+        const maxResults = Math.min(Math.max(Number(slots.max_results) || 3, 1), 5);
+        if (!query) {
+          return { ok: false, fallback_text: lang === 'es' ? '¿Qué quieres buscar en Walmart?' : 'What would you like to search on Walmart?' };
+        }
+
+        // Build Walmart search deep link (always available as fallback)
+        const walmartSearchUrl = `https://www.walmart.com/search?q=${encodeURIComponent(query)}`;
+
+        const tavilyKey = process.env.TAVILY_API_KEY;
+        if (!tavilyKey) {
+          // No search key — return deep link only
+          const fallbackText = lang === 'es'
+            ? `No tengo acceso a precios en este momento, pero te abro Walmart para buscar "${query}".`
+            : `I can't check prices right now, but I'll open Walmart to search for "${query}".`;
+          return { ok: true, provider: 'deeplink', _walmartUrl: walmartSearchUrl, _walmartProducts: [], _walmartQuery: query, _searchSummary: fallbackText };
+        }
+
+        try {
+          // Tavily search scoped to walmart.com — returns product pages with prices
+          const searchRes = await axios.post(
+            'https://api.tavily.com/search',
+            {
+              api_key: tavilyKey,
+              query: `${query} site:walmart.com`,
+              search_depth: 'basic',
+              max_results: maxResults + 2,
+              include_answer: false,
+              include_domains: ['walmart.com'],
+            },
+            { timeout: 10_000 },
+          );
+
+          const results: Array<{ title?: string; url?: string; content?: string }> = searchRes.data?.results || [];
+
+          // Parse product results — extract title, price (if in snippet), and URL
+          const products = results
+            .filter((r) => r.url && r.url.includes('walmart.com/ip/'))
+            .slice(0, maxResults)
+            .map((r) => {
+              const priceMatch = r.content?.match(/\$[\d,]+(?:\.\d{2})?/);
+              return {
+                name: r.title?.replace(/\s*-\s*Walmart\.com.*$/i, '').trim() || query,
+                price: priceMatch ? priceMatch[0] : null,
+                url: r.url!,
+                snippet: r.content?.slice(0, 150) || '',
+              };
+            });
+
+          let summary: string;
+          if (products.length === 0) {
+            summary = lang === 'es'
+              ? `No encontré productos específicos de "${query}" en Walmart, pero te mando el enlace de búsqueda.`
+              : `I didn't find specific products for "${query}" on Walmart, but here's the search link.`;
+          } else {
+            const topName = products[0].name;
+            const topPrice = products[0].price;
+            if (lang === 'es') {
+              summary = topPrice
+                ? `Encontré ${products.length} opcion${products.length > 1 ? 'es' : ''} en Walmart para "${query}". La primera: ${topName} — ${topPrice}.`
+                : `Encontré ${products.length} opcion${products.length > 1 ? 'es' : ''} en Walmart para "${query}". La primera: ${topName}.`;
+              if (products.length > 1) summary += ` Y ${products.length - 1} más. ¿Te mando el enlace?`;
+            } else if (lang === 'pt') {
+              summary = topPrice
+                ? `Encontrei ${products.length} opção${products.length > 1 ? 'ões' : ''} no Walmart para "${query}". A primeira: ${topName} — ${topPrice}.`
+                : `Encontrei ${products.length} opção${products.length > 1 ? 'ões' : ''} no Walmart para "${query}". A primeira: ${topName}.`;
+            } else if (lang === 'fr') {
+              summary = topPrice
+                ? `J'ai trouvé ${products.length} option${products.length > 1 ? 's' : ''} sur Walmart pour "${query}". La première : ${topName} — ${topPrice}.`
+                : `J'ai trouvé ${products.length} option${products.length > 1 ? 's' : ''} sur Walmart pour "${query}". La première : ${topName}.`;
+            } else {
+              summary = topPrice
+                ? `Found ${products.length} option${products.length > 1 ? 's' : ''} on Walmart for "${query}". Top pick: ${topName} — ${topPrice}.`
+                : `Found ${products.length} option${products.length > 1 ? 's' : ''} on Walmart for "${query}". Top pick: ${topName}.`;
+              if (products.length > 1) summary += ` And ${products.length - 1} more.`;
+            }
+          }
+
+          this.logger.log(`[WALMART_SEARCH] query="${query}" found=${products.length}`);
+          return {
+            ok: true,
+            provider: 'tavily+walmart',
+            _walmartUrl: products.length > 0 ? products[0].url : walmartSearchUrl,
+            _walmartSearchUrl: walmartSearchUrl,
+            _walmartProducts: products,
+            _walmartQuery: query,
+            _searchSummary: summary,
+          };
+        } catch (err: any) {
+          this.logger.error('[WALMART_SEARCH] failed', err?.message);
+          const fallbackText = lang === 'es'
+            ? `No pude buscar ahora, pero te abro Walmart para "${query}".`
+            : `Couldn't search right now, but I'll open Walmart for "${query}".`;
+          return { ok: true, provider: 'deeplink', _walmartUrl: walmartSearchUrl, _walmartProducts: [], _walmartQuery: query, _searchSummary: fallbackText };
         }
       }
 

@@ -813,6 +813,12 @@ Intents disponibles y sus slots:
 44) check_family — slots: member_name (opcional, nombre específico del miembro — si no se da, muestra toda la familia)
     Úsalo cuando el usuario pregunta por su familia: "¿cómo está mi familia?", "¿quiénes tengo en familia?", "¿qué tareas tiene Carlos?", "familia de hoy", "show my family members".
     needs_confirmation: false.
+45) search_walmart — slots: query (requerido, el producto o productos a buscar), max_results (opcional, número 1-5, default 3)
+    Úsalo cuando el usuario quiere buscar productos en Walmart, comparar precios, o ver opciones antes de comprar:
+    "busca leche en Walmart", "¿cuánto cuesta el aceite en Walmart?", "search diapers on Walmart", "opciones de cereal en Walmart".
+    DIFERENCIA con add_to_shopping_list: search_walmart BUSCA y muestra opciones con precios. add_to_shopping_list AGREGA sin buscar.
+    needs_confirmation: false. assistant_text: "Buscando [productos] en Walmart ahora mismo..." o variante en el idioma del usuario.
+    FLUJO NATURAL: si el usuario dice "busca X en Walmart y agrégalo" → usa search_walmart primero, luego en un segundo turno add_to_shopping_list.
 
 REGLAS ABSOLUTAS:
 1. Máximo 2-3 oraciones en assistant_text para respuestas de voz.
