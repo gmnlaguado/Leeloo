@@ -73,6 +73,9 @@ class WakeWordService {
   private meterTimer: ReturnType<typeof setInterval> | null = null;
   private recording: Audio.Recording | null = null;
   private appStateSub: ReturnType<typeof AppState.addEventListener> | null = null;
+  // Backoff when STT provider returns rate-limit errors
+  private rateLimitUntil = 0;
+  private rateLimitBackoffMs = 10_000; // starts at 10s, doubles up to 5min
 
   start(opts: { onDetected: () => void; language?: string }) {
     if (this.running) return;
@@ -268,10 +271,21 @@ class WakeWordService {
   }
 
   private async _sendClip(audioUri: string): Promise<boolean> {
+    // Skip sending if we're in a rate-limit backoff window
+    if (Date.now() < this.rateLimitUntil) return false;
     try {
       const res = await voiceAPI.wakeDetect(audioUri, this.language);
+      // Successful response — reset backoff
+      this.rateLimitBackoffMs = 10_000;
       return Boolean((res.data as any)?.detected);
-    } catch {
+    } catch (err: any) {
+      const msg = String(err?.message ?? err ?? '');
+      if (msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('429')) {
+        // Exponential backoff: 10s → 20s → 40s … capped at 5min
+        this.rateLimitUntil = Date.now() + this.rateLimitBackoffMs;
+        this.rateLimitBackoffMs = Math.min(this.rateLimitBackoffMs * 2, 300_000);
+        deviceLogger.log('[wake] rate limit — backing off', { backoffMs: this.rateLimitBackoffMs });
+      }
       return false;
     }
   }

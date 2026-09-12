@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Audio } from 'expo-av';
-import { Linking, Platform } from 'react-native';
+import { Linking, PermissionsAndroid, Platform } from 'react-native';
 import type { AVPlaybackStatus } from 'expo-av';
 import type { AudioMode } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -150,14 +150,26 @@ async function initiateCall(phoneNumber: string, contactName?: string) {
 
   if (Platform.OS === 'android') {
     try {
-      // ACTION_CALL dials immediately — no UI, no confirmation dialog
-      await IntentLauncher.startActivityAsync('android.intent.action.CALL', {
-        data: `tel:${clean}`,
-      });
-      deviceLogger.log('[call] Android ACTION_CALL initiated', { clean, contactName });
-      return;
+      // Request CALL_PHONE at runtime — required on Android 6+ even if declared in manifest
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.CALL_PHONE,
+        {
+          title: 'Permiso para llamar',
+          message: 'Leeloo necesita permiso para hacer llamadas automáticamente.',
+          buttonPositive: 'Permitir',
+          buttonNegative: 'Cancelar',
+        },
+      );
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        await IntentLauncher.startActivityAsync('android.intent.action.CALL', {
+          data: `tel:${clean}`,
+        });
+        deviceLogger.log('[call] Android ACTION_CALL initiated', { clean, contactName });
+        return;
+      } else {
+        deviceLogger.log('[call] CALL_PHONE permission denied — falling back to dialer');
+      }
     } catch (androidErr) {
-      // CALL_PHONE permission denied or unavailable → fall back to dialer
       deviceLogger.log('[call] Android ACTION_CALL failed, falling back to dialer', { err: String(androidErr) });
     }
   }
