@@ -227,14 +227,8 @@ export function PermissionsModal({ visible, onDone }: Props) {
   );
 }
 
-/** Returns true if the permissions modal should be shown */
+/** Returns true if the permissions modal should be shown — only once ever */
 export async function shouldShowPermissionsModal(): Promise<boolean> {
-  // Always show if microphone isn't granted
-  const statuses = await checkAllPermissions();
-  const micGranted = statuses.find((s) => s.key === 'microphone')?.granted ?? false;
-  if (!micGranted) return true;
-
-  // Otherwise show only once
   const shown = await AsyncStorage.getItem(STORAGE_KEY).catch(() => null);
   return shown !== '1';
 }
