@@ -57,7 +57,9 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.CALL_PHONE",
-        "com.android.alarm.permission.SET_ALARM"
+        "com.android.alarm.permission.SET_ALARM",
+        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE"
       ]
     },
     "plugins": [

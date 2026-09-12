@@ -81,6 +81,15 @@ const PERMISSIONS: PermInfo[] = [
     critical: false,
     androidOnly: true,
   },
+  {
+    key: 'battery',
+    icon: '🔋',
+    title: 'Sin restricción de batería',
+    why: 'Para escuchar "Hey Leeloo" con la pantalla apagada.',
+    broken: 'Android apagará Leeloo cuando la pantalla se bloquee — no oirá nada.',
+    critical: true,
+    androidOnly: true,
+  },
 ];
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -96,6 +105,7 @@ export function PermissionsModal({ visible, onDone }: Props) {
     contacts: false,
     calendar: false,
     notifications: false,
+    battery: true,
   });
   const [requesting, setRequesting] = useState<PermissionKey | null>(null);
   const [done, setDone] = useState(false);

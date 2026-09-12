@@ -150,8 +150,20 @@ async function initiateCall(phoneNumber: string, contactName?: string) {
 
   if (Platform.OS === 'android') {
     try {
-      // Request CALL_PHONE at runtime — required on Android 6+ even if declared in manifest
-      const granted = await PermissionsAndroid.request(
+      // Check if CALL_PHONE was already granted (requested during onboarding).
+      // Avoid showing a permission dialog mid-conversation — it breaks the voice flow.
+      const alreadyGranted = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.CALL_PHONE,
+      );
+      if (alreadyGranted) {
+        await IntentLauncher.startActivityAsync('android.intent.action.CALL', {
+          data: `tel:${clean}`,
+        });
+        deviceLogger.log('[call] Android ACTION_CALL initiated', { clean, contactName });
+        return;
+      }
+      // Not granted yet — request once (only reaches here if onboarding was skipped)
+      const result = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.CALL_PHONE,
         {
           title: 'Permiso para llamar',
@@ -160,15 +172,14 @@ async function initiateCall(phoneNumber: string, contactName?: string) {
           buttonNegative: 'Cancelar',
         },
       );
-      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+      if (result === PermissionsAndroid.RESULTS.GRANTED) {
         await IntentLauncher.startActivityAsync('android.intent.action.CALL', {
           data: `tel:${clean}`,
         });
-        deviceLogger.log('[call] Android ACTION_CALL initiated', { clean, contactName });
+        deviceLogger.log('[call] Android ACTION_CALL initiated after runtime grant', { clean, contactName });
         return;
-      } else {
-        deviceLogger.log('[call] CALL_PHONE permission denied — falling back to dialer');
       }
+      deviceLogger.log('[call] CALL_PHONE permission denied — falling back to dialer');
     } catch (androidErr) {
       deviceLogger.log('[call] Android ACTION_CALL failed, falling back to dialer', { err: String(androidErr) });
     }

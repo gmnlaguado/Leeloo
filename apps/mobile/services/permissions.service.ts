@@ -10,13 +10,15 @@ import * as Notifications from 'expo-notifications';
 import * as Contacts from 'expo-contacts';
 import * as Calendar from 'expo-calendar';
 import { Audio } from 'expo-av';
+import { requestBatteryOptimizationExemption, hasBatteryOptimizationBeenRequested } from './battery-optimization.service';
 
 export type PermissionKey =
   | 'microphone'
   | 'calls'
   | 'contacts'
   | 'calendar'
-  | 'notifications';
+  | 'notifications'
+  | 'battery';
 
 export interface PermissionStatus {
   key: PermissionKey;
@@ -81,6 +83,12 @@ async function requestNotifications(): Promise<boolean> {
   }
 }
 
+async function requestBattery(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  await requestBatteryOptimizationExemption();
+  return true; // we can't query the actual status without native code — assume OK after dialog
+}
+
 /** Check current status of all permissions without requesting */
 export async function checkAllPermissions(): Promise<PermissionStatus[]> {
   const results: PermissionStatus[] = [];
@@ -129,6 +137,14 @@ export async function checkAllPermissions(): Promise<PermissionStatus[]> {
     results.push({ key: 'notifications', granted: false });
   }
 
+  // Battery optimization (Android only) — "granted" means we already showed the dialog
+  if (Platform.OS === 'android') {
+    const asked = await hasBatteryOptimizationBeenRequested();
+    results.push({ key: 'battery', granted: asked });
+  } else {
+    results.push({ key: 'battery', granted: true });
+  }
+
   return results;
 }
 
@@ -140,13 +156,14 @@ export async function requestPermission(key: PermissionKey): Promise<boolean> {
     case 'contacts':      return requestContacts();
     case 'calendar':      return requestCalendar();
     case 'notifications': return requestNotifications();
+    case 'battery':       return requestBattery();
     default:              return false;
   }
 }
 
 /** Request all permissions in sequence — returns updated statuses */
 export async function requestAllPermissions(): Promise<PermissionStatus[]> {
-  const keys: PermissionKey[] = ['microphone', 'notifications', 'contacts', 'calendar', 'calls'];
+  const keys: PermissionKey[] = ['microphone', 'battery', 'notifications', 'contacts', 'calendar', 'calls'];
   const results: PermissionStatus[] = [];
   for (const key of keys) {
     const granted = await requestPermission(key);
