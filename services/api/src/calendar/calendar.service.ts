@@ -77,6 +77,14 @@ export class CalendarService implements OnModuleInit {
       await ensureColumn('attendees', 'jsonb NULL');
       await ensureColumn('meet_link', 'text NULL');
 
+      // Drop NOT NULL constraint on external_id if it exists — the column was created
+      // NOT NULL in some environments but events without Google sync have no external_id.
+      try {
+        await this.db.query(
+          `ALTER TABLE calendar_events ALTER COLUMN external_id DROP NOT NULL`,
+        );
+      } catch { /* already nullable — ignore */ }
+
       // Best-effort backfill from common legacy column names.
       // This runs only when start_at/end_at were missing.
       if (cols.has('start_at')) {
