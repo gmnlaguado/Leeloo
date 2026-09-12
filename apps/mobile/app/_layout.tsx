@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
   useFonts,
@@ -20,6 +20,7 @@ import * as TaskManager from 'expo-task-manager';
 import { useAuthStore } from '@/store/auth';
 import { setClerkTokenGetter, setClerkUserId, setClerkSignOut } from '@/lib/clerkAuth';
 import { VoiceConfirmationModal } from '@/components/VoiceConfirmationModal';
+import { PermissionsModal, shouldShowPermissionsModal } from '@/components/PermissionsModal';
 import { useSettingsStore } from '@/store/settings';
 import type { SupportedLanguage } from '@/store/settings';
 import { registerForPushNotificationsAsync } from '@/services/push.service';
@@ -201,6 +202,7 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
   const { getToken, userId, isSignedIn, isLoaded, signOut } = useAuth();
   const setSession = useAuthStore((state) => state.setSession);
   const language = useSettingsStore((s) => s.language);
+  const [showPermissions, setShowPermissions] = React.useState(false);
 
   useEffect(() => {
     deviceLogger.log('ClerkBridge: auth state changed', { isLoaded, isSignedIn, hasUserId: Boolean(userId) });
@@ -227,6 +229,14 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
       void syncPhoneContactsOnce().catch(() => {});
     }
   }, [isSignedIn, userId, language]);
+
+  // Permissions onboarding modal — show on first sign-in or if microphone is missing
+  useEffect(() => {
+    if (!isSignedIn) return;
+    shouldShowPermissionsModal().then((show) => {
+      if (show) setShowPermissions(true);
+    }).catch(() => {});
+  }, [isSignedIn]);
 
   // Siri Shortcut donation (iOS only — silent, non-blocking)
   useEffect(() => {
@@ -342,7 +352,15 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, []);
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <PermissionsModal
+        visible={showPermissions}
+        onDone={() => setShowPermissions(false)}
+      />
+    </>
+  );
 }
 
 // Ping both backend services on every app launch so they wake up from Render
