@@ -404,7 +404,7 @@ interface VoiceState {
 }
 
 // Silence VAD constants — tuned to feel like Alexa
-const SILENCE_THRESHOLD_DB      = -45;   // below this = silence
+const SILENCE_THRESHOLD_DB      = -38;   // below this = silence (iOS ambient ~-35 to -40 dB; -45 was too sensitive)
 const SILENCE_DURATION_MS       = 1500;  // 1.5s of silence → auto-stop (wake-word trigger)
 const CONVO_SILENCE_DURATION_MS = 3000;  // 3s in conversation mode — user has time to think
 const MAX_RECORD_MS             = 30000; // hard cap 30s

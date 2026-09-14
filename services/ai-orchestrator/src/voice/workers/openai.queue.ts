@@ -11,7 +11,10 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
   private openai!: OpenAI;
   private anthropic!: Anthropic;
 
-  private static readonly OPENAI_CALLS_PER_HOUR = 30;
+  // Groq is free-tier with much higher limits than OpenAI — 200/hr keeps wake-word detection healthy.
+  // Override via STT_RATE_LIMIT_PER_HOUR env var on Render.
+  private static readonly OPENAI_CALLS_PER_HOUR = parseInt(process.env.STT_RATE_LIMIT_PER_HOUR || '0', 10)
+    || (process.env.GROQ_API_KEY ? 200 : 30);
   private static readonly CLAUDE_CALLS_PER_HOUR = 20;
   private static readonly CLAUDE_MONTHLY_TOKEN_BUDGET = 5_000_000;
 
@@ -48,6 +51,10 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       this.pool.query('SELECT 1')
         .then(() => this.logger.log('[DB] Supabase pool connected ✓'))
         .catch((e: any) => this.logger.error(`[DB] Supabase FAILED: ${e?.message} — memory/ctx unavailable`));
+      // Keep-alive ping every 4 min — prevents Render free-tier Postgres cold-start timeouts on each request.
+      setInterval(() => {
+        this.pool?.query('SELECT 1').catch(() => { /* silent — reconnect happens automatically */ });
+      }, 4 * 60 * 1000);
     } else {
       this.logger.warn('[DB] No SUPABASE_DB_URL or DATABASE_URL — memory disabled');
     }
@@ -92,7 +99,9 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     const provider = isGroq ? 'groq' : 'openai';
     // whisper-large-v3-turbo: Groq's fastest multilingual model.
     // distil-whisper-large-v3-en is English-only and garbles Spanish audio.
-    const sttModel = isGroq ? 'whisper-large-v3-turbo' : 'whisper-1';
+    const sttModel = isGroq
+      ? 'whisper-large-v3-turbo'
+      : (String(process.env.OPENAI_STT_MODEL || '').trim() || 'whisper-1');
     const sttLang = String(input.language || 'es').slice(0, 2).toLowerCase();
     const timeoutMs = isGroq ? 20_000 : 45_000;
     this.logger.log(`[STT] transcribe start — provider=${provider} model=${sttModel} lang=${sttLang} file=${input.filename} bytes=${input.bytes.length}`);

@@ -20,7 +20,7 @@ import { deviceLogger } from '@/services/device-logger';
 
 // Minimum dB level to consider speech present — gate prevents sending silent clips.
 // -42 works on Android microphones that report lower levels than iOS.
-const ENERGY_GATE_DB = -42;
+const ENERGY_GATE_DB = -38;
 
 // Each clip is this long. 2s is enough to catch "Hey Leeloo" + a brief pause.
 const CLIP_DURATION_MS = 2_000;
