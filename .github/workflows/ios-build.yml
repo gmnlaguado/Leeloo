@@ -11,7 +11,7 @@ on:
 jobs:
   build-ios:
     runs-on: macos-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
@@ -71,15 +71,22 @@ jobs:
           echo "Submitting IPA: $IPA"
           for attempt in 1 2 3; do
             echo "--- Submit attempt $attempt/3 ---"
-            if eas submit --platform ios --path "$IPA" --non-interactive; then
+            # --profile production loads ASC credentials from eas.json
+            # timeout 1800s (30 min) prevents EAS waiting loop from killing the job
+            if timeout 1800 eas submit \
+                --platform ios \
+                --path "$IPA" \
+                --profile production \
+                --non-interactive; then
               echo "✅ Submit succeeded on attempt $attempt"
               exit 0
             fi
+            EXIT_CODE=$?
             if [ $attempt -lt 3 ]; then
-              echo "⚠️ Submit failed, waiting 60s before retry..."
-              sleep 60
+              echo "⚠️ Submit attempt $attempt failed (exit $EXIT_CODE), waiting 90s before retry..."
+              sleep 90
             fi
           done
-          echo "❌ All 3 submit attempts failed. IPA is saved as artifact — submit manually from App Store Connect."
-          echo "Download the IPA artifact from this run and use Transporter or the App Store Connect website."
+          echo "❌ All 3 submit attempts failed."
+          echo "IPA saved as artifact — download and submit manually via Transporter or App Store Connect."
           exit 1
