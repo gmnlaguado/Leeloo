@@ -22,6 +22,7 @@
         "NSMicrophoneUsageDescription": "Leeloo necesita el micrófono para escuchar tus comandos de voz.",
         "NSCalendarsUsageDescription": "Leeloo necesita acceso a tu calendario para programar eventos.",
         "NSSpeechRecognitionUsageDescription": "Leeloo usa reconocimiento de voz para entender tus comandos.",
+        "NSLocationWhenInUseUsageDescription": "Leeloo usa tu ubicación para darte el clima, recordatorios por zona y respuestas contextuales precisas.",
         "UIBackgroundModes": [
           "audio",
           "fetch",
@@ -59,7 +60,11 @@
         "android.permission.CALL_PHONE",
         "com.android.alarm.permission.SET_ALARM",
         "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
-        "android.permission.FOREGROUND_SERVICE_MICROPHONE"
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "plugins": [
@@ -84,6 +89,12 @@
         "expo-av",
         {
           "microphonePermission": "Allow Leeloo to use your microphone for voice commands."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Leeloo usa tu ubicación para darte el clima, recordatorios por zona y respuestas contextuales precisas."
         }
       ]
     ],

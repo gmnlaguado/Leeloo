@@ -8,6 +8,7 @@ import type {
 import Constants from 'expo-constants';
 import { getAuthToken } from './authToken';
 import { getClerkUserId } from './clerkAuth';
+import { getDeviceLocation } from './deviceLocation';
 
 type RequestBody = Record<string, unknown>;
 type QueryParams = Record<string, string | number | boolean>;
@@ -226,11 +227,20 @@ export const voiceAPI = {
     if (opts?.conversationHistory) {
       formData.append('conversation_history', opts.conversationHistory);
     }
-    // Always send device timezone so Leeloo creates events in the correct local time.
-    try {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (tz) formData.append('timezone', tz);
-    } catch (_) { /* ignore if not available */ }
+    // Send device timezone + GPS so Leeloo knows the local time and exact location.
+    const loc = await getDeviceLocation().catch(() => null);
+    if (loc) {
+      formData.append('timezone', loc.timezone);
+      formData.append('latitude', String(loc.latitude));
+      formData.append('longitude', String(loc.longitude));
+      if (loc.city) formData.append('city', loc.city);
+      if (loc.country) formData.append('country', loc.country);
+    } else {
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz) formData.append('timezone', tz);
+      } catch (_) { /* ignore */ }
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180000);
@@ -344,7 +354,19 @@ export const voiceAPI = {
           ...(opts?.personality ? { personality: opts.personality } : {}),
           ...(opts?.user_name ? { user_name: opts.user_name } : {}),
           ...(opts?.conversationHistory ? { conversation_history: opts.conversationHistory } : {}),
-          ...((() => { try { const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; return tz ? { timezone: tz } : {}; } catch(_) { return {}; } })()),
+          ...(await (async () => {
+            try {
+              const loc = await getDeviceLocation();
+              if (loc) return {
+                timezone: loc.timezone,
+                latitude: loc.latitude,
+                longitude: loc.longitude,
+                ...(loc.city ? { city: loc.city } : {}),
+                ...(loc.country ? { country: loc.country } : {}),
+              };
+            } catch (_) {}
+            try { const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; return tz ? { timezone: tz } : {}; } catch (_) { return {}; }
+          })()),
         }),
         signal: controller.signal,
       });

@@ -51,6 +51,10 @@ export class VoiceController {
     const personality = typeof body?.personality === 'string' ? body.personality : undefined;
     const userName = typeof body?.user_name === 'string' ? body.user_name : undefined;
     const timezone = typeof body?.timezone === 'string' ? body.timezone : undefined;
+    const latitude = body?.latitude != null ? Number(body.latitude) : undefined;
+    const longitude = body?.longitude != null ? Number(body.longitude) : undefined;
+    const city = typeof body?.city === 'string' ? body.city : undefined;
+    const country = typeof body?.country === 'string' ? body.country : undefined;
     const pendingEventId = typeof body?.pending_event_id === 'string' ? body.pending_event_id : undefined;
     const pendingAttendeeName =
       typeof body?.pending_attendee_name === 'string' ? body.pending_attendee_name : undefined;
@@ -70,6 +74,10 @@ export class VoiceController {
       personality,
       userName,
       timezone,
+      latitude: Number.isFinite(latitude) ? latitude : undefined,
+      longitude: Number.isFinite(longitude) ? longitude : undefined,
+      city,
+      country,
       pending_event_id: pendingEventId,
       pending_attendee_name: pendingAttendeeName,
       conversation_history: conversationHistory,
@@ -114,6 +122,10 @@ export class VoiceController {
     const personality = typeof body?.personality === 'string' ? body.personality : undefined;
     const userName = typeof body?.user_name === 'string' ? body.user_name : undefined;
     const timezone = typeof body?.timezone === 'string' ? body.timezone : undefined;
+    const latitude2 = body?.latitude != null ? Number(body.latitude) : undefined;
+    const longitude2 = body?.longitude != null ? Number(body.longitude) : undefined;
+    const city2 = typeof body?.city === 'string' ? body.city : undefined;
+    const country2 = typeof body?.country === 'string' ? body.country : undefined;
     const conversationHistory =
       typeof body?.conversation_history === 'string' ? body.conversation_history : undefined;
 
@@ -127,6 +139,10 @@ export class VoiceController {
       personality,
       userName,
       timezone,
+      latitude: Number.isFinite(latitude2) ? latitude2 : undefined,
+      longitude: Number.isFinite(longitude2) ? longitude2 : undefined,
+      city: city2,
+      country: country2,
       conversation_history: conversationHistory,
     });
   }

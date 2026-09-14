@@ -41,6 +41,10 @@ export class VoiceService {
     personality?: string;
     userName?: string;
     timezone?: string;
+    latitude?: number;
+    longitude?: number;
+    city?: string;
+    country?: string;
     pending_event_id?: string;
     pending_attendee_name?: string;
     conversation_history?: string;
@@ -155,6 +159,14 @@ export class VoiceService {
       `USER_TIMEZONE: ${userTimezone}`,
       `DAY_OF_WEEK: ${now.toLocaleDateString('en-US', { weekday: 'long', timeZone: userTimezone })}`,
       ...(input.userName ? [`USER_NAME: ${input.userName}`] : []),
+      ...(() => {
+        if (input.latitude != null && input.longitude != null) {
+          const cityStr = [input.city, input.country].filter(Boolean).join(', ');
+          return [`USER_LOCATION: ${cityStr || 'unknown city'} (${input.latitude}, ${input.longitude})`];
+        }
+        if (input.city) return [`USER_LOCATION: ${[input.city, input.country].filter(Boolean).join(', ')}`];
+        return [];
+      })(),
       `TIME_OF_DAY: ${timeOfDay}`,
       `PERSONALITY: ${personality}`,
       `LANGUAGE: ${language}`,
@@ -217,6 +229,10 @@ export class VoiceService {
         pendingEventId: input.pending_event_id,
         pendingAttendeeName: input.pending_attendee_name,
         language,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        city: input.city,
+        country: input.country,
       }),
       ttsEarlyPromise,
     ]);
@@ -339,6 +355,10 @@ export class VoiceService {
         pendingEventId: input.pending_event_id,
         pendingAttendeeName: input.pending_attendee_name,
         language,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        city: input.city,
+        country: input.country,
       });
       const confirmedText = this.buildAssistantText(intent, confirmedAction, personality);
       const ttsAudioBase64 = await this.safeTts({ userId: input.userId, text: confirmedText, personality });
@@ -821,6 +841,10 @@ export class VoiceService {
     pendingEventId?: string;
     pendingAttendeeName?: string;
     language?: string;
+    latitude?: number;
+    longitude?: number;
+    city?: string;
+    country?: string;
   }) {
     const apiBaseUrl = String(process.env.API_BASE_URL || process.env.API_URL || '').trim();
     if (!apiBaseUrl) {
@@ -1690,16 +1714,25 @@ export class VoiceService {
         const dateSlot = String(slots.date || 'today').trim();
         const weatherKey = process.env.OPENWEATHER_API_KEY;
 
-        // Resolve location: slot → profile city → fallback to web_search
+        // Resolve location: slot → GPS coords (most accurate) → profile city → ask user
+        const gpsLat = input.latitude;
+        const gpsLon = input.longitude;
         let city = rawLocation;
-        if (!city) {
+        let useCoords = false;
+
+        if (!city && gpsLat != null && gpsLon != null) {
+          useCoords = true; // will use lat/lon in the API call directly
+          city = input.city || ''; // city name for the response text only
+        }
+
+        if (!city && !useCoords) {
           try {
             const profileRes = await axios.get(`${apiBaseUrl.replace(/\/+$/, '')}/v1/profiles/me`, { headers });
             city = String(profileRes.data?.city || '').trim();
           } catch { /* ignore */ }
         }
 
-        if (!city) {
+        if (!city && !useCoords) {
           return { ok: true, provider: 'none', endpoint: null, data: null, _weatherMissing: true };
         }
 
@@ -1721,11 +1754,18 @@ export class VoiceService {
 
         try {
           const units = 'metric';
+          // Prefer GPS coords for accuracy; fall back to city name
+          const locParam = useCoords
+            ? `lat=${gpsLat}&lon=${gpsLon}`
+            : `q=${encodeURIComponent(city)}`;
+          const displayCity = city || (useCoords ? `${gpsLat},${gpsLon}` : 'tu ubicación');
           const endpoint = dateSlot === 'week'
-            ? `https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(city)}&units=${units}&cnt=7&appid=${weatherKey}`
-            : `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&units=${units}&appid=${weatherKey}`;
+            ? `https://api.openweathermap.org/data/2.5/forecast?${locParam}&units=${units}&cnt=7&appid=${weatherKey}`
+            : `https://api.openweathermap.org/data/2.5/weather?${locParam}&units=${units}&appid=${weatherKey}`;
           const wr = await axios.get(endpoint, { timeout: 8_000 });
           const d = wr.data;
+          // Use city name returned by API when available (more readable)
+          const apiCity = String(d.name || d.city?.name || displayCity);
 
           let summary: string;
           if (dateSlot === 'week' && d.list) {
@@ -1733,18 +1773,18 @@ export class VoiceService {
               const date = new Date(item.dt * 1000).toLocaleDateString(lang === 'es' ? 'es-CO' : 'en-US', { weekday: 'short' });
               return `${date}: ${Math.round(item.main.temp)}°C ${item.weather?.[0]?.description || ''}`;
             }).join(', ');
-            summary = lang === 'es' ? `Esta semana en ${city}: ${days}` : `This week in ${city}: ${days}`;
+            summary = lang === 'es' ? `Esta semana en ${apiCity}: ${days}` : `This week in ${apiCity}: ${days}`;
           } else {
             const temp = Math.round(d.main?.temp ?? 0);
             const feels = Math.round(d.main?.feels_like ?? 0);
             const desc = d.weather?.[0]?.description || '';
             const humidity = d.main?.humidity ?? 0;
             summary = lang === 'es'
-              ? `En ${city}: ${temp}°C, sensación de ${feels}°C, ${desc}. Humedad ${humidity}%.`
-              : `In ${city}: ${temp}°C, feels like ${feels}°C, ${desc}. Humidity ${humidity}%.`;
+              ? `En ${apiCity}: ${temp}°C, sensación de ${feels}°C, ${desc}. Humedad ${humidity}%.`
+              : `In ${apiCity}: ${temp}°C, feels like ${feels}°C, ${desc}. Humidity ${humidity}%.`;
           }
 
-          this.logger.log(`[WEATHER] city="${city}" date="${dateSlot}" temp=${d.main?.temp}`);
+          this.logger.log(`[WEATHER] city="${apiCity}" date="${dateSlot}" temp=${d.main?.temp} useCoords=${useCoords}`);
           return { ok: true, provider: 'openweather', endpoint, data: d, _weatherSummary: summary };
         } catch (we: any) {
           this.logger.error('[WEATHER] OpenWeather failed', we?.message);
