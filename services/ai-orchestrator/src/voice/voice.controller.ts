@@ -50,6 +50,7 @@ export class VoiceController {
         .toLowerCase() === 'true';
     const personality = typeof body?.personality === 'string' ? body.personality : undefined;
     const userName = typeof body?.user_name === 'string' ? body.user_name : undefined;
+    const timezone = typeof body?.timezone === 'string' ? body.timezone : undefined;
     const pendingEventId = typeof body?.pending_event_id === 'string' ? body.pending_event_id : undefined;
     const pendingAttendeeName =
       typeof body?.pending_attendee_name === 'string' ? body.pending_attendee_name : undefined;
@@ -68,6 +69,7 @@ export class VoiceController {
       confirmation,
       personality,
       userName,
+      timezone,
       pending_event_id: pendingEventId,
       pending_attendee_name: pendingAttendeeName,
       conversation_history: conversationHistory,
@@ -111,6 +113,7 @@ export class VoiceController {
         : undefined;
     const personality = typeof body?.personality === 'string' ? body.personality : undefined;
     const userName = typeof body?.user_name === 'string' ? body.user_name : undefined;
+    const timezone = typeof body?.timezone === 'string' ? body.timezone : undefined;
     const conversationHistory =
       typeof body?.conversation_history === 'string' ? body.conversation_history : undefined;
 
@@ -123,6 +126,7 @@ export class VoiceController {
       confirmation,
       personality,
       userName,
+      timezone,
       conversation_history: conversationHistory,
     });
   }

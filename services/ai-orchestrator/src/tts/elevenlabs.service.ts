@@ -49,11 +49,11 @@ export class ElevenLabsService {
     const url = `${this.endpoint}/${encodeURIComponent(this.voiceId)}`;
     const body = {
       text: this.emotionPrefix(options.emotion) + cleanText,
-      model_id: options.modelId || 'eleven_multilingual_v2',
+      model_id: options.modelId || 'eleven_turbo_v2_5',
       voice_settings: {
-        stability: options.stability ?? 0.45,
-        similarity_boost: options.similarityBoost ?? 0.8,
-        style: options.style ?? 0.35,
+        stability: options.stability ?? 0.40,
+        similarity_boost: options.similarityBoost ?? 0.85,
+        style: options.style ?? 0.10,
         use_speaker_boost: options.useSpeakerBoost ?? true,
       },
     };

@@ -816,8 +816,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       // ChatGPT-style turn-taking: after Leeloo speaks, auto-listen for a follow-up.
       // If the user doesn't speak within 3s, conversation mode exits naturally.
       const isConvoMode = useVoiceStore.getState().isConversationMode;
-      const isAwaitingConf = useVoiceStore.getState().awaitingConfirmation;
-      if (isConvoMode && !isAwaitingConf) {
+      // Always continue listening in conversation mode — even when awaiting confirmation.
+      // If awaitingConfirmation is set, the user can speak "sí"/"no" and the server
+      // processes it with conversation history context to confirm or cancel naturally.
+      if (isConvoMode) {
         setTimeout(() => {
           const s = useVoiceStore.getState();
           if (!s.isListening && !s.isProcessing && !s.isSpeaking && s.isConversationMode) {
@@ -1168,7 +1170,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     try {
       set({ isProcessing: true, status: 'processing', lastError: null });
       const language = useSettingsStore.getState().language;
-      const res = await voiceAPI.processText(pendingOriginalText, {
+      const res = await voiceAPI.processText('confirmar', {
         language,
         confirmation: 'confirmed',
       });

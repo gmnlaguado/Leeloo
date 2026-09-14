@@ -40,6 +40,7 @@ export class VoiceService {
     confirmation?: 'confirmed' | 'cancel';
     personality?: string;
     userName?: string;
+    timezone?: string;
     pending_event_id?: string;
     pending_attendee_name?: string;
     conversation_history?: string;
@@ -140,11 +141,19 @@ export class VoiceService {
       (personality !== 'default'
         ? `\n\nMODO ACTIVO — ${personality.toUpperCase()}:\n${personalityDesc}`
         : '');
+    const userTimezone = (input as any).timezone || 'America/Bogota';
     const now = new Date();
-    const todayISO = now.toISOString().slice(0, 10); // YYYY-MM-DD
+    const localTime = now.toLocaleString('en-US', {
+      timeZone: userTimezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    const todayLocal = now.toLocaleDateString('en-CA', { timeZone: userTimezone }); // YYYY-MM-DD
     const ctxLines = [
-      `TODAY: ${todayISO}`,
-      `DAY_OF_WEEK: ${now.toLocaleDateString('en-US', { weekday: 'long' })}`,
+      `TODAY: ${todayLocal}`,
+      `CURRENT_LOCAL_TIME: ${localTime}`,
+      `USER_TIMEZONE: ${userTimezone}`,
+      `DAY_OF_WEEK: ${now.toLocaleDateString('en-US', { weekday: 'long', timeZone: userTimezone })}`,
       ...(input.userName ? [`USER_NAME: ${input.userName}`] : []),
       `TIME_OF_DAY: ${timeOfDay}`,
       `PERSONALITY: ${personality}`,

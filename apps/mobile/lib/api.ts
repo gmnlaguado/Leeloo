@@ -226,6 +226,11 @@ export const voiceAPI = {
     if (opts?.conversationHistory) {
       formData.append('conversation_history', opts.conversationHistory);
     }
+    // Always send device timezone so Leeloo creates events in the correct local time.
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) formData.append('timezone', tz);
+    } catch (_) { /* ignore if not available */ }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180000);
@@ -339,6 +344,7 @@ export const voiceAPI = {
           ...(opts?.personality ? { personality: opts.personality } : {}),
           ...(opts?.user_name ? { user_name: opts.user_name } : {}),
           ...(opts?.conversationHistory ? { conversation_history: opts.conversationHistory } : {}),
+          ...((() => { try { const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; return tz ? { timezone: tz } : {}; } catch(_) { return {}; } })()),
         }),
         signal: controller.signal,
       });

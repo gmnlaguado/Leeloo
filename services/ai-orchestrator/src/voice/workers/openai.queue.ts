@@ -43,8 +43,8 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     if (dbUrl) {
       this.pool = new Pool({
         connectionString: dbUrl,
-        connectionTimeoutMillis: 2_500,
-        idleTimeoutMillis: 10_000,
+        connectionTimeoutMillis: 5_000,
+        idleTimeoutMillis: 60_000,
         max: 5,
         ssl: { rejectUnauthorized: false },
       });

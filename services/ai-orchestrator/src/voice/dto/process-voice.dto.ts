@@ -27,6 +27,11 @@ export class ProcessVoiceDto {
   @IsString()
   user_name?: string;
 
+  @ApiProperty({ required: false, description: 'IANA timezone of the user device (e.g. America/Bogota)' })
+  @IsOptional()
+  @IsString()
+  timezone?: string;
+
   @ApiProperty({
     required: false,
     deprecated: true,
