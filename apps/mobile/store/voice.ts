@@ -828,6 +828,21 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         }, 1500);
       }
 
+      // Emergency call — Leeloo detected a physical emergency ("no puedo respirar", etc.)
+      // Countdown is implicit: TTS says "Voy a llamar al 911. Di cancelar si no es emergencia."
+      // Then the app immediately opens the dialer — user can decline on the OS dialog.
+      if ((data as any).call_emergency === true) {
+        const emergencyNum = String((data as any).emergency_number || '911');
+        deviceLogger.log('[voice] EMERGENCY CALL triggered', { emergencyNum });
+        // Small delay so TTS finishes the warning sentence before opening dialer
+        setTimeout(() => {
+          const clean = emergencyNum.replace(/[^\d+]/g, '');
+          Linking.openURL(`tel:${clean}`).catch((e) => {
+            deviceLogger.log('[voice] could not open emergency dialer', { err: String(e) });
+          });
+        }, 4500);
+      }
+
       // Initiate call when Leeloo resolved a call intent
       // Android: ACTION_CALL dials immediately. iOS: opens Phone.app confirmation dialog.
       if (data.action?.provider === 'phone' && typeof data.action?.phone_number === 'string') {
@@ -1063,6 +1078,18 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       if (newLang && ['es', 'en', 'pt', 'fr'].includes(String(newLang))) {
         useSettingsStore.getState().setLanguage(newLang as any);
         profilesAPI.updateMe({ preferred_language: String(newLang) }).catch(() => {});
+      }
+
+      // Emergency call (text flow)
+      if ((data as any).call_emergency === true) {
+        const emergencyNum = String((data as any).emergency_number || '911');
+        deviceLogger.log('[voice] EMERGENCY CALL triggered (text flow)', { emergencyNum });
+        setTimeout(() => {
+          const clean = emergencyNum.replace(/[^\d+]/g, '');
+          Linking.openURL(`tel:${clean}`).catch((e) => {
+            deviceLogger.log('[voice] could not open emergency dialer', { err: String(e) });
+          });
+        }, 4500);
       }
 
       // Initiate call for make_call intent (text flow)

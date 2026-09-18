@@ -446,6 +446,7 @@ export class VoiceService {
       ok: true,
       input_method: inputMethod,
       status: 'ok',
+      ...(actionResult?.call_emergency ? { call_emergency: true, emergency_number: actionResult.emergency_number } : {}),
       transcription,
       intent,
       action: actionResult,
@@ -663,6 +664,8 @@ export class VoiceService {
     'add_family_member', 'assign_to_family_member', 'list_goals', 'check_goals',
     'set_personality', 'update_profile',
     'search_walmart',
+    // Safety intents — response is the action itself, no backend call needed
+    'crisis_support', 'illegal_request_declined', 'call_emergency',
   ]);
 
   private async safeTts(input: { userId: string; text: string; personality?: string }) {
@@ -829,6 +832,29 @@ export class VoiceService {
     if (i === 'agenda_week') return t('Aquí está tu semana.', 'Here\'s your week.', 'Aqui está sua semana.', 'Voici ta semaine.');
     if (i === 'check_family') return t('Aquí está tu familia.', 'Here\'s your family.', 'Aqui está sua família.', 'Voici ta famille.');
 
+    // Safety intents — response comes directly from Claude's assistant_text (set by the prompt rules)
+    if (i === 'crisis_support') return base || t(
+      'Estoy aquí contigo. Lo que sientes importa, y tú importas. ¿Estás en un lugar seguro ahora mismo? Puedes llamar a la línea de crisis si lo necesitas.',
+      'I\'m here with you. What you\'re feeling matters, and you matter. Are you somewhere safe right now? You can call a crisis line if you need to.',
+      'Estou aqui com você. O que você sente importa, e você importa. Você está em um lugar seguro agora? Você pode ligar para o CVV: 188.',
+      'Je suis là avec toi. Ce que tu ressens compte, et tu comptes. Es-tu en sécurité en ce moment ? Tu peux appeler le 3114.',
+    );
+    if (i === 'illegal_request_declined') return base || t(
+      'Eso no puedo ayudarte a hacer.',
+      'I can\'t help with that.',
+      'Não posso ajudar com isso.',
+      'Je ne peux pas t\'aider avec ça.',
+    );
+    if (i === 'call_emergency') {
+      const num = String(intent?.slots?.emergency_number || '911');
+      return base || t(
+        `Voy a llamar al ${num} ahora. Di "cancelar" si no es una emergencia.`,
+        `I'm calling ${num} now. Say "cancel" if this is not an emergency.`,
+        `Vou ligar para o ${num} agora. Diga "cancelar" se não for uma emergência.`,
+        `J'appelle le ${num} maintenant. Dis "annuler" si ce n'est pas une urgence.`,
+      );
+    }
+
     if (actionResult?.fallback_text) return String(actionResult.fallback_text);
     return pc.generic_done;
   }
@@ -865,6 +891,16 @@ export class VoiceService {
     try {
       if (input.intent.needs_confirmation && input.confirmation !== 'confirmed') {
         return { ok: true, deferred: true };
+      }
+
+      // Safety intents — no backend call; response is purely conversational or device-side
+      if (intent === 'crisis_support' || intent === 'illegal_request_declined') {
+        return { ok: true, safety: true };
+      }
+
+      if (intent === 'call_emergency') {
+        const emergencyNumber = String(input.intent.slots?.emergency_number || '911').trim();
+        return { ok: true, safety: true, call_emergency: true, emergency_number: emergencyNumber };
       }
 
       if (intent === 'create_task') {
