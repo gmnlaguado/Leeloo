@@ -400,8 +400,9 @@ export default function RootLayout() {
               <Stack.Screen name="sso-callback" />
               <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
               <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="settings/personality" options={{ presentation: 'modal' }} />
-              <Stack.Screen name="settings/integrations" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="settings/profile" options={{ headerShown: true, headerStyle: { backgroundColor: '#2D266C' }, headerTintColor: '#fff' }} />
+              <Stack.Screen name="settings/personality" options={{ presentation: 'modal', gestureEnabled: true }} />
+              <Stack.Screen name="settings/integrations" options={{ presentation: 'modal', gestureEnabled: true }} />
             </Stack>
             <VoiceConfirmationModal />
             <StatusBar style="auto" />

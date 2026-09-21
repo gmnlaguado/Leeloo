@@ -95,6 +95,7 @@ export default function IntegrationsScreen() {
     { provider: 'microsoft', label: 'Microsoft', emoji: '🟦', connected: false },
   ];
 
+  const router = useRouter();
   const [integrations, setIntegrations] = useState<Integration[]>(DEFAULT_INTEGRATIONS);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -182,6 +183,11 @@ export default function IntegrationsScreen() {
         title: st.title, headerBackTitle: st.back,
         headerStyle: { backgroundColor: '#0B0B14' },
         headerTintColor: '#fff',
+        headerLeft: () => (
+          <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={{ paddingHorizontal: 8 }}>
+            <Text style={{ fontSize: 22, color: '#fff' }}>✕</Text>
+          </TouchableOpacity>
+        ),
       }} />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.sectionTitle}>{st.sectionTitle}</Text>

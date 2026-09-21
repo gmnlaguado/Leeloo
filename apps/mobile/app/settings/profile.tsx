@@ -213,12 +213,14 @@ export default function ProfileScreen() {
   }
 
   return (
-    <SafeAreaView style={s.container}>
+    <SafeAreaView style={s.container} edges={['bottom', 'left', 'right']}>
       <Stack.Screen options={{
+        headerShown: true,
         title: st.title,
         headerBackTitle: language === 'en' ? 'Back' : language === 'pt' ? 'Voltar' : language === 'fr' ? 'Retour' : 'Atrás',
         headerStyle: { backgroundColor: T.colors.navy },
         headerTintColor: T.colors.white,
+        gestureEnabled: true,
       }} />
       <WaveBackground opacity={0.04} cellSize={38} />
 

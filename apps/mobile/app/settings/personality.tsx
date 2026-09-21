@@ -181,6 +181,11 @@ export default function PersonalityScreen() {
           headerStyle: { backgroundColor: T.colors.cream },
           headerTintColor: T.colors.navy,
           headerTitleStyle: { fontFamily: T.fonts.bold, fontWeight: '700' },
+          headerLeft: () => (
+            <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={{ paddingHorizontal: 8 }}>
+              <Text style={{ fontSize: 22, color: T.colors.navy }}>✕</Text>
+            </TouchableOpacity>
+          ),
         }}
       />
 
