@@ -73,7 +73,7 @@ jobs:
             echo "--- Submit attempt $attempt/3 ---"
             # --profile production loads ASC credentials from eas.json
             # timeout 1800s (30 min) prevents EAS waiting loop from killing the job
-            if timeout 1800 eas submit \
+            if eas submit \
                 --platform ios \
                 --path "$IPA" \
                 --profile production \

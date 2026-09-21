@@ -1,0 +1,60 @@
+name: iOS Dev Build (Development Client)
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: 'Build message / notes'
+        required: false
+        default: 'Dev build'
+
+jobs:
+  build-ios-dev:
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies (root workspace)
+        run: npm install
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli@latest
+
+      - name: Write .env for build
+        working-directory: apps/mobile
+        run: |
+          echo 'EXPO_PUBLIC_API_URL=https://leeloo-api-55i5.onrender.com' > .env
+          echo 'EXPO_PUBLIC_AI_ORCHESTRATOR_URL=https://leeloo-ai.onrender.com' >> .env
+          echo 'EXPO_PUBLIC_SUPABASE_URL=https://gqilzzhzmxjjfpdmrmea.supabase.co' >> .env
+          echo 'EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsubGVlbG9vLnVzJA' >> .env
+
+      - name: Build iOS development (internal distribution)
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsubGVlbG9vLnVzJA
+          EXPO_PUBLIC_API_URL: https://leeloo-api-55i5.onrender.com
+          EXPO_PUBLIC_AI_ORCHESTRATOR_URL: https://leeloo-ai.onrender.com
+          EXPO_PUBLIC_SUPABASE_URL: https://gqilzzhzmxjjfpdmrmea.supabase.co
+        run: |
+          eas build \
+            --platform ios \
+            --profile development \
+            --non-interactive \
+            --message "${{ github.event.inputs.message }}"
+
+      - name: Summary
+        run: |
+          echo "### iOS Dev Build completado" >> $GITHUB_STEP_SUMMARY
+          echo "- Perfil: **development** (internal distribution)" >> $GITHUB_STEP_SUMMARY
+          echo "- El .ipa se instala directamente al dispositivo registrado en EAS" >> $GITHUB_STEP_SUMMARY
+          echo "- Mensaje: ${{ github.event.inputs.message }}" >> $GITHUB_STEP_SUMMARY
