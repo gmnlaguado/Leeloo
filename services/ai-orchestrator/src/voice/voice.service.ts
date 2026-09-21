@@ -656,7 +656,7 @@ export class VoiceService {
   // confirm the backend action succeeded BEFORE speaking "Done!". If the POST fails,
   // the user hears a false success. TTS waits for actionResult for these intents.
   private static readonly PARALLEL_TTS_INTENTS = new Set([
-    'chat', 'emotional_support', 'save_memory', 'set_language',
+    'chat', 'emotional_support', 'medical_query', 'save_memory', 'set_language',
     'complete_task', 'set_goal',
     'daily_verse', 'suggest_meal', 'get_recipe', 'recommend_restaurant',
     'play_media', 'make_call', 'school_email_check',
@@ -1346,7 +1346,7 @@ export class VoiceService {
         return { ok: true, provider: 'none', endpoint: null, data: null };
       }
 
-      if (intent === 'emotional_support') {
+      if (intent === 'emotional_support' || intent === 'medical_query') {
         return { ok: true, provider: 'none', endpoint: null, data: null };
       }
 
