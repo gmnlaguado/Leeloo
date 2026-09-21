@@ -77,17 +77,33 @@ class WakeWordService {
   private rateLimitUntil = 0;
   private rateLimitBackoffMs = 10_000; // starts at 10s, doubles up to 5min
 
+  private audioModeSet = false;
+
+  private async _ensureAudioMode() {
+    // Set once at start; also called after resume() to re-apply if TTS changed the mode.
+    // MixWithOthers (1) lets the recording coexist with the keepalive silent audio on iOS.
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        interruptionModeIOS: 1, // MixWithOthers — must match background-audio-keepalive
+        shouldDuckAndroid: false,
+      } as AudioMode);
+      this.audioModeSet = true;
+    } catch (e) {
+      deviceLogger.log('[wake] setAudioModeAsync failed', { error: String(e) });
+    }
+  }
+
   start(opts: { onDetected: () => void; language?: string }) {
     if (this.running) return;
     this.running = true;
     this.paused = false;
+    this.audioModeSet = false;
     this.onDetected = opts.onDetected;
     this.language = opts.language ?? 'en';
 
-    // iOS: UIBackgroundModes: audio + staysActiveInBackground keeps recording alive.
-    // Android: staysActiveInBackground + FOREGROUND_SERVICE permission keeps process alive.
-    // We show a persistent Android notification so the OS doesn't kill the process.
-    // No pause on background — Leeloo stays ready to hear her name at all times.
     this.appStateSub = AppState.addEventListener('change', (_state: AppStateStatus) => {
       // Intentionally empty — wake word runs in background on both platforms.
       // Use pause()/resume() API explicitly when the voice UI is active.
@@ -107,6 +123,8 @@ class WakeWordService {
   resume() {
     if (!this.running || !this.paused) return;
     this.paused = false;
+    // Re-apply audio mode after TTS may have changed it (iOS resets session on Speech.speak)
+    this.audioModeSet = false;
     this._scheduleCycle(500);
   }
 
@@ -186,16 +204,14 @@ class WakeWordService {
     let peakDb = -100;
 
     try {
-      // Re-check paused here: TTS playback may have called pause() while this cycle
-      // was already past the entry guard above. Without this check, setAudioModeAsync
-      // runs AFTER TTS switched to playback mode → "Audio not loaded" on Android.
+      // Re-check paused: TTS may have called pause() while this cycle was past the entry guard.
       if (this.paused) return;
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-      } as AudioMode);
+      // Set audio mode only on first cycle or after resume (TTS resets the iOS session).
+      if (!this.audioModeSet) {
+        await this._ensureAudioMode();
+        if (this.paused) return;
+      }
 
       if (this.paused) return;
 
