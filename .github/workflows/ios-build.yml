@@ -71,19 +71,23 @@ jobs:
           echo "Submitting IPA: $IPA"
           for attempt in 1 2 3; do
             echo "--- Submit attempt $attempt/3 ---"
-            # --profile production loads ASC credentials from eas.json
-            # timeout 1800s (30 min) prevents EAS waiting loop from killing the job
-            if eas submit \
+            OUTPUT=$(eas submit \
                 --platform ios \
                 --path "$IPA" \
                 --profile production \
-                --non-interactive; then
+                --non-interactive 2>&1)
+            EXIT_CODE=$?
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q "already submitted"; then
+              echo "❌ Build already submitted to Apple — bump buildNumber and rebuild."
+              exit 1
+            fi
+            if [ $EXIT_CODE -eq 0 ] && ! echo "$OUTPUT" | grep -qi "error\|failed\|something went wrong"; then
               echo "✅ Submit succeeded on attempt $attempt"
               exit 0
             fi
-            EXIT_CODE=$?
             if [ $attempt -lt 3 ]; then
-              echo "⚠️ Submit attempt $attempt failed (exit $EXIT_CODE), waiting 90s before retry..."
+              echo "⚠️ Submit attempt $attempt failed, waiting 90s before retry..."
               sleep 90
             fi
           done
