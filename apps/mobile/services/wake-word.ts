@@ -19,8 +19,9 @@ import { voiceAPI } from '@/lib/api';
 import { deviceLogger } from '@/services/device-logger';
 
 // Minimum dB level to consider speech present — gate prevents sending silent clips.
-// -42 works on Android microphones that report lower levels than iOS.
-const ENERGY_GATE_DB = -38;
+// -20 filters out ambient room noise (TV, conversation, AC) that registers at -20 to -35 dB.
+// Only loud clear speech (typically -15 dB or above) will pass.
+const ENERGY_GATE_DB = -20;
 
 // Each clip is this long. 2s is enough to catch "Hey Leeloo" + a brief pause.
 const CLIP_DURATION_MS = 2_000;
@@ -291,13 +292,19 @@ class WakeWordService {
     if (Date.now() < this.rateLimitUntil) return false;
     try {
       const res = await voiceAPI.wakeDetect(audioUri, this.language);
+      // wakeDetect never throws — check HTTP status explicitly for rate limiting
+      if (res.status === 429) {
+        this.rateLimitUntil = Date.now() + this.rateLimitBackoffMs;
+        this.rateLimitBackoffMs = Math.min(this.rateLimitBackoffMs * 2, 300_000);
+        deviceLogger.log('[wake] rate limit (429) — backing off', { backoffMs: this.rateLimitBackoffMs });
+        return false;
+      }
       // Successful response — reset backoff
       this.rateLimitBackoffMs = 10_000;
       return Boolean((res.data as any)?.detected);
     } catch (err: any) {
       const msg = String(err?.message ?? err ?? '');
       if (msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('429')) {
-        // Exponential backoff: 10s → 20s → 40s … capped at 5min
         this.rateLimitUntil = Date.now() + this.rateLimitBackoffMs;
         this.rateLimitBackoffMs = Math.min(this.rateLimitBackoffMs * 2, 300_000);
         deviceLogger.log('[wake] rate limit — backing off', { backoffMs: this.rateLimitBackoffMs });

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import axios from 'axios';
 import {
   LEELOO_SYSTEM_PROMPT,
@@ -762,7 +762,13 @@ export class VoiceService {
       this.logger.debug(`[WAKE] transcription="${lower.slice(0, 60)}"`);
       return WAKE_KEYWORDS.some((kw) => lower.includes(kw));
     } catch (err: any) {
-      this.logger.warn(`[WAKE] detectWakeWord error — ${err?.message ?? String(err)}`);
+      const msg = String(err?.message ?? err ?? '');
+      // Propagate rate limit as HTTP 429 so the mobile client can back off
+      if (msg.includes('429') || msg.toLowerCase().includes('rate limit') || err?.status === 429) {
+        this.logger.warn('[WAKE] OpenAI rate limit — returning 429 to client');
+        throw new HttpException('Rate limit exceeded', HttpStatus.TOO_MANY_REQUESTS);
+      }
+      this.logger.warn(`[WAKE] detectWakeWord error — ${msg}`);
       return false;
     }
   }
