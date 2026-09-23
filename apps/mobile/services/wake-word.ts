@@ -47,20 +47,27 @@ const WAKE_KEYWORDS = [
   'leelou', 'leeloue',
   'leo',    // Short clipping
   'liou', 'lioux',
+  // ── "Lulu" — common Spanish/English mispronunciation of "Leeloo" ──────
+  'lulu', 'lulú',
   // ── With trigger words — EN ────────────────────────────────────────────
   'hey leeloo', 'hey leelo', 'hey lilu', 'hey lelu', 'hey lilou', 'hey leo',
-  'hi leeloo', 'hi lilou', 'hi lilu', 'hi lelo', 'hi leo',
-  'hello leeloo', 'hello lilu', 'hello lilou',
-  'ok leeloo', 'okay leeloo', 'ok lilu', 'ok leo',
+  'hey lulu', 'hey lulú',
+  'hi leeloo', 'hi lilou', 'hi lilu', 'hi lelo', 'hi leo', 'hi lulu',
+  'hello leeloo', 'hello lilu', 'hello lilou', 'hello lulu',
+  'ok leeloo', 'okay leeloo', 'ok lilu', 'ok leo', 'ok lulu',
+  // "hej" = accent-influenced "hey" (STT transcribes accented speakers this way)
+  'hej leeloo', 'hej lilu', 'hej lilou', 'hej lulu', 'hej leo',
   // ── With trigger words — ES ────────────────────────────────────────────
   'oye leeloo', 'oye lelu', 'oye lilu', 'oye lilou', 'oye leo', 'oye lilo',
+  'oye lulu', 'oye lulú',
   'hola leeloo', 'hola lelu', 'hola lilou', 'hola lilu', 'hola lilo',
-  'ey leeloo', 'ey lelu', 'ey lilu', 'ey lilou',
+  'hola lulu', 'hola lulú',
+  'ey leeloo', 'ey lelu', 'ey lilu', 'ey lilou', 'ey lulu',
   // ── With trigger words — PT ────────────────────────────────────────────
-  'oi leeloo', 'oi lilu', 'oi lilou', 'oi leo',
+  'oi leeloo', 'oi lilu', 'oi lilou', 'oi leo', 'oi lulu',
   // ── With trigger words — FR ────────────────────────────────────────────
-  'hé leeloo', 'hé lilu', 'hé lilou',
-  'he leeloo', 'he lilu', 'he lilou',
+  'hé leeloo', 'hé lilu', 'hé lilou', 'hé lulu',
+  'he leeloo', 'he lilu', 'he lilou', 'he lulu',
 ];
 
 class WakeWordService {
