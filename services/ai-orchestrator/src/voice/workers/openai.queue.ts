@@ -232,9 +232,9 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       this.fetchMemoriesPgvector(input),
       new Promise<string>((resolve) =>
         setTimeout(() => {
-          this.logger.warn('[MEMORY] DB timeout after 12s — skipping memory context');
+          this.logger.warn('[MEMORY] DB timeout after 6s — skipping memory context');
           resolve('');
-        }, 12_000),
+        }, 6_000),
       ),
     ]);
   }

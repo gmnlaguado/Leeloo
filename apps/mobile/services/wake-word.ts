@@ -49,6 +49,10 @@ const WAKE_KEYWORDS = [
   'liou', 'lioux',
   // ── "Lulu" — common Spanish/English mispronunciation of "Leeloo" ──────
   'lulu', 'lulú',
+  // ── "Nilu" — Gaby's personal nickname (confirmed production logs) ─────
+  'nilu',
+  // ── Additional variants from Gaby's production logs (ES speaker) ──────
+  'lelelo', 'el li liu', 'el li lilu', 'etiliu', 'ilio',
   // ── With trigger words — EN ────────────────────────────────────────────
   'hey leeloo', 'hey leelo', 'hey lilu', 'hey lelu', 'hey lilou', 'hey leo',
   'hey lulu', 'hey lulú',

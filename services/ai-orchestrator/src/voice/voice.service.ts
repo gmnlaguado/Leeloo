@@ -125,9 +125,9 @@ export class VoiceService {
         this.openAiQueue.fetchUserContext(input.userId),
         new Promise<{ todayTasks: string[]; upcomingEvents: string[]; pendingApprovals: number }>(
           (resolve) => setTimeout(() => {
-            this.logger.warn(`[PIPE] userCtx timeout after 8s — skipping`);
+            this.logger.warn(`[PIPE] userCtx timeout after 4s — skipping`);
             resolve({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 });
-          }, 8_000),
+          }, 4_000),
         ),
       ]).catch(() => ({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 })),
     ]);
@@ -739,6 +739,10 @@ export class VoiceService {
       'lilou', 'leelou', 'leeloue',
       // "Lulu" — common Spanish/English mispronunciation confirmed in production
       'lulu', 'lulú',
+      // "Nilu" — Gaby's personal nickname for Leeloo (confirmed in production logs)
+      'nilu',
+      // Additional phonetic variants from Gaby's production logs (ES speaker)
+      'lelelo', 'el li liu', 'el li lilu', 'etiliu', 'ilio',
       // With trigger words — EN
       'hey leeloo', 'hey leelo', 'hey lilu', 'hey lelu', 'hey lilou', 'hey leo',
       'hey lulu', 'hey lulú',
