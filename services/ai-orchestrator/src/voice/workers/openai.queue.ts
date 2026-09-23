@@ -23,6 +23,10 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
   private monthlyTokens = 0;
   private monthlyTokensKey = '';
 
+  // Cache profileId lookups — clerk_user_id → internal UUID never changes, safe to cache for the process lifetime.
+  // Eliminates a DB round-trip per request (resolveProfileId was called once per fetchUserContext AND once per fetchMemoriesPgvector).
+  private readonly profileIdCache = new Map<string, string>();
+
   async onModuleInit() {
     // Groq offers free Whisper transcription with OpenAI-compatible API.
     // Set GROQ_API_KEY in Render to enable mic/voice input without paying OpenAI.
@@ -222,14 +226,15 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
   }
 
   async fetchMemoryContext(input: { userId: string; query: string; limit: number }): Promise<string> {
-    // 8s timeout — Supabase Pooler cold-start can take 4-6s; 3s was too tight.
+    // 12s timeout — profileId now cached so only the embedding + pgvector query remain.
+    // Supabase Pooler cold-start adds up to 4s on top; 12s covers the worst case.
     return Promise.race([
       this.fetchMemoriesPgvector(input),
       new Promise<string>((resolve) =>
         setTimeout(() => {
-          this.logger.warn('[MEMORY] DB timeout after 8s — skipping memory context');
+          this.logger.warn('[MEMORY] DB timeout after 12s — skipping memory context');
           resolve('');
-        }, 8_000),
+        }, 12_000),
       ),
     ]);
   }
@@ -530,12 +535,17 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     if (!id) return null;
     if (!this.pool) return null;
 
+    const cached = this.profileIdCache.get(id);
+    if (cached) return cached;
+
     try {
       const res = await this.pool.query(
         'SELECT id FROM profiles WHERE clerk_user_id = $1 LIMIT 1',
         [id],
       );
-      return res.rows?.[0]?.id ? String(res.rows[0].id) : null;
+      const profileId = res.rows?.[0]?.id ? String(res.rows[0].id) : null;
+      if (profileId) this.profileIdCache.set(id, profileId);
+      return profileId;
     } catch {
       return null;
     }
