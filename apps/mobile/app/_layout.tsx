@@ -156,12 +156,14 @@ const tokenCache = {
 const CLERK_PUBLISHABLE_KEY =
   process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? 'pk_live_Y2xlcmsubGVlbG9vLnVzJA';
 
-const CONTACTS_SYNCED_KEY = 'leeloo_contacts_synced_v1';
+const CONTACTS_SYNCED_KEY = 'leeloo_contacts_synced_at_v2';
+const CONTACTS_SYNC_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // re-sync every 7 days
 
 async function syncPhoneContactsOnce() {
   try {
-    const already = await AsyncStorage.getItem(CONTACTS_SYNCED_KEY);
-    if (already === 'true') return;
+    const lastSynced = await AsyncStorage.getItem(CONTACTS_SYNCED_KEY);
+    const now = Date.now();
+    if (lastSynced && now - Number(lastSynced) < CONTACTS_SYNC_INTERVAL_MS) return;
     const { status } = await Contacts.requestPermissionsAsync();
     if (status !== 'granted') return;
     const { data } = await Contacts.getContactsAsync({
@@ -176,7 +178,7 @@ async function syncPhoneContactsOnce() {
         source: 'phone' as const,
       }));
     if (mapped.length === 0) {
-      await AsyncStorage.setItem(CONTACTS_SYNCED_KEY, 'true');
+      await AsyncStorage.setItem(CONTACTS_SYNCED_KEY, String(now));
       return;
     }
     // Delay 20s on first attempt: Render free tier can take up to 60s on cold start.
@@ -185,7 +187,7 @@ async function syncPhoneContactsOnce() {
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
         await contactsAPI.sync(mapped);
-        await AsyncStorage.setItem(CONTACTS_SYNCED_KEY, 'true');
+        await AsyncStorage.setItem(CONTACTS_SYNCED_KEY, String(now));
         return;
       } catch (e) {
         lastErr = e;
