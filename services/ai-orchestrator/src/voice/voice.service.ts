@@ -178,7 +178,7 @@ export class VoiceService {
     // Conversation history — gives Claude context of the current voice session.
     // This is what makes Leeloo feel like a continuous conversation, not isolated queries.
     const historyBlock = input.conversation_history
-      ? `\n\nRECENT_CONVERSATION (most recent last — use for context, do not repeat):\n${input.conversation_history}`
+      ? `\n\nRECENT_CONVERSATION (most recent last):\n${input.conversation_history}\n\nUSO DEL HISTORIAL: Úsalo para continuidad natural. Refiere a nombres, temas y situaciones mencionados antes como lo haría una amiga que prestó atención. Si el usuario retoma algo previo, entra directo en contexto sin que lo explique de nuevo. Varía la forma en que abres tu respuesta — no empieces siempre con "¡Listo!" ni con la misma frase. Adapta el tono al momento de la conversación.`
       : '';
 
     const memoryContext = ctxLines + historyBlock + (memories ? '\n\n' + memories : '');
