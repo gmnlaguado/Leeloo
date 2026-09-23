@@ -27,6 +27,10 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
   // Eliminates a DB round-trip per request (resolveProfileId was called once per fetchUserContext AND once per fetchMemoriesPgvector).
   private readonly profileIdCache = new Map<string, string>();
 
+  // Whether the memories.embedding column + pgvector extension exist in this DB.
+  // Checked once at startup to avoid generating a useless OpenAI embedding (~500ms) on every request.
+  private pgvectorEnabled = false;
+
   async onModuleInit() {
     // Groq offers free Whisper transcription with OpenAI-compatible API.
     // Set GROQ_API_KEY in Render to enable mic/voice input without paying OpenAI.
@@ -47,18 +51,30 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     if (dbUrl) {
       this.pool = new Pool({
         connectionString: dbUrl,
-        connectionTimeoutMillis: 5_000,
+        connectionTimeoutMillis: 2_000,  // fail fast if pool exhausted — don't block the 6s race
         idleTimeoutMillis: 60_000,
         max: 5,
         ssl: { rejectUnauthorized: false },
       });
       this.pool.query('SELECT 1')
-        .then(() => this.logger.log('[DB] Supabase pool connected ✓'))
+        .then(() => {
+          this.logger.log('[DB] Supabase pool connected ✓');
+          // Check once if pgvector + memories.embedding column exist.
+          // Avoids wasting ~500ms generating OpenAI embeddings on every request when not configured.
+          return this.pool!.query(
+            `SELECT 1 FROM information_schema.columns
+             WHERE table_name='memories' AND column_name='embedding' LIMIT 1`,
+          );
+        })
+        .then((r: any) => {
+          this.pgvectorEnabled = (r?.rowCount ?? 0) > 0;
+          this.logger.log(`[DB] pgvector memories: ${this.pgvectorEnabled ? 'enabled ✓' : 'not configured — using SQL fallback'}`);
+        })
         .catch((e: any) => this.logger.error(`[DB] Supabase FAILED: ${e?.message} — memory/ctx unavailable`));
-      // Keep-alive ping every 4 min — prevents Render free-tier Postgres cold-start timeouts on each request.
+      // Keep-alive ping every 90s — prevents Supabase Pooler session expiry under low traffic.
       setInterval(() => {
         this.pool?.query('SELECT 1').catch(() => { /* silent — reconnect happens automatically */ });
-      }, 4 * 60 * 1000);
+      }, 90 * 1000);
     } else {
       this.logger.warn('[DB] No SUPABASE_DB_URL or DATABASE_URL — memory disabled');
     }
@@ -367,10 +383,10 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     const profileId = await this.resolveProfileId(input.userId);
     if (!profileId) return '';
 
-    // Groq does not support the embeddings API — calls hang ~70s before failing.
-    // Skip directly to the SQL fallback when Groq is the active provider.
+    // Groq does not support embeddings — and if pgvector column doesn't exist, skip to SQL fallback.
+    // Avoids wasting ~500ms on an OpenAI embedding call that will just throw.
     const isGroq = Boolean(process.env.GROQ_API_KEY);
-    if (isGroq) {
+    if (isGroq || !this.pgvectorEnabled) {
       return this.fetchMemoriesSqlFallback(profileId, input.limit);
     }
 
