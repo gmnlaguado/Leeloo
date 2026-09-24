@@ -32,7 +32,8 @@ const UI_STRINGS = {
     greeting_evening: 'Good evening',
     hello: 'Hello',
     fallback_name: '',
-    ask_leeloo: 'How can I help you today?',
+    ask_leeloo: 'Tap the button below or say "Hey Leeloo"',
+    text_fallback_label: 'Prefer to type?',
     plan_title: "Today's plan",
     ask_plan: 'Ask Leeloo what you have today →',
     actions_title: 'Quick actions',
@@ -63,7 +64,8 @@ const UI_STRINGS = {
     greeting_evening: 'Buenas noches',
     hello: 'Hola',
     fallback_name: 'amiga',
-    ask_leeloo: '¿En qué te ayudo hoy?',
+    ask_leeloo: 'Toca el botón o di "Hey Leeloo"',
+    text_fallback_label: '¿Prefieres escribir?',
     plan_title: 'Tu plan de hoy',
     ask_plan: 'Pregúntale a Leeloo qué tienes hoy →',
     actions_title: 'Acciones rápidas',
@@ -94,7 +96,8 @@ const UI_STRINGS = {
     greeting_evening: 'Boa noite',
     hello: 'Olá',
     fallback_name: 'amiga',
-    ask_leeloo: 'Como posso te ajudar hoje?',
+    ask_leeloo: 'Toque no botão ou diga "Hey Leeloo"',
+    text_fallback_label: 'Prefere digitar?',
     plan_title: 'Seu plano de hoje',
     ask_plan: 'Pergunte à Leeloo o que você tem hoje →',
     actions_title: 'Ações rápidas',
@@ -125,7 +128,8 @@ const UI_STRINGS = {
     greeting_evening: 'Bonsoir',
     hello: 'Bonjour',
     fallback_name: 'amie',
-    ask_leeloo: "Comment puis-je t'aider aujourd'hui ?",
+    ask_leeloo: 'Touche le bouton ou dis "Hey Leeloo"',
+    text_fallback_label: 'Tu préfères écrire ?',
     plan_title: 'Votre plan du jour',
     ask_plan: "Demandez à Leeloo ce que vous avez aujourd'hui →",
     actions_title: 'Actions rapides',
@@ -711,7 +715,8 @@ export default function HomeScreen() {
             <Text style={styles.greetTitle}>{greeting}, {name}</Text>
             <Text style={styles.greetSub}>{t.ask_leeloo}</Text>
 
-            {/* Chat input inside card */}
+            {/* Text fallback — clearly labeled so user knows it's an option */}
+            <Text style={styles.textFallbackLabel}>{t.text_fallback_label}</Text>
             <View style={styles.chatRow}>
               <TextInput
                 value={draft}
@@ -865,9 +870,18 @@ const styles = StyleSheet.create({
   },
   greetSub: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
+    color: 'rgba(255,255,255,0.85)',
     fontFamily: T.fonts.regular,
-    marginBottom: 10,
+    marginBottom: 6,
+    fontWeight: '500',
+  },
+  textFallbackLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.6)',
+    fontFamily: T.fonts.regular,
+    marginBottom: 4,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   chatRow: {
     flexDirection: 'row',

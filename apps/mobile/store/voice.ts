@@ -295,6 +295,7 @@ const playAudioUrl = async (uri: string) => {
   }
 
   const { sound } = await Audio.Sound.createAsync({ uri });
+  useVoiceStore.setState({ _activeSound: sound });
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -336,6 +337,7 @@ const playAudioUrl = async (uri: string) => {
       setTimeout(() => settleOnce(() => resolve()), 45000);
     });
   } finally {
+    useVoiceStore.setState({ _activeSound: null });
     try {
       await sound.unloadAsync();
     } catch {
@@ -391,6 +393,7 @@ interface VoiceState {
   startListeningFromWakeWord: () => Promise<void>;
   startConversationContinue: () => Promise<void>;
   stopListening: () => Promise<void>;
+  interruptSpeaking: () => Promise<void>;
   sendText: (text: string) => Promise<void>;
   confirm: () => Promise<void>;
   cancel: () => Promise<void>;
@@ -401,6 +404,7 @@ interface VoiceState {
   reset: () => void;
   _recording: Audio.Recording | null;
   _silenceTimer: ReturnType<typeof setInterval> | null;
+  _activeSound: Audio.Sound | null;
 }
 
 // Silence VAD constants — tuned to feel like Alexa
@@ -427,6 +431,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   isConversationMode: false,
   status: 'idle',
   transcription: '',
+  _activeSound: null,
   response: '',
   lastError: null,
   awaitingConfirmation: false,
@@ -444,7 +449,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       set({ lastError: null });
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
-        set({ lastError: 'Microphone permission denied.' });
+        set({ lastError: 'MIC_PERMISSION_DENIED' });
         return;
       }
 
@@ -470,7 +475,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       set({ lastError: null });
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
-        set({ lastError: 'Microphone permission denied.' });
+        set({ lastError: 'MIC_PERMISSION_DENIED' });
         return;
       }
 
@@ -944,6 +949,21 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     }
   },
 
+  interruptSpeaking: async () => {
+    // Stop TTS immediately — user pressed button mid-response
+    try { Speech.stop(); } catch { /* ignore */ }
+    const activeSound = useVoiceStore.getState()._activeSound;
+    if (activeSound) {
+      try { await activeSound.stopAsync(); } catch { /* ignore */ }
+      try { await activeSound.unloadAsync(); } catch { /* ignore */ }
+    }
+    set({ isSpeaking: false, _activeSound: null, status: 'idle' });
+    resumeWakeWord();
+    // Small gap so audio session switches from playback to recording
+    await new Promise((r) => setTimeout(r, 200));
+    await useVoiceStore.getState().startListeningFromWakeWord();
+  },
+
   sendText: async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -1270,6 +1290,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       conversationHistory: [],
       _recording: null,
       _silenceTimer: null,
+      _activeSound: null,
     });
   },
 }));

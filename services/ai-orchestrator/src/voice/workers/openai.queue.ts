@@ -8,7 +8,8 @@ import { Pool } from 'pg';
 export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OpenAiQueue.name);
   private pool: Pool | null = null;
-  private openai!: OpenAI;
+  private openai!: OpenAI;           // STT client — may point to Groq
+  private openaiEmbeddings!: OpenAI; // Embeddings client — always OpenAI (Groq has no embeddings API)
   private anthropic!: Anthropic;
 
   // Groq is free-tier with much higher limits than OpenAI — 200/hr keeps wake-word detection healthy.
@@ -38,9 +39,17 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     const openaiKey = String(process.env.OPENAI_API_KEY || '').trim();
     // 8-second hard timeout on ALL Groq requests. Without this, openai.embeddings.create()
     // (unsupported on Groq) hangs ~60s before failing, blocking every voice request.
+    // STT client: Groq when available (fast, free), otherwise OpenAI
     this.openai = groqKey
       ? new OpenAI({ apiKey: groqKey, baseURL: 'https://api.groq.com/openai/v1', timeout: 8_000 })
       : new OpenAI({ apiKey: openaiKey });
+
+    // Embeddings client: always OpenAI regardless of STT provider.
+    // Groq does not offer an embeddings API, so we need a separate client
+    // pointed at OpenAI for semantic memory search (pgvector).
+    this.openaiEmbeddings = openaiKey
+      ? new OpenAI({ apiKey: openaiKey })
+      : this.openai; // fallback: if no OpenAI key, pgvectorEnabled will stay false anyway
 
     const anthropicKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
     this.anthropic = new Anthropic({ apiKey: anthropicKey });
@@ -92,8 +101,45 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
   async transcribe(input: { userId: string; filename: string; bytes: Buffer; language?: string }): Promise<string> {
     await this.assertWithinOpenAiRateLimit(input.userId);
 
-    // Use self-hosted leeloo-stt first (<2s, already paid $25/mo on Render Standard).
-    // Falls back to Groq only if the STT service is unreachable or returns an error.
+    const sttLang = String(input.language || 'es').slice(0, 2).toLowerCase();
+
+    // ── PRIMARY: Groq Whisper (~150–300ms, free tier, multilingual) ──────────
+    // When GROQ_API_KEY is set, use Groq as the fast primary path.
+    // leeloo-stt (self-hosted) is the fallback — it's slower but already paid.
+    const groqKey = String(process.env.GROQ_API_KEY || '').trim();
+    if (groqKey) {
+      try {
+        this.logger.log(`[STT] groq primary start — model=whisper-large-v3-turbo lang=${sttLang} bytes=${input.bytes.length}`);
+        const file = await toFile(input.bytes, input.filename, { type: 'audio/m4a' });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+          this.logger.warn('[STT] groq aborting — exceeded 8s');
+          controller.abort();
+        }, 8_000);
+        let res: any;
+        try {
+          res = await this.openai.audio.transcriptions.create(
+            { file, model: 'whisper-large-v3-turbo', language: sttLang, response_format: 'json' } as any,
+            { signal: controller.signal } as any,
+          );
+        } finally {
+          clearTimeout(timeoutId);
+        }
+        if (!controller.signal.aborted) {
+          const text = String((res as any)?.text || '');
+          if (text) {
+            this.logger.log(`[STT] groq result — "${text.slice(0, 80)}" (${text.length} chars)`);
+            return text;
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(`[STT] groq failed — falling back to leeloo-stt — ${err?.message ?? String(err)}`);
+      }
+    }
+
+    // ── SECONDARY: leeloo-stt (self-hosted Whisper on Render) ───────────────
+    // Used when Groq is not configured or failed. Circuit breaker prevents
+    // repeated calls when the service is down.
     const sttBypassed = Date.now() < OpenAiQueue.sttBypassUntil;
     if (sttBypassed) {
       this.logger.warn(`[STT] leeloo-stt circuit open — bypassing for ${Math.ceil((OpenAiQueue.sttBypassUntil - Date.now()) / 1000)}s more`);
@@ -101,40 +147,29 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       try {
         const text = await this.transcribeViaSTTService({ filename: input.filename, bytes: input.bytes });
         if (text) {
-          OpenAiQueue.sttFailures = 0; // reset on success
+          OpenAiQueue.sttFailures = 0;
           return text;
         }
       } catch (err: any) {
         OpenAiQueue.sttFailures += 1;
-        this.logger.warn(`[STT] leeloo-stt failed (consecutive=${OpenAiQueue.sttFailures}) — falling back to Groq — ${err?.message ?? String(err)}`);
+        this.logger.warn(`[STT] leeloo-stt failed (consecutive=${OpenAiQueue.sttFailures}) — ${err?.message ?? String(err)}`);
         if (OpenAiQueue.sttFailures >= 2) {
           OpenAiQueue.sttBypassUntil = Date.now() + 5 * 60 * 1000;
-          this.logger.error(`[STT] leeloo-stt circuit OPEN — bypassing for 5min after ${OpenAiQueue.sttFailures} consecutive failures`);
+          this.logger.error(`[STT] leeloo-stt circuit OPEN for 5min`);
         }
       }
     }
 
-    // Groq fallback (cloud Whisper, ~3-8s with turbo model)
-    const isGroq = Boolean(process.env.GROQ_API_KEY);
-    const provider = isGroq ? 'groq' : 'openai';
-    // whisper-large-v3-turbo: Groq's fastest multilingual model.
-    // distil-whisper-large-v3-en is English-only and garbles Spanish audio.
-    const sttModel = isGroq
-      ? 'whisper-large-v3-turbo'
-      : (String(process.env.OPENAI_STT_MODEL || '').trim() || 'whisper-1');
-    const sttLang = String(input.language || 'es').slice(0, 2).toLowerCase();
-    const timeoutMs = isGroq ? 20_000 : 45_000;
-    this.logger.log(`[STT] transcribe start — provider=${provider} model=${sttModel} lang=${sttLang} file=${input.filename} bytes=${input.bytes.length}`);
+    // ── TERTIARY: OpenAI Whisper (paid, last resort) ─────────────────────────
+    const provider = 'openai';
+    const sttModel = String(process.env.OPENAI_STT_MODEL || '').trim() || 'whisper-1';
+    this.logger.log(`[STT] openai fallback — model=${sttModel} lang=${sttLang} bytes=${input.bytes.length}`);
     const file = await toFile(input.bytes, input.filename, { type: 'audio/m4a' });
-
-    // Use AbortController to actually cancel the underlying HTTP request on timeout.
-    // Promise.race alone doesn't cancel the fetch; AbortController does.
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
-      this.logger.warn(`[STT] ${provider} aborting — exceeded ${timeoutMs / 1000}s`);
+      this.logger.warn(`[STT] ${provider} aborting — exceeded 45s`);
       controller.abort();
-    }, timeoutMs);
-
+    }, 45_000);
     let res: any;
     try {
       res = await this.openai.audio.transcriptions.create(
@@ -144,13 +179,11 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     } finally {
       clearTimeout(timeoutId);
     }
-
     if (controller.signal.aborted) {
-      throw new Error(`[STT] ${provider} timeout after ${timeoutMs / 1000}s`);
+      throw new Error(`[STT] ${provider} timeout after 45s`);
     }
-
     const text = String((res as any)?.text || '');
-    this.logger.log(`[STT] transcribe result — provider=${provider} "${text.slice(0, 80)}" (${text.length} chars)`);
+    this.logger.log(`[STT] openai result — "${text.slice(0, 80)}" (${text.length} chars)`);
     return text;
   }
 
@@ -383,10 +416,9 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     const profileId = await this.resolveProfileId(input.userId);
     if (!profileId) return '';
 
-    // Groq does not support embeddings — and if pgvector column doesn't exist, skip to SQL fallback.
-    // Avoids wasting ~500ms on an OpenAI embedding call that will just throw.
-    const isGroq = Boolean(process.env.GROQ_API_KEY);
-    if (isGroq || !this.pgvectorEnabled) {
+    // Skip pgvector if column not enabled or no OpenAI key for embeddings
+    const openaiKey = String(process.env.OPENAI_API_KEY || '').trim();
+    if (!this.pgvectorEnabled || !openaiKey) {
       return this.fetchMemoriesSqlFallback(profileId, input.limit);
     }
 
@@ -394,8 +426,8 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       const q = String(input.query || '').trim();
       if (!q) return '';
 
-      await this.assertWithinOpenAiRateLimit(input.userId);
-      const emb = await this.openai.embeddings.create({
+      // Use dedicated embeddings client (always OpenAI, even when STT is Groq)
+      const emb = await this.openaiEmbeddings.embeddings.create({
         model: 'text-embedding-3-small',
         input: q,
       });

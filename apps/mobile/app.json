@@ -23,6 +23,7 @@
         "NSCalendarsUsageDescription": "Leeloo necesita acceso a tu calendario para programar eventos.",
         "NSSpeechRecognitionUsageDescription": "Leeloo usa reconocimiento de voz para entender tus comandos.",
         "NSLocationWhenInUseUsageDescription": "Leeloo usa tu ubicación para darte el clima, recordatorios por zona y respuestas contextuales precisas.",
+        "NSSiriUsageDescription": "Leeloo usa Siri para que puedas activar tu asistente con tu voz desde cualquier lugar.",
         "UIBackgroundModes": [
           "audio",
           "fetch",

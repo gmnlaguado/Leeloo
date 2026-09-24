@@ -39,6 +39,16 @@ export class TtsFactory {
     provider: string;
   }> {
     const svc = this.getActive();
+    // Use ElevenLabs streaming endpoint when available — starts delivering audio
+    // chunks sooner and saves ~300–800ms on every TTS call.
+    if (svc === (this.elevenLabs as unknown as TtsService) && this.elevenLabs.isEnabled()) {
+      try {
+        const audio = await this.elevenLabs.synthesizeStreaming(text, options);
+        return { audio, provider: 'elevenlabs-stream' };
+      } catch (err: any) {
+        this.logger.warn(`[TTS] streaming failed — fallback to standard — ${err?.message}`);
+      }
+    }
     const audio = await svc.synthesize(text, options);
     return { audio, provider: svc.providerName?.() ?? 'unknown' };
   }
