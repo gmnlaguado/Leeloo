@@ -879,6 +879,27 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
           recurrence: String(alarmAction.recurrence || 'once'),
         });
       }
+
+      // Schedule countdown timer via local notification when orchestrator returns set_timer.
+      if (
+        alarmAction?.provider === 'device' &&
+        alarmAction?.action === 'set_timer' &&
+        useVoiceStore.getState().status !== 'awaiting_confirmation'
+      ) {
+        const secs = Number(alarmAction.duration_seconds || 0);
+        const label = String(alarmAction.label || 'Timer');
+        if (secs > 0) {
+          deviceLogger.log('[voice] scheduling timer notification', { secs, label });
+          void Notifications.scheduleNotificationAsync({
+            content: {
+              title: `⏱ ${label}`,
+              body: 'Tu temporizador terminó.',
+              sound: 'default',
+            },
+            trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: secs },
+          }).catch((err) => deviceLogger.log('[voice] timer notification failed', { err: String(err) }));
+        }
+      }
     } catch (e: unknown) {
       const err = e as {
         response?: { status?: unknown; data?: unknown };
@@ -1134,6 +1155,18 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
           time: String((data as any).action.time || ''),
           recurrence: String((data as any).action.recurrence || 'once'),
         });
+      }
+
+      // Schedule countdown timer (text flow)
+      if ((data as any).action?.provider === 'device' && (data as any).action?.action === 'set_timer') {
+        const secs = Number((data as any).action.duration_seconds || 0);
+        const label = String((data as any).action.label || 'Timer');
+        if (secs > 0) {
+          void Notifications.scheduleNotificationAsync({
+            content: { title: `⏱ ${label}`, body: 'Tu temporizador terminó.', sound: 'default' },
+            trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: secs },
+          }).catch(() => {});
+        }
       }
     } catch (e: unknown) {
       const err = e as {

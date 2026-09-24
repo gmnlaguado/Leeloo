@@ -269,4 +269,51 @@ export class WorkerDbService implements OnModuleInit {
     const prefs = { ...(data?.preferences ?? {}), morning_briefing_last_sent: sentAt };
     await this.sb.from('profiles').update({ preferences: prefs }).eq('id', userId);
   }
+
+  // ── Evening check-in ─────────────────────────────────────────────────────
+  async getUsersForEveningCheckin(): Promise<MorningProfile[]> {
+    const { data } = await this.sb
+      .from('profiles')
+      .select('id, timezone, preferences')
+      .not('expo_push_token', 'is', null);
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    return (data ?? [])
+      .filter((r: any) => {
+        const prefs = r.preferences ?? {};
+        const isEnabled = prefs.evening_checkin_enabled !== false;
+        const lastSent = prefs.evening_checkin_last_sent ?? null;
+        const notSentToday = !lastSent || lastSent.slice(0, 10) < today;
+        return isEnabled && notSentToday;
+      })
+      .map((r: any) => ({
+        id: r.id,
+        timezone: r.timezone ?? null,
+        display_name: r.preferences?.user_identity?.display_name ?? null,
+      }));
+  }
+
+  async updateEveningCheckinLastSent(userId: string, sentAt: string): Promise<void> {
+    const { data } = await this.sb
+      .from('profiles')
+      .select('preferences')
+      .eq('id', userId)
+      .single();
+    const prefs = { ...(data?.preferences ?? {}), evening_checkin_last_sent: sentAt };
+    await this.sb.from('profiles').update({ preferences: prefs }).eq('id', userId);
+  }
+
+  async getCompletedTasksToday(userId: string, startOfDay: Date, endOfDay: Date): Promise<BriefingTask[]> {
+    const { data } = await this.sb
+      .from('tasks')
+      .select('title')
+      .eq('user_id', userId)
+      .eq('status', 'completed')
+      .gte('updated_at', startOfDay.toISOString())
+      .lte('updated_at', endOfDay.toISOString())
+      .order('updated_at', { ascending: false })
+      .limit(10);
+    return (data ?? []).map((r: any) => ({ title: r.title }));
+  }
 }

@@ -657,7 +657,7 @@ export class VoiceService {
   // the user hears a false success. TTS waits for actionResult for these intents.
   private static readonly PARALLEL_TTS_INTENTS = new Set([
     'chat', 'emotional_support', 'medical_query', 'save_memory', 'set_language',
-    'complete_task', 'set_goal',
+    'complete_task', 'set_goal', 'set_timer',
     'daily_verse', 'suggest_meal', 'get_recipe', 'recommend_restaurant',
     'play_media', 'make_call', 'school_email_check',
     'add_to_shopping_list', 'view_shopping_list',
@@ -818,6 +818,23 @@ export class VoiceService {
       langKey === 'en' ? en : langKey === 'pt' ? pt : langKey === 'fr' ? fr : es;
 
     const i = String(intent?.intent || '').trim();
+    if (i === 'set_timer') {
+      const secs = Number(actionResult?.duration_seconds || 0);
+      const label = String(actionResult?.label || '');
+      if (secs > 0) {
+        const mins = Math.floor(secs / 60);
+        const rem = secs % 60;
+        const duration = mins > 0
+          ? (rem > 0
+            ? t(`${mins} min ${rem} seg`, `${mins} min ${rem} sec`, `${mins} min ${rem} seg`, `${mins} min ${rem} sec`)
+            : t(`${mins} minuto${mins !== 1 ? 's' : ''}`, `${mins} minute${mins !== 1 ? 's' : ''}`, `${mins} minuto${mins !== 1 ? 's' : ''}`, `${mins} minute${mins !== 1 ? 's' : ''}`))
+          : t(`${secs} segundos`, `${secs} seconds`, `${secs} segundos`, `${secs} secondes`);
+        return label && label.toLowerCase() !== 'timer' && label.toLowerCase() !== 'temporizador'
+          ? t(`Listo, ${duration} para ${label}.`, `Done, ${duration} for ${label}.`, `Pronto, ${duration} para ${label}.`, `Fait, ${duration} pour ${label}.`)
+          : t(`Listo, temporizador de ${duration}.`, `Done, ${duration} timer set.`, `Pronto, temporizador de ${duration}.`, `Fait, minuterie de ${duration}.`);
+      }
+      return t('Temporizador activado.', 'Timer started.', 'Temporizador iniciado.', 'Minuterie démarrée.');
+    }
     if (i === 'create_task') return pc.task_created;
     if (i === 'complete_task') return pc.task_done;
     if (i === 'create_reminder') return pc.reminder_set;
@@ -1428,6 +1445,28 @@ export class VoiceService {
           data: res.data,
           _agendaData: res.data,
         };
+      }
+
+      // Set a countdown timer — mobile handles via local notification (no backend needed)
+      if (intent === 'set_timer') {
+        const rawDuration = String(slots.duration || slots.duration_seconds || '').trim();
+        const minutes = Number(slots.minutes || 0);
+        const seconds = Number(slots.seconds || 0);
+        let durationSeconds = minutes * 60 + seconds;
+        if (!durationSeconds && rawDuration) {
+          const m = rawDuration.match(/(\d+)\s*(min|minute|minuto|h|hour|hora|s|sec|segundo)/i);
+          if (m) {
+            const n = Number(m[1]);
+            const unit = m[2].toLowerCase();
+            durationSeconds = unit.startsWith('h') ? n * 3600 : unit.startsWith('s') ? n : n * 60;
+          }
+        }
+        if (!durationSeconds) return {
+          ok: false,
+          fallback_text: lang === 'es' ? '¿Cuánto tiempo quieres el temporizador?' : 'How long should the timer be?',
+        };
+        const label = String(slots.label || slots.title || (lang === 'es' ? 'Temporizador' : 'Timer')).trim();
+        return { ok: true, provider: 'device', action: 'set_timer', duration_seconds: durationSeconds, label };
       }
 
       // Create a native device alarm — mobile handles 'device' provider directly

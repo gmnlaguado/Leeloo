@@ -319,7 +319,7 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       response = await this.anthropic.messages.create(
         {
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 800,
+          max_tokens: 400,
           temperature: 0.3,
           system: [{ type: 'text', text: data.systemPrompt, cache_control: { type: 'ephemeral' } }],
           // Prefill forces Claude to begin with '{' — prevents prose responses that break JSON parsing.
