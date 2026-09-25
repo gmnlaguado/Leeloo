@@ -60,7 +60,7 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     if (dbUrl) {
       this.pool = new Pool({
         connectionString: dbUrl,
-        connectionTimeoutMillis: 2_000,  // fail fast if pool exhausted — don't block the 6s race
+        connectionTimeoutMillis: 5_000,  // allow for Supabase cold-start on Render
         idleTimeoutMillis: 60_000,
         max: 5,
         ssl: { rejectUnauthorized: false },
@@ -281,9 +281,9 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       this.fetchMemoriesPgvector(input),
       new Promise<string>((resolve) =>
         setTimeout(() => {
-          this.logger.warn('[MEMORY] DB timeout after 6s — skipping memory context');
+          this.logger.warn('[MEMORY] DB timeout after 11s — skipping memory context');
           resolve('');
-        }, 6_000),
+        }, 11_000),
       ),
     ]);
   }

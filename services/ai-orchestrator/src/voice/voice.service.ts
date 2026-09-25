@@ -125,9 +125,9 @@ export class VoiceService {
         this.openAiQueue.fetchUserContext(input.userId),
         new Promise<{ todayTasks: string[]; upcomingEvents: string[]; pendingApprovals: number }>(
           (resolve) => setTimeout(() => {
-            this.logger.warn(`[PIPE] userCtx timeout after 4s — skipping`);
+            this.logger.warn(`[PIPE] userCtx timeout after 9s — skipping`);
             resolve({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 });
-          }, 4_000),
+          }, 9_000),
         ),
       ]).catch(() => ({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 })),
     ]);
