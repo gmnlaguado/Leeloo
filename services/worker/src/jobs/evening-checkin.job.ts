@@ -89,7 +89,7 @@ export class EveningCheckinJob implements OnModuleInit, OnModuleDestroy {
       body: messages.join('\n'),
       data: { type: 'evening_checkin', triggeredAt: data.triggeredAt },
       sound: 'default',
-      priority: 'normal',
+      priority: 'default',
     });
 
     return { ok: true, userId: data.userId, completedTasks: completedTasks.length };
