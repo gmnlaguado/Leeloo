@@ -75,7 +75,7 @@ export class IntegrationsService {
         tokenUrl: 'https://oauth2.googleapis.com/token',
         scope:
           this.config.get<string>('GOOGLE_OAUTH_SCOPE') ||
-          'openid email profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/contacts.readonly',
+          'openid email profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/contacts.readonly',
       };
     }
 

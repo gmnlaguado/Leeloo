@@ -271,6 +271,34 @@ export class VoiceService {
       }
     }
 
+    // Gmail inbox / search — format email list for voice
+    if ((intent.intent === 'read_emails' || intent.intent === 'search_emails') && actionResult?._emailData) {
+      const messages: any[] = actionResult._emailData?.messages ?? [];
+      const isSearch = intent.intent === 'search_emails';
+      const query = actionResult._searchQuery ? ` de "${actionResult._searchQuery}"` : '';
+      if (!messages.length) {
+        assistantText = language === 'es'
+          ? (isSearch ? `No encontré correos${query}.` : 'No tienes correos nuevos.')
+          : (isSearch ? `No emails found${actionResult._searchQuery ? ` for "${actionResult._searchQuery}"` : ''}.` : 'No new emails.');
+      } else {
+        const count = messages.length;
+        const intro = language === 'es'
+          ? (isSearch ? `Encontré ${count} correo${count > 1 ? 's' : ''}${query}: ` : `Tienes ${count} correo${count > 1 ? 's' : ''} nuevo${count > 1 ? 's' : ''}: `)
+          : (isSearch ? `Found ${count} email${count > 1 ? 's' : ''}${actionResult._searchQuery ? ` for "${actionResult._searchQuery}"` : ''}: ` : `You have ${count} new email${count > 1 ? 's' : ''}: `);
+        const items = messages.slice(0, 3).map((m: any, idx: number) => {
+          const from = m.from || m.fromEmail || 'Unknown';
+          const subject = m.subject || '(no subject)';
+          return language === 'es'
+            ? `${idx + 1}. De ${from}: ${subject}`
+            : `${idx + 1}. From ${from}: ${subject}`;
+        });
+        assistantText = intro + items.join('. ');
+        if (count > 3) {
+          assistantText += language === 'es' ? ` y ${count - 3} más.` : ` and ${count - 3} more.`;
+        }
+      }
+    }
+
     // Agenda week — format events list for voice
     if (intent.intent === 'agenda_week' && actionResult?.ok && actionResult?.data) {
       const events: any[] = Array.isArray(actionResult.data) ? actionResult.data : (actionResult.data?.data || []);
@@ -660,6 +688,7 @@ export class VoiceService {
     'complete_task', 'set_goal', 'set_timer',
     'daily_verse', 'suggest_meal', 'get_recipe', 'recommend_restaurant',
     'play_media', 'make_call', 'school_email_check',
+    'send_email',
     'add_to_shopping_list', 'view_shopping_list',
     'add_family_member', 'assign_to_family_member', 'list_goals', 'check_goals',
     'set_personality', 'update_profile',
@@ -841,6 +870,8 @@ export class VoiceService {
     if (i === 'create_event') return pc.event_created;
     if (i === 'save_memory') return pc.saved;
     if (i === 'send_email') return t('¡Listo! Correo enviado.', 'Done! Email sent.', 'Pronto! E-mail enviado.', 'Fait ! E-mail envoyé.');
+    if (i === 'read_emails') return t('Revisando tu bandeja de entrada...', 'Checking your inbox...', 'Verificando sua caixa de entrada...', 'Je vérifie ta boîte mail...');
+    if (i === 'search_emails') return t('Buscando tus correos...', 'Searching your emails...', 'Pesquisando seus e-mails...', 'Je cherche tes e-mails...');
     if (i === 'agenda_today') return t('Aquí está tu agenda de hoy.', 'Here is your agenda for today.', 'Aqui está sua agenda de hoje.', 'Voici ton agenda du jour.');
     if (i === 'update_task') return actionResult?.data?.title
       ? t(`¡Listo! Actualicé: "${actionResult.data.title}".`, `Done! Updated: "${actionResult.data.title}".`, `Pronto! Atualizei: "${actionResult.data.title}".`, `Fait ! Mis à jour : "${actionResult.data.title}".`)
@@ -1091,6 +1122,51 @@ export class VoiceService {
           { headers },
         );
         return { ok: true, provider: 'api', endpoint: '/v1/email/send', data: res.data };
+      }
+
+      if (intent === 'read_emails') {
+        const maxResults = Math.min(Number(slots.max_results || 5), 10);
+        const unreadOnly = String(slots.unread_only ?? 'true') !== 'false';
+        try {
+          const res = await axios.get(
+            `${apiBaseUrl.replace(/\/+$/, '')}/v1/email/inbox`,
+            { headers, params: { maxResults, unreadOnly }, timeout: 12_000 },
+          );
+          return { ok: true, provider: 'api', _emailData: res.data, _emailIntent: 'read' };
+        } catch (err: any) {
+          if (err?.response?.data?.error === 'google_not_connected') {
+            return { ok: false, fallback_text: lang === 'es'
+              ? 'No tienes Gmail conectado. Puedes conectarlo en Ajustes → Integraciones.'
+              : 'Gmail is not connected. You can connect it in Settings → Integrations.' };
+          }
+          return { ok: false, fallback_text: lang === 'es'
+            ? 'No pude revisar tus correos ahora mismo.'
+            : "I couldn't check your emails right now." };
+        }
+      }
+
+      if (intent === 'search_emails') {
+        const query = String(slots.query || '').trim();
+        if (!query) return { ok: false, fallback_text: lang === 'es'
+          ? '¿Qué correos quieres que busque?'
+          : 'What emails should I search for?' };
+        const maxResults = Math.min(Number(slots.max_results || 5), 10);
+        try {
+          const res = await axios.get(
+            `${apiBaseUrl.replace(/\/+$/, '')}/v1/email/inbox`,
+            { headers, params: { q: query, maxResults }, timeout: 12_000 },
+          );
+          return { ok: true, provider: 'api', _emailData: res.data, _emailIntent: 'search', _searchQuery: query };
+        } catch (err: any) {
+          if (err?.response?.data?.error === 'google_not_connected') {
+            return { ok: false, fallback_text: lang === 'es'
+              ? 'No tienes Gmail conectado. Puedes conectarlo en Ajustes → Integraciones.'
+              : 'Gmail is not connected. You can connect it in Settings → Integrations.' };
+          }
+          return { ok: false, fallback_text: lang === 'es'
+            ? 'No pude buscar tus correos.'
+            : "I couldn't search your emails." };
+        }
       }
 
       if (intent === 'send_sms') {
