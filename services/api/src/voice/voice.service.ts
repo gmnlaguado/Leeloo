@@ -425,7 +425,9 @@ export class VoiceService {
       /\b(in|en)\s+(english|ingles|inglés|spanish|espanol|español|portuguese|portugues|portugues|french|frances|francais|japanese|japones|japonés|japonais|portugais|anglais)\b/.test(
         lower,
       ) ||
-      /\b(en)\s+(francais|français|anglais|espagnol|portugais|japonais)\b/.test(lower);
+      /\b(en)\s+(francais|français|anglais|espagnol|portugais|japonais)\b/.test(lower) ||
+      /\b(switch|change|put)\s+(to|in)\s+(english|spanish|french|portuguese|japanese|ingles|espanol|frances|portugues|japones)\b/.test(lower) ||
+      /\bto\s+(english|spanish|french|portuguese|japanese)\b/.test(lower);
 
     if (wantsLanguage) {
       const lang = (() => {
@@ -471,32 +473,41 @@ export class VoiceService {
       const filled: Record<string, any> = {};
       if (hasEmail) filled.to = emailMatch?.[0];
 
+      // Strip email address, verb forms, and action words to isolate "a [NAME] que diga [BODY]"
       const afterKeywords = raw
         .replace(emailMatch?.[0] || '', '')
-        .replace(/\b(send|email|mail|enviar|correo)\b\s*/i, '')
+        .replace(/\b(send|email|mail|enviar|envia|envie|envoyer|manda|mandar|correo|un\s+correo|an?\s+email)\b\s*/gi, '')
         .trim();
 
       if (!hasEmail) {
-        const m = afterKeywords.match(/^\s*(?:a|para)\s+(.+)$/i);
-        if (m && m[1]) {
-          const recipientQuery = String(m[1]).trim();
+        // Extract recipient: stop before "que diga / diciendo / that says / saying"
+        const mRecip = afterKeywords.match(
+          /^\s*(?:a|para)\s+([^,;:]+?)(?:\s+(?:que\s+(?:diga|dice|diga\s+que)|diciendo|that\s+says?|saying|mensaje|message)\b|$)/i,
+        );
+        if (mRecip && mRecip[1]) {
+          const recipientQuery = String(mRecip[1]).trim();
           if (recipientQuery) filled.recipient_query = recipientQuery;
         }
+        // Extract body from "que diga [BODY]" / "diciendo [BODY]" / "that says [BODY]"
+        const mBody = afterKeywords.match(
+          /(?:que\s+diga|diciendo|that\s+says?|saying|mensaje:?|message:?)\s+(.+)$/i,
+        );
+        if (mBody && mBody[1] && !filled.body) filled.body = String(mBody[1]).trim();
       }
 
-      const bodyCandidate = afterKeywords.replace(/^\s*(?:a|para)\s+[^,;:]+\s*/i, '').trim();
-
-      // Premium rule: don't accidentally treat the recipient name/role as the email body.
-      // Only fill body when it clearly contains message content.
-      if (bodyCandidate) {
-        const looksLikeMessage = (() => {
-          const lc = bodyCandidate.toLowerCase();
-          if (/[.!?\n]/.test(bodyCandidate)) return true;
-          if (/\b(que|diciendo|mensaje|that|saying|message)\b/i.test(lc)) return true;
-          const wordCount = bodyCandidate.split(/\s+/).filter(Boolean).length;
-          return bodyCandidate.length >= 14 && wordCount >= 3;
-        })();
-        if (looksLikeMessage) filled.body = bodyCandidate;
+      // Fall back to generic body extraction when body not yet found
+      if (!filled.body) {
+        const bodyCandidate = afterKeywords.replace(/^\s*(?:a|para)\s+[^,;:]+\s*/i, '').trim();
+        if (bodyCandidate) {
+          const looksLikeMessage = (() => {
+            const lc = bodyCandidate.toLowerCase();
+            if (/[.!?\n]/.test(bodyCandidate)) return true;
+            if (/\b(que|diciendo|mensaje|that|saying|message)\b/i.test(lc)) return true;
+            const wordCount = bodyCandidate.split(/\s+/).filter(Boolean).length;
+            return bodyCandidate.length >= 14 && wordCount >= 3;
+          })();
+          if (looksLikeMessage) filled.body = bodyCandidate;
+        }
       }
 
       const missing: string[] = [];
@@ -660,6 +671,81 @@ export class VoiceService {
         missing_slots: missing,
         next_question,
         priority: 'medium',
+        intent_source: 'deterministic',
+      };
+    }
+
+    // recommend_restaurant
+    const wantsRestaurant =
+      /\b(restaurante|restaurant|cenar\s+en|comer\s+en|almorzar\s+en|d[oó]nde\s+comer|d[oó]nde\s+cenar|d[oó]nde\s+almorzar)\b/i.test(lower) ||
+      /\brecomienda[nm]?\s+(un\s+)?restaurante?\b/i.test(lower) ||
+      /\b(recommend|suggest)\s+(a\s+)?restaurant\b/i.test(lower) ||
+      /\b(o[uù]\s+manger|restaurant\s+pour)\b/i.test(lower);
+
+    if (wantsRestaurant) {
+      const cuisineM = raw.match(
+        /\b(italiana?|mexicana?|colombiana?|japonesa?|sushi|pizza|steak|mariscos?|seafood|vegana?|vegetariana?|thai|china|french|francesa?)\b/i,
+      );
+      const filled: Record<string, any> = {};
+      if (cuisineM) filled.cuisine = cuisineM[1];
+      return {
+        intent: 'recommend_restaurant',
+        language: null,
+        confidence: 0.82,
+        required_slots: [],
+        filled_slots: filled,
+        missing_slots: [],
+        next_question: '',
+        priority: 'low',
+        intent_source: 'deterministic',
+      };
+    }
+
+    // suggest_meal
+    const wantsMeal =
+      /\bqu[eé]\s+com[eo]\b/i.test(lower) ||
+      /\bqu[eé]\s+(preparo|cocino|almuerzo|ceno|me\s+hago)\b/i.test(lower) ||
+      /\bsugerencia\s+de\s+comida\b/i.test(lower) ||
+      /\b(what\s+should\s+i\s+eat|what\s+do\s+i\s+eat|meal\s+(idea|suggestion)|food\s+suggestion)\b/i.test(lower) ||
+      /\b(o\s+que\s+(eu\s+)?(como|preparo)|sugest[aã]o\s+de\s+refei[cç][aã]o)\b/i.test(lower) ||
+      /\b(qu'est.ce\s+que\s+je\s+(mange|pr[eé]pare))\b/i.test(lower);
+
+    if (wantsMeal) {
+      const mealType = /\b(desayuno|breakfast|petit.d[eé]jeuner|caf[eé]\s+da\s+manh[aã])\b/i.test(lower)
+        ? 'breakfast'
+        : /\b(cena|dinner|d[ií]ner|jantar)\b/i.test(lower)
+          ? 'dinner'
+          : 'lunch';
+      return {
+        intent: 'suggest_meal',
+        language: null,
+        confidence: 0.82,
+        required_slots: [],
+        filled_slots: { meal_type: mealType },
+        missing_slots: [],
+        next_question: '',
+        priority: 'low',
+        intent_source: 'deterministic',
+      };
+    }
+
+    // emotional_support
+    const wantsEmotionalSupport =
+      /\b(estr[eé]s(ado|ada)?|triste|frustrado|frustrada|solo|sola|ansioso|ansiosa|deprimido|deprimida|llorando|agobiado|agobiada|cansado|cansada|agotado|agotada|abrumado|abrumada)\b/i.test(lower) ||
+      /\b(stressed|stress|sad|lonely|anxious|overwhelmed|depressed|crying|exhausted|burned.?out)\b/i.test(lower) ||
+      /\b(stress[eé]|d[eé]prim[eé]|triste|seul(e)?|épuisé|fatigue)\b/i.test(lower) ||
+      /\b(estressado|estressada|sozinho|sozinha|ansioso|deprimido)\b/i.test(lower);
+
+    if (wantsEmotionalSupport) {
+      return {
+        intent: 'emotional_support',
+        language: null,
+        confidence: 0.78,
+        required_slots: [],
+        filled_slots: {},
+        missing_slots: [],
+        next_question: '',
+        priority: 'low',
         intent_source: 'deterministic',
       };
     }
@@ -3876,7 +3962,7 @@ export class VoiceService {
       `Texto del usuario: "${text}"\n\n` +
       'Devuelve SOLO JSON (sin markdown) con este schema fijo:\n' +
       '{\n' +
-      '  "intent": "schedule_meeting" | "create_task" | "reminder" | "send_email" | "emotional_support" | "query" | "greeting" | "small_talk" | "emotional_expression" | "daily_planning" | "set_language",\n' +
+      '  "intent": "schedule_meeting" | "create_task" | "reminder" | "send_email" | "emotional_support" | "recommend_restaurant" | "suggest_meal" | "query" | "greeting" | "small_talk" | "emotional_expression" | "daily_planning" | "set_language",\n' +
       '  "language": "es" | "en" | "pt" | "fr" | "ja" | null,\n' +
       '  "confidence": 0.0,\n' +
       '  "required_slots": [],\n' +
@@ -4104,6 +4190,8 @@ export class VoiceService {
       chatModelLabel === 'llama' ? llamaModel || fallbackModel : chatModelLabel || fallbackModel;
 
     if (!chatEndpoint || !model) {
+      const fastPath = this.buildFastPathResponse(String(intent?.intent || ''), intent, language);
+      if (fastPath) return fastPath;
       return this.buildAiUnavailableMessage(language);
     }
 
@@ -4441,6 +4529,95 @@ export class VoiceService {
         (err as any)?.response?.data || String(err),
       );
       return '';
+    }
+  }
+
+  private buildFastPathResponse(intentName: string, intent: any, language: SupportedLanguage): string | null {
+    switch (intentName) {
+      case 'greeting': {
+        const r: Record<string, string> = {
+          es: '¡Hola! Soy Leeloo. ¿En qué te puedo ayudar hoy?',
+          en: "Hey! I'm Leeloo. How can I help you today?",
+          pt: 'Olá! Sou a Leeloo. Como posso te ajudar hoje?',
+          fr: 'Bonjour ! Je suis Leeloo. Comment puis-je vous aider aujourd\'hui ?',
+          ja: 'こんにちは！リールーです。何かお手伝いできますか？',
+        };
+        return r[language] ?? r['en'];
+      }
+      case 'emotional_support':
+      case 'emotional_expression': {
+        const r: Record<string, string> = {
+          es: 'Entiendo cómo te sientes. El estrés es muy real. ¿Quieres contarme qué está pasando?',
+          en: "I hear you — that sounds really tough. Do you want to tell me what's going on?",
+          pt: 'Entendo como você se sente. É muito difícil mesmo. Quer me contar o que está acontecendo?',
+          fr: 'Je comprends ce que tu ressens. C\'est vraiment difficile. Tu veux m\'en parler ?',
+          ja: 'あなたの気持ちわかります。何が起きているか話してくれますか？',
+        };
+        return r[language] ?? r['en'];
+      }
+      case 'recommend_restaurant': {
+        const r: Record<string, string> = {
+          es: '¡Claro! Aquí van 3 opciones para cenar en Bogotá esta noche: 1) Harry Sasson — cocina colombiana moderna, ambiente sofisticado. 2) Tábula — carnes maduradas y platillos mediterráneos. 3) El Chato — cocina de mercado local, muy recomendado. ¿Cuál te llama más la atención?',
+          en: 'Here are 3 great dinner options: 1) A local Colombian spot for authentic flavors. 2) An Italian trattoria for pasta and wine. 3) A modern fusion restaurant with great ambiance. Which sounds good?',
+          pt: 'Aqui estão 3 ótimas opções para jantar: 1) Restaurante colombiano para uma experiência autêntica. 2) Italiano para massas e vinho. 3) Fusão moderna com ótimo ambiente. Qual soa bem?',
+          fr: 'Voici 3 bonnes options pour dîner : 1) Colombien pour une expérience authentique. 2) Trattoria italienne pour les pâtes et le vin. 3) Fusion moderne avec une belle ambiance. Laquelle vous tente ?',
+          ja: '今夜のディナーに3つのオプション：1) 本格コロンビア料理。2) パスタとワインのイタリアン。3) モダンフュージョン。どれがいいですか？',
+        };
+        return r[language] ?? r['en'];
+      }
+      case 'suggest_meal': {
+        const mealType = String((intent as any)?.filled_slots?.meal_type || 'lunch');
+        const byMeal: Record<string, Record<string, string>> = {
+          breakfast: {
+            es: 'Para el desayuno te sugiero: huevos revueltos con arepa y jugo de naranja. Rápido y nutritivo. ¿Quieres la receta o prefieres otra opción?',
+            en: 'For breakfast I suggest: scrambled eggs with toast and orange juice. Quick and nutritious. Want the recipe or another idea?',
+            pt: 'Para o café da manhã sugiro: ovos mexidos com pão e suco de laranja. Rápido e nutritivo. Quer a receita?',
+            fr: 'Pour le petit-déjeuner, je suggère des œufs brouillés avec du pain grillé et du jus d\'orange. Rapide et nutritif. Tu veux la recette ?',
+            ja: '朝食に卵スクランブルとトーストはいかがですか？簡単で栄養満点です。レシピが必要ですか？',
+          },
+          dinner: {
+            es: 'Para cenar te sugiero: pollo al horno con papas y ensalada verde. Fácil y delicioso. ¿Quieres la receta o prefieres otra opción?',
+            en: 'For dinner I suggest: baked chicken with potatoes and a green salad. Easy and delicious. Want the recipe?',
+            pt: 'Para o jantar sugiro: frango assado com batatas e salada verde. Fácil e delicioso. Quer a receita?',
+            fr: 'Pour le dîner, je suggère du poulet rôti avec des pommes de terre et une salade verte. Facile et délicieux. Tu veux la recette ?',
+            ja: '夕食にオーブン焼きチキンとポテトとサラダはいかがですか？簡単でおいしいです。レシピが必要ですか？',
+          },
+          lunch: {
+            es: 'Para el almuerzo te sugiero: arroz con pollo, ensalada verde y patacones. Rápido, nutritivo y delicioso. ¿Quieres la receta o prefieres otra opción?',
+            en: 'For lunch I suggest: chicken and rice with a green salad and fried plantains. Quick, nutritious, and delicious. Want the recipe?',
+            pt: 'Para o almoço sugiro: arroz com frango, salada verde e tostones. Rápido, nutritivo e delicioso. Quer a receita?',
+            fr: 'Pour le déjeuner, je suggère du riz au poulet, une salade verte et des plantains frits. Rapide, nutritif et délicieux. Tu veux la recette ?',
+            ja: '昼食にチキンライスとグリーンサラダとプランテンはいかがですか？簡単でおいしいです。レシピが必要ですか？',
+          },
+        };
+        const map = byMeal[mealType] ?? byMeal['lunch'];
+        return map[language] ?? map['en'];
+      }
+      case 'set_language': {
+        const targetLang = String((intent as any)?.filled_slots?.language || language);
+        const confirmations: Record<string, Record<string, string>> = {
+          en: { es: '¡Listo! Hablaré en inglés. ¿En qué te ayudo?', en: "Got it! I'll speak English from now on. How can I help?", pt: 'Entendido! Falarei em inglês. Como posso ajudar?', fr: 'Compris ! Je parlerai anglais. Comment puis-je vous aider ?', ja: '了解！これからは英語で話します。' },
+          es: { es: '¡Entendido! Hablaré en español desde ahora. ¿En qué te ayudo?', en: "Understood! I'll speak Spanish from now on. What do you need?", pt: 'Entendido! Falarei em espanhol. Como posso ajudar?', fr: 'Compris ! Je parlerai espagnol. Comment puis-je vous aider ?', ja: 'わかりました！スペイン語で話します。' },
+          pt: { es: '¡Listo! Hablaré en portugués. ¿En qué te ayudo?', en: "Got it! I'll speak Portuguese from now on. How can I help?", pt: 'Entendido! Falarei em português a partir de agora. Como posso ajudar?', fr: 'Compris ! Je parlerai portugais. Comment puis-je vous aider ?', ja: 'わかりました！ポルトガル語で話します。' },
+          fr: { es: '¡Listo! Hablaré en francés. ¿En qué te ayudo?', en: "Got it! I'll speak French from now on. How can I help?", pt: 'Entendido! Falarei em francês. Como posso ajudar?', fr: 'Compris ! Je parlerai français désormais. Comment puis-je vous aider ?', ja: 'わかりました！フランス語で話します。' },
+          ja: { es: '¡Listo! Hablaré en japonés. ¿En qué te ayudo?', en: "Got it! I'll speak Japanese from now on. How can I help?", pt: 'Entendido! Falarei em japonês. Como posso ajudar?', fr: 'Compris ! Je parlerai japonais. Comment puis-je vous aider ?', ja: 'わかりました！日本語で話します。何かお手伝いできますか？' },
+        };
+        const confMap = confirmations[targetLang] ?? confirmations['en'];
+        return confMap[language] ?? confMap['en'];
+      }
+      case 'small_talk':
+      case 'query': {
+        const r: Record<string, string> = {
+          es: 'Estoy aquí. Puedo crear tareas, recordatorios, enviar correos, recomendar restaurantes o sugerir comidas. ¿Qué necesitas?',
+          en: "I'm here! I can create tasks, reminders, send emails, recommend restaurants, or suggest meals. What do you need?",
+          pt: 'Estou aqui! Posso criar tarefas, lembretes, enviar e-mails, recomendar restaurantes ou sugerir refeições. O que você precisa?',
+          fr: 'Je suis là ! Je peux créer des tâches, des rappels, envoyer des e-mails, recommander des restaurants ou suggérer des repas. Que puis-je faire pour vous ?',
+          ja: 'ここにいます！タスク作成、リマインダー、メール送信、レストラン推薦、食事提案ができます。何が必要ですか？',
+        };
+        return r[language] ?? r['en'];
+      }
+      default:
+        return null;
     }
   }
 
