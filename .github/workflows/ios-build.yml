@@ -62,13 +62,26 @@ jobs:
           path: apps/mobile/${{ steps.ipa.outputs.path }}
           retention-days: 30
 
-      - name: Submit to App Store Connect (with retry)
+      - name: Submit to App Store Connect
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.EXPO_APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
+          # Skip submit if Apple app-specific password secret is not configured
+          if [ -z "$EXPO_APPLE_APP_SPECIFIC_PASSWORD" ]; then
+            echo "⚠️  EXPO_APPLE_APP_SPECIFIC_PASSWORD secret not set."
+            echo "   IPA saved as artifact. To submit manually:"
+            echo "   1. Download the artifact from this run"
+            echo "   2. Use Apple Transporter or eas submit --path <ipa>"
+            echo "   To enable auto-submit, add EXPO_APPLE_APP_SPECIFIC_PASSWORD to GitHub Secrets"
+            echo "   (generate one at https://appleid.apple.com → Sign-In and Security → App-Specific Passwords)"
+            exit 0
+          fi
+
           IPA="${{ steps.ipa.outputs.path }}"
           echo "Submitting IPA: $IPA"
+
           for attempt in 1 2 3; do
             echo "--- Submit attempt $attempt/3 ---"
             OUTPUT=$(eas submit \
@@ -78,19 +91,23 @@ jobs:
                 --non-interactive 2>&1)
             EXIT_CODE=$?
             echo "$OUTPUT"
-            if echo "$OUTPUT" | grep -q "already submitted"; then
-              echo "❌ Build already submitted to Apple — bump buildNumber and rebuild."
+
+            if echo "$OUTPUT" | grep -qi "already been submitted\|already submitted\|already exists"; then
+              echo "❌ Build already submitted to Apple — bump buildNumber in app.json and rebuild."
               exit 1
             fi
-            if [ $EXIT_CODE -eq 0 ] && ! echo "$OUTPUT" | grep -qi "error\|failed\|something went wrong"; then
+
+            if [ $EXIT_CODE -eq 0 ] && ! echo "$OUTPUT" | grep -qi "error\|failed\|something went wrong\|canceled\|cancelled"; then
               echo "✅ Submit succeeded on attempt $attempt"
               exit 0
             fi
+
             if [ $attempt -lt 3 ]; then
-              echo "⚠️ Submit attempt $attempt failed, waiting 90s before retry..."
+              echo "⚠️  Submit attempt $attempt failed, waiting 90s before retry..."
               sleep 90
             fi
           done
+
           echo "❌ All 3 submit attempts failed."
           echo "IPA saved as artifact — download and submit manually via Transporter or App Store Connect."
           exit 1
