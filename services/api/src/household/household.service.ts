@@ -193,11 +193,11 @@ export class HouseholdService implements OnModuleInit {
   ): Promise<HouseholdContact | null> {
     const q = this.canonicalizeRelationshipTerms(query);
     if (!q) return null;
+    const profileId = await this.getProfileId(clerkUserId);
 
-    const contacts = await this.listContacts(clerkUserId);
-    if (!contacts.length) return null;
-
-    const scored = contacts
+    // 1. Search household_contacts (Mi Familia — manually added, highest priority)
+    const household = await this.listContacts(clerkUserId);
+    const scored = household
       .map((c) => {
         const name = this.canonicalizeRelationshipTerms(c.name || '');
         const role = this.canonicalizeRelationshipTerms(c.role || '');
@@ -210,6 +210,24 @@ export class HouseholdService implements OnModuleInit {
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score);
 
-    return scored[0]?.c || null;
+    if (scored[0]) return scored[0].c;
+
+    // 2. Fall back to phone-synced contacts table
+    const like = `%${q}%`;
+    const res = await this.db.query<{ id: string; user_id: string; name: string; email: string | null; phone: string | null; created_at: string; updated_at: string }>(
+      `SELECT id, user_id, name, email, phone, created_at, updated_at
+       FROM contacts
+       WHERE user_id = $1 AND (LOWER(name) = LOWER($2) OR LOWER(name) LIKE LOWER($3))
+       ORDER BY
+         CASE WHEN LOWER(name) = LOWER($2) THEN 0 ELSE 1 END,
+         name ASC
+       LIMIT 1`,
+      [profileId, q, like],
+    );
+    if (res.rows[0]) {
+      return { ...res.rows[0], role: null } as HouseholdContact;
+    }
+
+    return null;
   }
 }

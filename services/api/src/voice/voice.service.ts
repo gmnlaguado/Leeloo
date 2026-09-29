@@ -2380,14 +2380,16 @@ export class VoiceService {
           changed = true;
         }
 
-        if (
-          (!String(filled.to || '').trim() || !isValidEmail(String(filled.to || '').trim())) &&
-          recipientQuery
-        ) {
+        // Resolve name → email: use recipient_query; if empty, try the `to` value itself
+        const toVal = String(filled.to || '').trim();
+        const nameToResolve2 = !isValidEmail(toVal)
+          ? recipientQuery || toVal
+          : '';
+        if (nameToResolve2) {
           try {
             const contact = await this.householdService.findBestContactByNameOrRole(
               clerkUserId,
-              recipientQuery,
+              nameToResolve2,
             );
             const email = String((contact as any)?.email || '').trim();
             if (email && isValidEmail(email)) {
@@ -3035,15 +3037,21 @@ export class VoiceService {
 
         const candidateRecipientQuery = String(normalized.recipient_query || '').trim();
         const toCandidateRaw = String(normalized.to || '').trim();
-        if ((!toCandidateRaw || !isValidEmail(toCandidateRaw)) && candidateRecipientQuery) {
+        // Try to resolve name → email when `to` is not already a valid email.
+        // Use recipient_query first; if empty, try `to` itself (Claude may put a name there).
+        const nameToResolve = !isValidEmail(toCandidateRaw)
+          ? candidateRecipientQuery || toCandidateRaw
+          : '';
+        if (nameToResolve) {
           try {
             const contact = await this.householdService.findBestContactByNameOrRole(
               clerkUserId,
-              candidateRecipientQuery,
+              nameToResolve,
             );
             const email = String((contact as any)?.email || '').trim();
             if (email && isValidEmail(email)) {
               normalized.to = email;
+              normalized.resolved_contact_name = String((contact as any)?.name || '').trim();
             }
           } catch (err) {
             console.warn('[LeelooApi] normalizeIntentSlots resolve recipient failed', {
@@ -3520,17 +3528,19 @@ export class VoiceService {
       const recipientQuery = String(
         filled.recipient_query || filled.recipient || filled.contact || '',
       ).trim();
-      if ((!to || !to.includes('@')) && recipientQuery) {
-        // 1. Search personal contacts first
-        const personalContact = await this.contactsService.findByName(clerkUserId, recipientQuery);
+      // Resolve name → email: use recipient_query; if empty, try `to` itself (may be a name)
+      const nameToLookup = !to.includes('@') ? recipientQuery || to : '';
+      if (nameToLookup) {
+        // 1. Search phone-synced contacts first (contactsService.findByName searches contacts table)
+        const personalContact = await this.contactsService.findByName(clerkUserId, nameToLookup);
         const personalEmail = String((personalContact as any)?.email || '').trim();
         if (personalEmail) {
           to = personalEmail;
         } else {
-          // 2. Fall back to household contacts
+          // 2. Fall back to household contacts (Mi Familia)
           const contact = await this.householdService.findBestContactByNameOrRole(
             clerkUserId,
-            recipientQuery,
+            nameToLookup,
           );
           const email = String((contact as any)?.email || '').trim();
           if (email) to = email;
