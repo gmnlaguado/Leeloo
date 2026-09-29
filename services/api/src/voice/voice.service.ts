@@ -633,7 +633,9 @@ export class VoiceService {
       /\breminder\b/i.test(lower) ||
       /\brec(u|ú)erdame\b/i.test(lower) ||
       /\brecordatorio\b/i.test(lower) ||
-      /\balexa\s+recordatorio\b/i.test(lower);
+      /\balexa\s+recordatorio\b/i.test(lower) ||
+      /\b(me\s+lembra|lembrete|me\s+recorda)\b/i.test(lower) ||
+      /\b(rappelle.moi|rappelle\s+moi|rappel)\b/i.test(lower);
 
     if (wantsReminder) {
       const activity = raw
@@ -708,7 +710,10 @@ export class VoiceService {
       /\bsugerencia\s+de\s+comida\b/i.test(lower) ||
       /\b(what\s+should\s+i\s+eat|what\s+do\s+i\s+eat|meal\s+(idea|suggestion)|food\s+suggestion)\b/i.test(lower) ||
       /\b(o\s+que\s+(eu\s+)?(como|preparo)|sugest[aã]o\s+de\s+refei[cç][aã]o)\b/i.test(lower) ||
-      /\b(qu'est.ce\s+que\s+je\s+(mange|pr[eé]pare))\b/i.test(lower);
+      /\b(qu'est.ce\s+que\s+je\s+(mange|pr[eé]pare))\b/i.test(lower) ||
+      /\bquest.ce\s+que\s+je\s+(mange|prepare)\b/i.test(lower) ||
+      /\bje\s+(mange|mangerai)\s+quoi\b/i.test(lower) ||
+      /\bque\s+manger\s+(aujourd|ce\s+soir|ce\s+midi|demain)\b/i.test(lower);
 
     if (wantsMeal) {
       const mealType = /\b(desayuno|breakfast|petit.d[eé]jeuner|caf[eé]\s+da\s+manh[aã])\b/i.test(lower)

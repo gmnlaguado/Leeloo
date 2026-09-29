@@ -101,7 +101,18 @@ export class ExecutiveBrain {
     const hasAny = (haystack: string, phrases: string[]) =>
       phrases.some((p) => haystack.includes(normalize(p)));
 
-    const isGreeting = hasAny(s, ['hi', 'hello', 'hey', 'buenas', 'hola', 'holi', 'saludos']);
+    // Check email FIRST — "saying hello" / "says meeting" would otherwise trigger greeting/meeting
+    const emailRegexEarly = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+    const hasEmailAddress = emailRegexEarly.test(raw);
+    const emailKeywords = ['send email', 'send an email', 'email to', 'enviar correo', 'enviar un correo', 'correo a', 'envia correo', 'envia un correo'];
+    const isEmailEarly = hasEmailAddress || emailKeywords.some(k => s.includes(normalize(k)));
+    if (isEmailEarly) {
+      // Fall through to the full email handler below — skip greeting/meeting short-circuits
+    }
+
+    // Greeting: match only when the whole message is a greeting phrase (not embedded in longer commands)
+    const greetingWords = ['hi', 'hello', 'hey', 'buenas', 'hola', 'holi', 'saludos', 'ola', 'bonjour', 'bonsoir', 'bom dia', 'boa tarde', 'boa noite', 'salut'];
+    const isGreeting = !isEmailEarly && s.split(' ').length <= 4 && hasAny(s, greetingWords);
     if (isGreeting) {
       return {
         intent: 'greeting',
@@ -116,12 +127,16 @@ export class ExecutiveBrain {
       };
     }
 
-    const isReminderIntent = hasAny(s, [
+    const isReminderIntent = !isEmailEarly && hasAny(s, [
       'recordatorio',
       'recu[eé]rdame',
       'recuerdame',
       'remind me',
       'reminder',
+      'lembra',
+      'lembrete',
+      'rappelle',
+      'rappel',
     ]);
     const isHouseholdReminder =
       /\b(envia|enviar|manda|mandar)\s+(un\s+)?recordatorio\s+(a|para)\b/i.test(raw);
@@ -200,7 +215,7 @@ export class ExecutiveBrain {
       };
     }
 
-    const isScheduleMeetingIntent = hasAny(s, [
+    const isScheduleMeetingIntent = !isEmailEarly && hasAny(s, [
       'schedule',
       'meeting',
       'appointment',
