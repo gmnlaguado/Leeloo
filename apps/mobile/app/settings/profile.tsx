@@ -39,6 +39,13 @@ type ProfileData = {
   leeloo_name?: string;
   leeloo_personality?: string;
   city?: string;
+  preferences?: {
+    faith_preference?: string;
+    house_routine_status?: string;
+    daily_anchors?: string;
+    morning_meeting_time?: string;
+    children?: string;
+  };
 };
 
 function memoryText(m: Memory): string {
@@ -80,6 +87,20 @@ const ST = {
     errLoad: 'Could not load your profile.',
     errSave: 'Could not save. Please try again.',
     saved: 'Saved!',
+    leelooProfile: 'Leeloo profile',
+    leelooProfileSub: 'Key info Leeloo uses every day',
+    faith: 'Faith / spirituality',
+    faithPlaceholder: 'christian / none / other',
+    routine: 'Home routine',
+    routinePlaceholder: 'has_help / building / not_focus',
+    anchors: 'Daily anchors',
+    anchorsPlaceholder: 'school pickup 1:30pm, gym 7am...',
+    meetingTime: 'Morning meeting time',
+    meetingTimePlaceholder: '7:30am',
+    children: 'Children',
+    childrenPlaceholder: 'Sofia 8y, Carlos 12y',
+    edit: 'Edit',
+    cancel: 'Cancel',
   },
   es: {
     title: 'Mi Perfil',
@@ -92,6 +113,20 @@ const ST = {
     errLoad: 'No se pudo cargar tu perfil.',
     errSave: 'No se pudo guardar. Intenta de nuevo.',
     saved: '¡Guardado!',
+    leelooProfile: 'Perfil de Leeloo',
+    leelooProfileSub: 'Info clave que Leeloo usa cada día',
+    faith: 'Fe / espiritualidad',
+    faithPlaceholder: 'christian / none / other',
+    routine: 'Rutina del hogar',
+    routinePlaceholder: 'has_help / building / not_focus',
+    anchors: 'Anclas del día',
+    anchorsPlaceholder: 'recoger niños 1:30pm, gym 7am...',
+    meetingTime: 'Hora Morning Meeting',
+    meetingTimePlaceholder: '7:30am',
+    children: 'Hijos',
+    childrenPlaceholder: 'Sofia 8 años, Carlos 12 años',
+    edit: 'Editar',
+    cancel: 'Cancelar',
   },
   pt: {
     title: 'Meu Perfil',
@@ -104,6 +139,20 @@ const ST = {
     errLoad: 'Não foi possível carregar seu perfil.',
     errSave: 'Não foi possível salvar. Tente novamente.',
     saved: 'Salvo!',
+    leelooProfile: 'Perfil da Leeloo',
+    leelooProfileSub: 'Info que a Leeloo usa todo dia',
+    faith: 'Fé / espiritualidade',
+    faithPlaceholder: 'christian / none / other',
+    routine: 'Rotina doméstica',
+    routinePlaceholder: 'has_help / building / not_focus',
+    anchors: 'Âncoras do dia',
+    anchorsPlaceholder: 'buscar criança 13:30, academia 7h...',
+    meetingTime: 'Horário Morning Meeting',
+    meetingTimePlaceholder: '7:30',
+    children: 'Filhos',
+    childrenPlaceholder: 'Sofia 8 anos, Carlos 12 anos',
+    edit: 'Editar',
+    cancel: 'Cancelar',
   },
   fr: {
     title: 'Mon Profil',
@@ -116,6 +165,20 @@ const ST = {
     errLoad: 'Impossible de charger votre profil.',
     errSave: "Impossible d'enregistrer. Veuillez réessayer.",
     saved: 'Enregistré !',
+    leelooProfile: 'Profil Leeloo',
+    leelooProfileSub: 'Infos clés que Leeloo utilise chaque jour',
+    faith: 'Foi / spiritualité',
+    faithPlaceholder: 'christian / none / other',
+    routine: 'Routine maison',
+    routinePlaceholder: 'has_help / building / not_focus',
+    anchors: 'Ancres du jour',
+    anchorsPlaceholder: 'récupérer enfants 13h30, gym 7h...',
+    meetingTime: 'Heure Morning Meeting',
+    meetingTimePlaceholder: '7h30',
+    children: 'Enfants',
+    childrenPlaceholder: 'Sofia 8 ans, Carlos 12 ans',
+    edit: 'Modifier',
+    cancel: 'Annuler',
   },
 } as const;
 
@@ -157,6 +220,11 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [newText, setNewText] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Structured profile editing
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [savingField, setSavingField] = useState(false);
 
   const loadAll = useCallback(async () => {
     try {
@@ -202,6 +270,19 @@ export default function ProfileScreen() {
       Alert.alert('Error', st.errSave);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveField = async (field: string, value: string) => {
+    setSavingField(true);
+    try {
+      await profilesAPI.updateStructured({ [field]: value } as any);
+      setProfile((p) => p ? { ...p, preferences: { ...(p.preferences ?? {}), [field]: value } } : p);
+      setEditingField(null);
+    } catch {
+      Alert.alert('Error', st.errSave);
+    } finally {
+      setSavingField(false);
     }
   };
 
@@ -289,6 +370,67 @@ export default function ProfileScreen() {
               </View>
             </View>
           )}
+
+          {/* ── Leeloo Structured Profile ─────────────────── */}
+          <View style={s.section}>
+            <View style={s.sectionHeader}>
+              <Text style={s.catIcon}>🧠</Text>
+              <Text style={s.catTitle}>{st.leelooProfile}</Text>
+            </View>
+            <Text style={[s.sub, { marginTop: 0, marginBottom: 8 }]}>{st.leelooProfileSub}</Text>
+            {([
+              { key: 'faith_preference', label: st.faith, placeholder: st.faithPlaceholder, emoji: '🙏' },
+              { key: 'house_routine_status', label: st.routine, placeholder: st.routinePlaceholder, emoji: '🏠' },
+              { key: 'daily_anchors', label: st.anchors, placeholder: st.anchorsPlaceholder, emoji: '⚓' },
+              { key: 'morning_meeting_time', label: st.meetingTime, placeholder: st.meetingTimePlaceholder, emoji: '🌅' },
+              { key: 'children', label: st.children, placeholder: st.childrenPlaceholder, emoji: '👧' },
+            ] as const).map(({ key, label, placeholder, emoji }) => {
+              const current = profile?.preferences?.[key] ?? '';
+              const isEditing = editingField === key;
+              return (
+                <View key={key} style={s.structuredRow}>
+                  <Text style={s.structuredEmoji}>{emoji}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.structuredLabel}>{label}</Text>
+                    {isEditing ? (
+                      <View style={s.structuredEditRow}>
+                        <TextInput
+                          style={s.structuredInput}
+                          value={editValue}
+                          onChangeText={setEditValue}
+                          placeholder={placeholder}
+                          placeholderTextColor="#AAA"
+                          autoFocus
+                          returnKeyType="done"
+                          onSubmitEditing={() => { if (editValue.trim()) handleSaveField(key, editValue.trim()); }}
+                        />
+                        <TouchableOpacity
+                          style={[s.structuredSaveBtn, (!editValue.trim() || savingField) && { opacity: 0.5 }]}
+                          onPress={() => { if (editValue.trim()) handleSaveField(key, editValue.trim()); }}
+                          disabled={!editValue.trim() || savingField}
+                        >
+                          {savingField ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={s.structuredSaveBtnText}>{st.save}</Text>}
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setEditingField(null)} style={s.structuredCancelBtn}>
+                          <Text style={s.structuredCancelText}>{st.cancel}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={s.structuredValueRow}
+                        onPress={() => { setEditingField(key); setEditValue(current); }}
+                      >
+                        <Text style={[s.structuredValue, !current && s.structuredValueEmpty]}>
+                          {current || placeholder}
+                        </Text>
+                        <Text style={s.structuredEditIcon}>{st.edit} ✏️</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
 
           {/* Add new */}
           <View style={s.addCard}>
@@ -570,5 +712,85 @@ const s = StyleSheet.create({
     color: T.colors.muted,
     fontFamily: T.fonts.regular,
     textTransform: 'capitalize',
+  },
+  structuredRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: T.colors.border,
+  },
+  structuredEmoji: {
+    fontSize: 20,
+    width: 32,
+    textAlign: 'center',
+  },
+  structuredLabel: {
+    fontSize: 13,
+    color: T.colors.muted,
+    fontFamily: T.fonts.regular,
+    flex: 1,
+    marginLeft: 8,
+  },
+  structuredValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  structuredValue: {
+    fontSize: 14,
+    color: T.colors.navy,
+    fontFamily: T.fonts.medium,
+    maxWidth: 160,
+  },
+  structuredValueEmpty: {
+    fontSize: 14,
+    color: T.colors.muted,
+    fontFamily: T.fonts.regular,
+    fontStyle: 'italic',
+  },
+  structuredEditIcon: {
+    fontSize: 14,
+    color: T.colors.muted,
+  },
+  structuredEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    marginLeft: 8,
+  },
+  structuredInput: {
+    flex: 1,
+    fontSize: 14,
+    color: T.colors.navy,
+    fontFamily: T.fonts.regular,
+    borderWidth: 1,
+    borderColor: T.colors.accent,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: T.colors.white,
+  },
+  structuredSaveBtn: {
+    backgroundColor: T.colors.accent,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  structuredSaveBtnText: {
+    color: T.colors.white,
+    fontSize: 13,
+    fontFamily: T.fonts.bold,
+  },
+  structuredCancelBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+  },
+  structuredCancelText: {
+    color: T.colors.muted,
+    fontSize: 13,
+    fontFamily: T.fonts.regular,
   },
 });
