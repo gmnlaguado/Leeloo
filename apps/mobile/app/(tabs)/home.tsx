@@ -702,9 +702,8 @@ export default function HomeScreen() {
             onPress={() => router.push('/(tabs)/dashboard?tab=approvals')}
           />
 
-          {/* ── MORNING MEETING CARD (visible before noon) ──────── */}
-          {new Date().getHours() < 12 && (
-            <TouchableOpacity
+          {/* ── MORNING MEETING CARD ──────────────────────────── */}
+          <TouchableOpacity
               onPress={() => sendText(language === 'en' ? 'good morning' : 'buenos días')}
               activeOpacity={0.85}
               style={styles.morningMeetingCard}
@@ -727,7 +726,6 @@ export default function HomeScreen() {
                 <Text style={styles.morningMeetingArrow}>›</Text>
               </LinearGradient>
             </TouchableOpacity>
-          )}
 
           {/* ── PERSONALITY WIDGET ────────────────────── */}
           <PersonalityWidget personality={personality} verseText={verseText} userName={name} language={language} />
