@@ -76,27 +76,34 @@ export class ContactsService implements OnModuleInit {
     }>,
   ): Promise<{ synced: number; skipped: number }> {
     const profileId = await this.getProfileId(clerkUserId);
-    let synced = 0;
-    let skipped = 0;
-    for (const c of contacts) {
-      const name = String(c.name || '').trim();
-      if (!name) { skipped++; continue; }
-      try {
-        await this.db.query(
-          `INSERT INTO contacts (user_id, name, email, phone, nickname, relation, source)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (user_id, name) DO UPDATE
-             SET email = COALESCE(EXCLUDED.email, contacts.email),
-                 phone = COALESCE(EXCLUDED.phone, contacts.phone),
-                 nickname = COALESCE(EXCLUDED.nickname, contacts.nickname),
-                 relation = COALESCE(EXCLUDED.relation, contacts.relation),
-                 updated_at = NOW()`,
-          [profileId, name, c.email || null, c.phone || null, c.nickname || null, c.relation || null, c.source || 'phone'],
-        );
-        synced++;
-      } catch { skipped++; }
-    }
-    return { synced, skipped };
+    const valid = contacts.filter((c) => String(c.name || '').trim());
+    const skipped = contacts.length - valid.length;
+    if (valid.length === 0) return { synced: 0, skipped };
+
+    // Single bulk UPSERT using unnest — one DB round-trip for all contacts
+    const names = valid.map((c) => String(c.name).trim());
+    const emails = valid.map((c) => c.email || null);
+    const phones = valid.map((c) => c.phone || null);
+    const nicknames = valid.map((c) => c.nickname || null);
+    const relations = valid.map((c) => c.relation || null);
+    const sources = valid.map((c) => c.source || 'phone');
+
+    const res = await this.db.query<{ count: string }>(
+      `INSERT INTO contacts (user_id, name, email, phone, nickname, relation, source)
+       SELECT $1, name, email, phone, nickname, relation, source
+       FROM unnest(
+         $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[]
+       ) AS t(name, email, phone, nickname, relation, source)
+       ON CONFLICT (user_id, name) DO UPDATE
+         SET email    = COALESCE(EXCLUDED.email, contacts.email),
+             phone    = COALESCE(EXCLUDED.phone, contacts.phone),
+             nickname = COALESCE(EXCLUDED.nickname, contacts.nickname),
+             relation = COALESCE(EXCLUDED.relation, contacts.relation),
+             updated_at = NOW()`,
+      [profileId, names, emails, phones, nicknames, relations, sources],
+    );
+
+    return { synced: valid.length, skipped };
   }
 
   async searchContacts(clerkUserId: string, query: string): Promise<Contact[]> {

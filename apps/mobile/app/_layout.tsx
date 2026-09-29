@@ -158,14 +158,37 @@ const CLERK_PUBLISHABLE_KEY =
 
 const CONTACTS_SYNCED_KEY = 'leeloo_contacts_synced_at_v2';
 const CONTACTS_SYNC_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // re-sync every 7 days
+const CONTACTS_CHUNK_SIZE = 100; // send in batches to avoid large payload timeouts
+const API_HEALTH_URL =
+  (process.env.EXPO_PUBLIC_API_URL ?? 'https://leeloo-api-55i5.onrender.com') + '/health';
+
+/** Poll /health until the server responds 200 or maxMs elapses.
+ *  Returns true if the server is up, false if it timed out. */
+async function waitForApiServer(maxMs = 90_000, intervalMs = 5_000): Promise<boolean> {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(API_HEALTH_URL, { method: 'GET' });
+      if (res.ok) return true;
+    } catch {
+      // server not yet up — keep polling
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await new Promise((r) => setTimeout(r, Math.min(intervalMs, remaining)));
+  }
+  return false;
+}
 
 async function syncPhoneContactsOnce() {
   try {
     const lastSynced = await AsyncStorage.getItem(CONTACTS_SYNCED_KEY);
     const now = Date.now();
     if (lastSynced && now - Number(lastSynced) < CONTACTS_SYNC_INTERVAL_MS) return;
+
     const { status } = await Contacts.requestPermissionsAsync();
     if (status !== 'granted') return;
+
     const { data } = await Contacts.getContactsAsync({
       fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers, Contacts.Fields.Emails],
     });
@@ -181,21 +204,41 @@ async function syncPhoneContactsOnce() {
       await AsyncStorage.setItem(CONTACTS_SYNCED_KEY, String(now));
       return;
     }
-    // Delay 20s on first attempt: Render free tier can take up to 60s on cold start.
-    await new Promise((r) => setTimeout(r, 20_000));
-    let lastErr: unknown;
-    for (let attempt = 0; attempt < 4; attempt++) {
-      try {
-        await contactsAPI.sync(mapped);
-        await AsyncStorage.setItem(CONTACTS_SYNCED_KEY, String(now));
-        return;
-      } catch (e) {
-        lastErr = e;
-        // Increasing backoff: 20s, 30s, 45s between attempts
-        if (attempt < 3) await new Promise((r) => setTimeout(r, 15000 * (attempt + 1)));
+
+    // Wait for server to be ready (replaces the blind 20s delay)
+    const serverReady = await waitForApiServer(90_000, 5_000);
+    if (!serverReady) {
+      console.warn('[Leeloo] contacts sync skipped: API server did not respond within 90s');
+      return;
+    }
+
+    // Send in chunks of CONTACTS_CHUNK_SIZE to avoid large payload timeouts
+    const chunks: typeof mapped[] = [];
+    for (let i = 0; i < mapped.length; i += CONTACTS_CHUNK_SIZE) {
+      chunks.push(mapped.slice(i, i + CONTACTS_CHUNK_SIZE));
+    }
+
+    for (const chunk of chunks) {
+      let lastErr: unknown;
+      let chunkOk = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await contactsAPI.sync(chunk);
+          chunkOk = true;
+          break;
+        } catch (e) {
+          lastErr = e;
+          if (attempt < 2) await new Promise((r) => setTimeout(r, 8000 * (attempt + 1)));
+        }
+      }
+      if (!chunkOk) {
+        console.warn('[Leeloo] phone contacts sync chunk failed:', String(lastErr));
+        return; // do not mark as synced — retry on next launch
       }
     }
-    console.warn('[Leeloo] phone contacts sync failed after retries:', String(lastErr));
+
+    await AsyncStorage.setItem(CONTACTS_SYNCED_KEY, String(now));
+    console.log('[Leeloo] phone contacts sync complete', { total: mapped.length, chunks: chunks.length });
   } catch (e) {
     console.warn('[Leeloo] phone contacts sync failed:', String(e));
   }
