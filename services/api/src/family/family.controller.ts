@@ -16,7 +16,7 @@ export class FamilyController {
   @ApiOperation({ summary: 'Add a family member' })
   async add(
     @Req() req: AuthedRequest,
-    @Body() body: { name: string; role: string; age?: number },
+    @Body() body: { name: string; role: string; age?: number; whatsapp?: string },
   ) {
     const userId = req.user?.id;
     if (!userId) return { ok: false, error: 'Unauthenticated' };
@@ -31,5 +31,18 @@ export class FamilyController {
     if (!userId) return { ok: false, members: [] };
     const members = await this.familyService.listMembers(userId);
     return { ok: true, members };
+  }
+
+  @Post('message')
+  @ApiOperation({ summary: 'Log a message sent to a family member via Leeloo' })
+  async message(
+    @Req() req: AuthedRequest,
+    @Body() body: { member_id: string; text: string },
+  ) {
+    const userId = req.user?.id;
+    if (!userId) return { ok: false, error: 'Unauthenticated' };
+    // Persists the message attempt; actual WhatsApp delivery is via voice pipeline
+    await this.familyService.logMessage(userId, body.member_id, body.text);
+    return { ok: true };
   }
 }
