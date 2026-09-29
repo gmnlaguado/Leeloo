@@ -531,15 +531,16 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
     todayTasks: string[];
     upcomingEvents: string[];
     pendingApprovals: number;
+    profilePrefs: Record<string, string>;
   }> {
-    const empty = { todayTasks: [], upcomingEvents: [], pendingApprovals: 0 };
+    const empty = { todayTasks: [], upcomingEvents: [], pendingApprovals: 0, profilePrefs: {} };
     if (!this.pool) return empty;
 
     const profileId = await this.resolveProfileId(clerkUserId);
     if (!profileId) return empty;
 
     try {
-      const [tasksRes, eventsRes, approvalsRes] = await Promise.all([
+      const [tasksRes, eventsRes, approvalsRes, profileRes] = await Promise.all([
         this.pool.query<{ title: string }>(
           `SELECT title FROM tasks
            WHERE user_id = $1 AND status = 'pending'
@@ -559,6 +560,10 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
            WHERE parent_id = $1 AND approved = false`,
           [profileId],
         ),
+        this.pool.query<{ preferences: any }>(
+          `SELECT preferences FROM profiles WHERE id = $1 LIMIT 1`,
+          [profileId],
+        ),
       ]);
 
       const todayTasks = tasksRes.rows.map((r) => r.title).filter(Boolean);
@@ -571,7 +576,20 @@ export class OpenAiQueue implements OnModuleInit, OnModuleDestroy {
       });
       const pendingApprovals = parseInt(approvalsRes.rows[0]?.count || '0', 10);
 
-      return { todayTasks, upcomingEvents, pendingApprovals };
+      // Extract structured profile prefs relevant to Leeloo's context
+      const raw = profileRes.rows[0]?.preferences ?? {};
+      const profilePrefs: Record<string, string> = {};
+      const PREFS_TO_INJECT = [
+        'faith_preference', 'house_routine_status', 'daily_anchors',
+        'morning_meeting_time', 'children',
+      ];
+      for (const k of PREFS_TO_INJECT) {
+        if (raw[k] != null && String(raw[k]).trim()) {
+          profilePrefs[k] = String(raw[k]).trim();
+        }
+      }
+
+      return { todayTasks, upcomingEvents, pendingApprovals, profilePrefs };
     } catch (err) {
       this.logger.warn(`fetchUserContext failed user=${clerkUserId}: ${String(err)}`);
       return empty;

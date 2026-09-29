@@ -18,6 +18,8 @@ export class FamilyService implements OnModuleInit {
         name text NOT NULL,
         role text NOT NULL,
         age int NULL,
+        whatsapp text NULL,
+        email text NULL,
         school_email_domain text NULL,
         notes text NULL,
         created_at timestamptz DEFAULT NOW()
@@ -31,12 +33,12 @@ export class FamilyService implements OnModuleInit {
     return p.id;
   }
 
-  async addMember(clerkUserId: string, data: { name: string; role: string; age?: number }) {
+  async addMember(clerkUserId: string, data: { name: string; role: string; age?: number; whatsapp?: string; email?: string }) {
     const profileId = await this.getProfileId(clerkUserId);
     const res = await this.db.query(
-      `INSERT INTO family_members (id, user_id, name, role, age)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [randomUUID(), profileId, data.name, data.role, data.age ?? null],
+      `INSERT INTO family_members (id, user_id, name, role, age, whatsapp, email)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [randomUUID(), profileId, data.name, data.role, data.age ?? null, data.whatsapp ?? null, data.email ?? null],
     );
     return res.rows[0];
   }
@@ -48,6 +50,29 @@ export class FamilyService implements OnModuleInit {
       [profileId],
     );
     return res.rows;
+  }
+
+  async logMessage(clerkUserId: string, memberId: string, text: string) {
+    const profileId = await this.getProfileId(clerkUserId);
+    // Ensure the member belongs to this user before logging
+    const check = await this.db.query(
+      `SELECT id FROM family_members WHERE id = $1 AND user_id = $2`,
+      [memberId, profileId],
+    );
+    if (!check.rows[0]) return;
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS family_messages (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid NOT NULL,
+        member_id uuid NOT NULL,
+        text text NOT NULL,
+        sent_at timestamptz DEFAULT NOW()
+      )
+    `);
+    await this.db.query(
+      `INSERT INTO family_messages (user_id, member_id, text) VALUES ($1, $2, $3)`,
+      [profileId, memberId, text],
+    );
   }
 
   async findMemberByName(clerkUserId: string, name: string) {

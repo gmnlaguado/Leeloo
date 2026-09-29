@@ -42,6 +42,7 @@ const UI_STRINGS = {
     action_tasks: 'Tasks',
     action_mode: 'Leeloo mode',
     action_shopping: 'Shopping',
+    action_family: 'Family',
     tag_home: 'HOME',
     tag_work: 'WORK',
     no_date: 'No date',
@@ -74,6 +75,7 @@ const UI_STRINGS = {
     action_tasks: 'Tareas',
     action_mode: 'Modo Leeloo',
     action_shopping: 'Compras',
+    action_family: 'Familia',
     tag_home: 'HOGAR',
     tag_work: 'TRABAJO',
     no_date: 'Sin fecha',
@@ -106,6 +108,7 @@ const UI_STRINGS = {
     action_tasks: 'Tarefas',
     action_mode: 'Modo Leeloo',
     action_shopping: 'Compras',
+    action_family: 'Família',
     tag_home: 'CASA',
     tag_work: 'TRABALHO',
     no_date: 'Sem data',
@@ -138,6 +141,7 @@ const UI_STRINGS = {
     action_tasks: 'Tâches',
     action_mode: 'Mode Leeloo',
     action_shopping: 'Courses',
+    action_family: 'Famille',
     tag_home: 'MAISON',
     tag_work: 'TRAVAIL',
     no_date: 'Sans date',
@@ -698,9 +702,8 @@ export default function HomeScreen() {
             onPress={() => router.push('/(tabs)/dashboard?tab=approvals')}
           />
 
-          {/* ── MORNING MEETING CARD (visible before noon) ──────── */}
-          {new Date().getHours() < 12 && (
-            <TouchableOpacity
+          {/* ── MORNING MEETING CARD ──────────────────────────── */}
+          <TouchableOpacity
               onPress={() => sendText(language === 'en' ? 'good morning' : 'buenos días')}
               activeOpacity={0.85}
               style={styles.morningMeetingCard}
@@ -723,7 +726,6 @@ export default function HomeScreen() {
                 <Text style={styles.morningMeetingArrow}>›</Text>
               </LinearGradient>
             </TouchableOpacity>
-          )}
 
           {/* ── PERSONALITY WIDGET ────────────────────── */}
           <PersonalityWidget personality={personality} verseText={verseText} userName={name} language={language} />
@@ -834,6 +836,7 @@ export default function HomeScreen() {
                 { emoji: '📧', label: t.action_emails, action: () => sendText(t.emails_cmd) },
                 { emoji: '✅', label: t.action_tasks, action: () => router.push('/(tabs)/tasks') },
                 { emoji: '🛒', label: t.action_shopping, action: () => router.push('/shopping') },
+                { emoji: '👨‍👩‍👧', label: t.action_family, action: () => router.push('/familia') },
               ].map((a) => (
                 <TouchableOpacity key={a.label} style={styles.actionCard} onPress={a.action} activeOpacity={0.75}>
                   <Text style={styles.actionEmoji}>{a.emoji}</Text>

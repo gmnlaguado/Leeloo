@@ -27,9 +27,9 @@ import { useSettingsStore } from '@/store/settings';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Steps: 0=welcome, 1=name, 2=personality, 3=microphone, 4=notifications, 5=language, 6=tour
-type Step = 0 | 1 | 2 | 3 | 4 | 5 | 6;
-const TOTAL_STEPS = 7;
+// Steps: 0=welcome, 1=name, 2=personality, 3=microphone, 4=notifications, 5=language, 6=profile, 7=tour
+type Step = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
+const TOTAL_STEPS = 8;
 
 // Voice lines Leeloo says at each step (expo-speech — works offline, no API cost)
 const VOICE_LINES: Record<number, Record<string, string>> = {
@@ -70,6 +70,12 @@ const VOICE_LINES: Record<number, Record<string, string>> = {
     fr: 'Quelle langue préférez-vous ? Vous pourrez la changer plus tard dans les Paramètres.',
   },
   6: {
+    es: 'Para conocerte mejor, cuéntame un poco más. Esto me ayuda a darte respuestas más personalizadas. Puedes omitirlo si prefieres.',
+    en: "To know you better, tell me a little more. This helps me give you more personalized answers. You can skip it if you prefer.",
+    pt: 'Para te conhecer melhor, me conte um pouco mais. Isso me ajuda a dar respostas mais personalizadas. Você pode pular se preferir.',
+    fr: "Pour mieux vous connaître, dites-m'en un peu plus. Cela m'aide à vous donner des réponses plus personnalisées. Vous pouvez passer si vous préférez.",
+  },
+  7: {
     es: '¡Todo listo! Puedo ayudarte con tu agenda, crear tareas, enviarte recordatorios, buscar información, enviar correos y mucho más. Solo di "Leeloo" en cualquier momento para activarme — incluso con el teléfono en reposo. ¡Estoy lista cuando tú quieras!',
     en: "All set! I can help you with your schedule, create tasks, send reminders, search for information, send emails, and much more. Just say 'Leeloo' at any time to activate me — even when your phone is asleep. I'm ready whenever you are!",
     pt: 'Tudo pronto! Posso te ajudar com sua agenda, criar tarefas, enviar lembretes, buscar informações, enviar e-mails e muito mais. Só diga "Leeloo" a qualquer momento para me ativar — mesmo com o telefone em repouso. Estou pronta quando você quiser!',
@@ -102,10 +108,11 @@ const STEP_TITLES: Record<number, Record<string, string>> = {
   3: { es: 'Activa tu micrófono',   en: 'Activate your microphone', pt: 'Ative seu microfone',      fr: 'Activez votre microphone'   },
   4: { es: 'Alertas y recordatorios', en: 'Alerts & reminders',    pt: 'Alertas e lembretes',      fr: 'Alertes et rappels'         },
   5: { es: '¿En qué idioma?',       en: 'Which language?',         pt: 'Qual idioma?',             fr: 'Quelle langue ?'            },
-  6: { es: '¡Todo listo!',          en: "All set!",                 pt: 'Tudo pronto!',             fr: 'Tout est prêt !'            },
+  6: { es: 'Cuéntame de ti',         en: 'Tell me about you',        pt: 'Me conta sobre você',      fr: 'Parlez-moi de vous'         },
+  7: { es: '¡Todo listo!',          en: "All set!",                 pt: 'Tudo pronto!',             fr: 'Tout est prêt !'            },
 };
 
-const STEP_EMOJIS = ['👋', '😊', '✨', '🎤', '🔔', '🌍', '🚀'];
+const STEP_EMOJIS = ['👋', '😊', '✨', '🎤', '🔔', '🌍', '💛', '🚀'];
 
 function speakLine(text: string, lang: string) {
   try { Speech.stop(); } catch { /* ignore */ }
@@ -129,6 +136,8 @@ export default function OnboardingScreen() {
   const [selectedPersonality, setSelectedPersonality] = useState('default');
   const [selectedLang, setSelectedLang] = useState('es');
   const [loading, setLoading] = useState(false);
+  const [hasChildren, setHasChildren] = useState<'yes' | 'no' | null>(null);
+  const [faithPref, setFaithPref] = useState<'christian' | 'none' | 'skip' | null>(null);
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   // Speak when step changes
@@ -146,7 +155,7 @@ export default function OnboardingScreen() {
     setStep(next);
   };
 
-  const goNext = () => animateToStep(Math.min(step + 1, 6) as Step);
+  const goNext = () => animateToStep(Math.min(step + 1, 7) as Step);
 
   const handleMicrophone = async () => {
     const { status } = await Audio.requestPermissionsAsync();
@@ -176,6 +185,15 @@ export default function OnboardingScreen() {
         leeloo_personality: selectedPersonality as any,
         ...(name ? { leeloo_name: name } : {}),
       }).catch(() => {});
+      // Structured Susana Vision fields from profile step
+      const structuredPatch: Record<string, string> = {};
+      if (hasChildren === 'yes') structuredPatch.children = 'yes';
+      if (hasChildren === 'no') structuredPatch.children = 'no';
+      if (faithPref === 'christian') structuredPatch.faith_preference = 'christian';
+      if (faithPref === 'none') structuredPatch.faith_preference = 'none';
+      if (Object.keys(structuredPatch).length > 0) {
+        await profilesAPI.updateStructured(structuredPatch).catch(() => {});
+      }
       await setHasCompletedOnboarding(true, userId ?? undefined);
       router.replace('/(tabs)/home');
     } catch {
@@ -297,6 +315,57 @@ export default function OnboardingScreen() {
                   ))}
                 </View>
               )}
+
+              {step === 6 && (
+                <View style={s.profileStepWrap}>
+                  {/* Children */}
+                  <Text style={s.profileQuestion}>
+                    {selectedLang === 'en' ? '👶 Do you have children?' : selectedLang === 'pt' ? '👶 Você tem filhos?' : selectedLang === 'fr' ? '👶 Avez-vous des enfants ?' : '👶 ¿Tienes hijos?'}
+                  </Text>
+                  <View style={s.chipRow}>
+                    {(['yes', 'no'] as const).map((v) => (
+                      <TouchableOpacity
+                        key={v}
+                        style={[s.chip, hasChildren === v && s.chipActive]}
+                        onPress={() => setHasChildren(v)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[s.chipText, hasChildren === v && s.chipTextActive]}>
+                          {v === 'yes'
+                            ? (selectedLang === 'en' ? 'Yes' : selectedLang === 'pt' ? 'Sim' : selectedLang === 'fr' ? 'Oui' : 'Sí')
+                            : (selectedLang === 'en' ? 'No' : 'No')}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Faith */}
+                  <Text style={[s.profileQuestion, { marginTop: 20 }]}>
+                    {selectedLang === 'en' ? '🙏 Your spiritual orientation?' : selectedLang === 'pt' ? '🙏 Sua orientação espiritual?' : selectedLang === 'fr' ? '🙏 Votre orientation spirituelle ?' : '🙏 ¿Tu orientación espiritual?'}
+                  </Text>
+                  <View style={s.chipRow}>
+                    {(['christian', 'none', 'skip'] as const).map((v) => {
+                      const labels: Record<string, Record<string, string>> = {
+                        christian: { es: 'Cristiana/o', en: 'Christian', pt: 'Cristã/Cristão', fr: 'Chrétien(ne)' },
+                        none:      { es: 'Secular',    en: 'Secular',   pt: 'Secular',       fr: 'Séculier'     },
+                        skip:      { es: 'Prefiero no decir', en: 'Prefer not to say', pt: 'Prefiro não dizer', fr: 'Je préfère ne pas dire' },
+                      };
+                      return (
+                        <TouchableOpacity
+                          key={v}
+                          style={[s.chip, faithPref === v && s.chipActive]}
+                          onPress={() => setFaithPref(v)}
+                          activeOpacity={0.75}
+                        >
+                          <Text style={[s.chipText, faithPref === v && s.chipTextActive]}>
+                            {labels[v][selectedLang] ?? labels[v].es}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
             </Animated.View>
           </ScrollView>
 
@@ -345,6 +414,16 @@ export default function OnboardingScreen() {
             )}
 
             {step === 6 && (
+              <>
+                <PrimaryBtn
+                  onPress={goNext}
+                  label={selectedLang === 'en' ? 'Continue' : selectedLang === 'pt' ? 'Continuar' : selectedLang === 'fr' ? 'Continuer' : 'Continuar'}
+                />
+                <SkipBtn onPress={goNext} lang={selectedLang} />
+              </>
+            )}
+
+            {step === 7 && (
               <PrimaryBtn
                 onPress={finishOnboarding}
                 loading={loading}
@@ -577,4 +656,43 @@ const s = StyleSheet.create({
     fontFamily: T.fonts.regular,
   },
   disabled: { opacity: 0.6 },
+  profileStepWrap: {
+    width: '100%',
+    gap: 8,
+  },
+  profileQuestion: {
+    fontSize: 15,
+    fontWeight: '600',
+    fontFamily: T.fonts.semiBold,
+    color: T.colors.navy,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'center',
+  },
+  chip: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: T.colors.border,
+    backgroundColor: T.colors.white,
+  },
+  chipActive: {
+    borderColor: T.colors.purple,
+    backgroundColor: '#F0EDFF',
+  },
+  chipText: {
+    fontSize: 14,
+    fontFamily: T.fonts.regular,
+    color: T.colors.muted,
+  },
+  chipTextActive: {
+    color: T.colors.navy,
+    fontFamily: T.fonts.semiBold,
+  },
 });
