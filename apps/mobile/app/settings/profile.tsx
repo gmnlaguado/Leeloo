@@ -71,19 +71,29 @@ const CATEGORY_ICONS: Record<string, string> = {
 };
 
 const CATEGORY_ORDER = [
-  'preference', 'family', 'work', 'goal',
-  'routine', 'spiritual', 'contact', 'birthday', 'school', 'general', 'other',
+  'preference',
+  'family',
+  'work',
+  'goal',
+  'routine',
+  'spiritual',
+  'contact',
+  'birthday',
+  'school',
+  'general',
+  'other',
 ];
 
 const ST = {
   en: {
     title: 'My Profile',
     sub: 'Everything Leeloo knows about you',
-    empty: "Leeloo doesn't know you yet.\nTell her things like \"My favorite food is sushi\" or \"My son's name is Lucas\".",
+    empty:
+      'Leeloo doesn\'t know you yet.\nTell her things like "My favorite food is sushi" or "My son\'s name is Lucas".',
     addLabel: 'Add something Leeloo should know...',
     addPlaceholder: 'e.g. My favorite music is jazz',
     save: 'Save',
-    tip: 'You can also tell Leeloo by voice — she\'ll remember everything.',
+    tip: "You can also tell Leeloo by voice — she'll remember everything.",
     errLoad: 'Could not load your profile.',
     errSave: 'Could not save. Please try again.',
     saved: 'Saved!',
@@ -105,7 +115,8 @@ const ST = {
   es: {
     title: 'Mi Perfil',
     sub: 'Todo lo que Leeloo sabe de ti',
-    empty: 'Leeloo todavía no te conoce bien.\nCuéntale cosas como "Mi comida favorita es el sushi" o "Mi hijo se llama Lucas".',
+    empty:
+      'Leeloo todavía no te conoce bien.\nCuéntale cosas como "Mi comida favorita es el sushi" o "Mi hijo se llama Lucas".',
     addLabel: 'Agrega algo que Leeloo debería saber...',
     addPlaceholder: 'Ej: Mi música favorita es el jazz',
     save: 'Guardar',
@@ -131,7 +142,8 @@ const ST = {
   pt: {
     title: 'Meu Perfil',
     sub: 'Tudo que a Leeloo sabe sobre você',
-    empty: 'A Leeloo ainda não te conhece.\nConte coisas como "Minha comida favorita é o sushi" ou "Meu filho se chama Lucas".',
+    empty:
+      'A Leeloo ainda não te conhece.\nConte coisas como "Minha comida favorita é o sushi" ou "Meu filho se chama Lucas".',
     addLabel: 'Adicione algo que Leeloo deveria saber...',
     addPlaceholder: 'Ex: Minha música favorita é jazz',
     save: 'Salvar',
@@ -157,7 +169,8 @@ const ST = {
   fr: {
     title: 'Mon Profil',
     sub: 'Tout ce que Leeloo sait de vous',
-    empty: "Leeloo ne vous connaît pas encore.\nDites-lui des choses comme \"Ma cuisine préférée est les sushis\" ou \"Mon fils s'appelle Lucas\".",
+    empty:
+      'Leeloo ne vous connaît pas encore.\nDites-lui des choses comme "Ma cuisine préférée est les sushis" ou "Mon fils s\'appelle Lucas".',
     addLabel: 'Ajoutez quelque chose que Leeloo devrait savoir...',
     addPlaceholder: 'Ex: Ma musique préférée est le jazz',
     save: 'Enregistrer',
@@ -205,9 +218,20 @@ const PERSONALITY_LABELS: Record<string, string> = {
 };
 
 const ROLE_EMOJIS: Record<string, string> = {
-  hijo: '👦', hija: '👧', esposo: '👨', esposa: '👩', padre: '👴',
-  madre: '👵', hermano: '👦', hermana: '👧', son: '👦', daughter: '👧',
-  husband: '👨', wife: '👩', father: '👴', mother: '👵',
+  hijo: '👦',
+  hija: '👧',
+  esposo: '👨',
+  esposa: '👩',
+  padre: '👴',
+  madre: '👵',
+  hermano: '👦',
+  hermana: '👧',
+  son: '👦',
+  daughter: '👧',
+  husband: '👨',
+  wife: '👩',
+  father: '👴',
+  mother: '👵',
 };
 
 export default function ProfileScreen() {
@@ -237,7 +261,9 @@ export default function ProfileScreen() {
         const data = memRes.value.data as any;
         const raw: Memory[] = Array.isArray(data?.memories)
           ? data.memories
-          : Array.isArray(data) ? data : [];
+          : Array.isArray(data)
+            ? data
+            : [];
         setMemories(raw.filter((m) => m.category !== 'conversation_turn'));
       }
       if (famRes.status === 'fulfilled') {
@@ -254,8 +280,14 @@ export default function ProfileScreen() {
     }
   }, [st.errLoad]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
-  useFocusEffect(useCallback(() => { loadAll(); }, [loadAll]));
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
+  useFocusEffect(
+    useCallback(() => {
+      loadAll();
+    }, [loadAll]),
+  );
 
   const handleSave = async () => {
     const text = newText.trim();
@@ -277,7 +309,9 @@ export default function ProfileScreen() {
     setSavingField(true);
     try {
       await profilesAPI.updateStructured({ [field]: value } as any);
-      setProfile((p) => p ? { ...p, preferences: { ...(p.preferences ?? {}), [field]: value } } : p);
+      setProfile((p) =>
+        p ? { ...p, preferences: { ...(p.preferences ?? {}), [field]: value } } : p,
+      );
       setEditingField(null);
     } catch {
       Alert.alert('Error', st.errSave);
@@ -295,14 +329,23 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={s.container} edges={['bottom', 'left', 'right']}>
-      <Stack.Screen options={{
-        headerShown: true,
-        title: st.title,
-        headerBackTitle: language === 'en' ? 'Back' : language === 'pt' ? 'Voltar' : language === 'fr' ? 'Retour' : 'Atrás',
-        headerStyle: { backgroundColor: T.colors.navy },
-        headerTintColor: T.colors.white,
-        gestureEnabled: true,
-      }} />
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          title: st.title,
+          headerBackTitle:
+            language === 'en'
+              ? 'Back'
+              : language === 'pt'
+                ? 'Voltar'
+                : language === 'fr'
+                  ? 'Retour'
+                  : 'Atrás',
+          headerStyle: { backgroundColor: T.colors.navy },
+          headerTintColor: T.colors.white,
+          gestureEnabled: true,
+        }}
+      />
       <WaveBackground opacity={0.04} cellSize={38} />
 
       <KeyboardAvoidingView
@@ -327,12 +370,8 @@ export default function ProfileScreen() {
               </Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={s.profileName}>
-                {profile?.leeloo_name || st.title}
-              </Text>
-              {!!profile?.city && (
-                <Text style={s.profileCity}>📍 {profile.city}</Text>
-              )}
+              <Text style={s.profileName}>{profile?.leeloo_name || st.title}</Text>
+              {!!profile?.city && <Text style={s.profileCity}>📍 {profile.city}</Text>}
               <View style={s.personalityBadge}>
                 <Text style={s.personalityBadgeText}>
                   {PERSONALITY_LABELS[profile?.leeloo_personality ?? 'default'] ?? '⭐ Default'}
@@ -349,7 +388,13 @@ export default function ProfileScreen() {
               <View style={s.sectionHeader}>
                 <Text style={s.catIcon}>👨‍👩‍👧</Text>
                 <Text style={s.catTitle}>
-                  {language === 'en' ? 'Family' : language === 'pt' ? 'Família' : language === 'fr' ? 'Famille' : 'Familia'}
+                  {language === 'en'
+                    ? 'Family'
+                    : language === 'pt'
+                      ? 'Família'
+                      : language === 'fr'
+                        ? 'Famille'
+                        : 'Familia'}
                 </Text>
                 <View style={s.countBadge}>
                   <Text style={s.countText}>{family.length}</Text>
@@ -363,7 +408,10 @@ export default function ProfileScreen() {
                     </Text>
                     <View>
                       <Text style={s.familyChipName}>{m.name}</Text>
-                      <Text style={s.familyChipRole}>{m.role}{m.age ? ` · ${m.age}` : ''}</Text>
+                      <Text style={s.familyChipRole}>
+                        {m.role}
+                        {m.age ? ` · ${m.age}` : ''}
+                      </Text>
                     </View>
                   </View>
                 ))}
@@ -378,13 +426,40 @@ export default function ProfileScreen() {
               <Text style={s.catTitle}>{st.leelooProfile}</Text>
             </View>
             <Text style={[s.sub, { marginTop: 0, marginBottom: 8 }]}>{st.leelooProfileSub}</Text>
-            {([
-              { key: 'faith_preference', label: st.faith, placeholder: st.faithPlaceholder, emoji: '🙏' },
-              { key: 'house_routine_status', label: st.routine, placeholder: st.routinePlaceholder, emoji: '🏠' },
-              { key: 'daily_anchors', label: st.anchors, placeholder: st.anchorsPlaceholder, emoji: '⚓' },
-              { key: 'morning_meeting_time', label: st.meetingTime, placeholder: st.meetingTimePlaceholder, emoji: '🌅' },
-              { key: 'children', label: st.children, placeholder: st.childrenPlaceholder, emoji: '👧' },
-            ] as const).map(({ key, label, placeholder, emoji }) => {
+            {(
+              [
+                {
+                  key: 'faith_preference',
+                  label: st.faith,
+                  placeholder: st.faithPlaceholder,
+                  emoji: '🙏',
+                },
+                {
+                  key: 'house_routine_status',
+                  label: st.routine,
+                  placeholder: st.routinePlaceholder,
+                  emoji: '🏠',
+                },
+                {
+                  key: 'daily_anchors',
+                  label: st.anchors,
+                  placeholder: st.anchorsPlaceholder,
+                  emoji: '⚓',
+                },
+                {
+                  key: 'morning_meeting_time',
+                  label: st.meetingTime,
+                  placeholder: st.meetingTimePlaceholder,
+                  emoji: '🌅',
+                },
+                {
+                  key: 'children',
+                  label: st.children,
+                  placeholder: st.childrenPlaceholder,
+                  emoji: '👧',
+                },
+              ] as const
+            ).map(({ key, label, placeholder, emoji }) => {
               const current = profile?.preferences?.[key] ?? '';
               const isEditing = editingField === key;
               return (
@@ -402,23 +477,40 @@ export default function ProfileScreen() {
                           placeholderTextColor="#AAA"
                           autoFocus
                           returnKeyType="done"
-                          onSubmitEditing={() => { if (editValue.trim()) handleSaveField(key, editValue.trim()); }}
+                          onSubmitEditing={() => {
+                            if (editValue.trim()) handleSaveField(key, editValue.trim());
+                          }}
                         />
                         <TouchableOpacity
-                          style={[s.structuredSaveBtn, (!editValue.trim() || savingField) && { opacity: 0.5 }]}
-                          onPress={() => { if (editValue.trim()) handleSaveField(key, editValue.trim()); }}
+                          style={[
+                            s.structuredSaveBtn,
+                            (!editValue.trim() || savingField) && { opacity: 0.5 },
+                          ]}
+                          onPress={() => {
+                            if (editValue.trim()) handleSaveField(key, editValue.trim());
+                          }}
                           disabled={!editValue.trim() || savingField}
                         >
-                          {savingField ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={s.structuredSaveBtnText}>{st.save}</Text>}
+                          {savingField ? (
+                            <ActivityIndicator color="#FFF" size="small" />
+                          ) : (
+                            <Text style={s.structuredSaveBtnText}>{st.save}</Text>
+                          )}
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => setEditingField(null)} style={s.structuredCancelBtn}>
+                        <TouchableOpacity
+                          onPress={() => setEditingField(null)}
+                          style={s.structuredCancelBtn}
+                        >
                           <Text style={s.structuredCancelText}>{st.cancel}</Text>
                         </TouchableOpacity>
                       </View>
                     ) : (
                       <TouchableOpacity
                         style={s.structuredValueRow}
-                        onPress={() => { setEditingField(key); setEditValue(current); }}
+                        onPress={() => {
+                          setEditingField(key);
+                          setEditValue(current);
+                        }}
                       >
                         <Text style={[s.structuredValue, !current && s.structuredValueEmpty]}>
                           {current || placeholder}
@@ -449,10 +541,11 @@ export default function ProfileScreen() {
               onPress={handleSave}
               disabled={!newText.trim() || saving}
             >
-              {saving
-                ? <ActivityIndicator color={T.colors.white} size="small" />
-                : <Text style={s.saveBtnText}>{st.save}</Text>
-              }
+              {saving ? (
+                <ActivityIndicator color={T.colors.white} size="small" />
+              ) : (
+                <Text style={s.saveBtnText}>{st.save}</Text>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -480,9 +573,7 @@ export default function ProfileScreen() {
                   <View key={m.id} style={s.memCard}>
                     <Text style={s.memText}>{memoryText(m)}</Text>
                     {m.created_at && (
-                      <Text style={s.memDate}>
-                        {new Date(m.created_at).toLocaleDateString()}
-                      </Text>
+                      <Text style={s.memDate}>{new Date(m.created_at).toLocaleDateString()}</Text>
                     )}
                   </View>
                 ))}
@@ -741,7 +832,7 @@ const s = StyleSheet.create({
   structuredValue: {
     fontSize: 14,
     color: T.colors.navy,
-    fontFamily: T.fonts.medium,
+    fontFamily: T.fonts.semiBold,
     maxWidth: 160,
   },
   structuredValueEmpty: {
@@ -767,14 +858,14 @@ const s = StyleSheet.create({
     color: T.colors.navy,
     fontFamily: T.fonts.regular,
     borderWidth: 1,
-    borderColor: T.colors.accent,
+    borderColor: T.colors.purple,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
     backgroundColor: T.colors.white,
   },
   structuredSaveBtn: {
-    backgroundColor: T.colors.accent,
+    backgroundColor: T.colors.purple,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 7,
