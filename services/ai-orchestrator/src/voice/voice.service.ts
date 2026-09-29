@@ -173,6 +173,12 @@ export class VoiceService {
       ...(userCtx.todayTasks.length ? [`TODAY_TASKS: ${userCtx.todayTasks.slice(0, 3).join('; ')}`] : []),
       ...(userCtx.upcomingEvents.length ? [`UPCOMING_EVENTS: ${userCtx.upcomingEvents.slice(0, 3).join('; ')}`] : []),
       ...(userCtx.pendingApprovals > 0 ? [`PENDING_APPROVALS: ${userCtx.pendingApprovals}`] : []),
+      // ── Structured profile — Susana's Vision / Enzo pattern ──
+      ...(userCtx.profilePrefs?.faith_preference ? [`FAITH: ${userCtx.profilePrefs.faith_preference}`] : []),
+      ...(userCtx.profilePrefs?.house_routine_status ? [`HOUSE_ROUTINE: ${userCtx.profilePrefs.house_routine_status}`] : []),
+      ...(userCtx.profilePrefs?.daily_anchors ? [`DAILY_ANCHORS: ${userCtx.profilePrefs.daily_anchors}`] : []),
+      ...(userCtx.profilePrefs?.morning_meeting_time ? [`MORNING_MEETING_TIME: ${userCtx.profilePrefs.morning_meeting_time}`] : []),
+      ...(userCtx.profilePrefs?.children ? [`CHILDREN: ${userCtx.profilePrefs.children}`] : []),
     ].join('\n');
 
     // Conversation history — gives Claude context of the current voice session.
@@ -1766,8 +1772,26 @@ export class VoiceService {
         const key = String(slots.key || '').trim();
         const value = String(slots.value || '').trim();
         if (!key || !value) return { ok: false, fallback_text: lang === 'es' ? '¿Qué preferencia quieres guardar?' : 'What preference should I remember?' };
-        const res = await axios.post(`${apiBaseUrl.replace(/\/+$/, '')}/v1/memories/save`, { content: `${key}: ${value}`, category: 'preference' }, { headers });
-        return { ok: true, provider: 'api', endpoint: '/v1/memories/save', data: res.data };
+
+        // Structured profile fields go to DB preferences JSONB — Leeloo can read them back on every turn
+        const STRUCTURED_KEYS = [
+          'faith_preference', 'house_routine_status', 'daily_anchors',
+          'morning_meeting_time', 'children', 'timezone',
+        ];
+        if (STRUCTURED_KEYS.includes(key)) {
+          await axios.patch(
+            `${apiBaseUrl.replace(/\/+$/, '')}/v1/profiles/me`,
+            { [key]: value },
+            { headers },
+          );
+        }
+        // Always also save to memories for semantic search / history
+        const res = await axios.post(
+          `${apiBaseUrl.replace(/\/+$/, '')}/v1/memories/save`,
+          { content: `${key}: ${value}`, category: 'preference' },
+          { headers },
+        );
+        return { ok: true, provider: 'api', endpoint: '/v1/profiles/me', data: res.data };
       }
 
       if (intent === 'add_to_shopping_list') {

@@ -86,6 +86,17 @@ export class ProfilesController {
       patch.profile_basics = body.profile_basics;
     }
 
+    // Structured Susana's Vision fields — sent top-level by orchestrator's update_profile intent
+    const SUSANA_FIELDS = [
+      'faith_preference', 'house_routine_status', 'daily_anchors',
+      'morning_meeting_time', 'children',
+    ] as const;
+    for (const f of SUSANA_FIELDS) {
+      if (f in body && (body as any)[f] !== undefined) {
+        patch[f] = String((body as any)[f]).trim();
+      }
+    }
+
     const ALLOWED_PERSONALITIES = [
       'default',
       'christian',
