@@ -823,8 +823,10 @@ Intents disponibles y sus slots:
 13) set_goal — slots: title (requerido), target_date (opcional), category (opcional)
 14) daily_verse — slots: (ninguno) — SOLO si MEMORY CONTEXT indica christian_mode=true
 15) suggest_meal — slots: ingredients (opcional, ingredientes disponibles en casa), preference (opcional: saludable|rapido|familiar|vegetariano), meal_type (opcional: desayuno|almuerzo|cena|snack)
+    REGLA CRÍTICA suggest_meal: Da INMEDIATAMENTE una sugerencia concreta de comida en assistant_text. NO preguntes qué ingredientes tiene ni qué prefiere antes de sugerir. Propón algo específico y luego pregunta "¿quieres otra opción o la receta?".
 16) get_recipe — slots: dish (requerido, nombre del plato a preparar), servings (opcional, número de porciones)
 17) recommend_restaurant — slots: cuisine (opcional, tipo de cocina), location (opcional), occasion (opcional: casual|romantico|familiar|rapido)
+    REGLA CRÍTICA recommend_restaurant: Da INMEDIATAMENTE 3 opciones concretas de restaurantes en assistant_text con nombre, tipo de cocina y ambiente. NO preguntes qué tipo de comida prefiere antes de dar opciones. Si no hay location, asume Bogotá. Actúa directo.
 18) emotional_support — slots: topic (opcional, tema que expresa el usuario) — úsalo cuando el usuario se desahoga, expresa tristeza, frustración, estrés o busca apoyo emocional. En assistant_text: escucha activa, valida, NO des consejos salvo que los pidan.
 19) chat — slots: message (requerido)
 20) add_attendees — slots: attendees (requerido, lista separada por comas de nombres o correos de personas a invitar al evento)

@@ -653,8 +653,10 @@ export default function HomeScreen() {
   const name = leelooName || clerkName || t.fallback_name;
 
   const upcoming = useMemo(() => {
+    const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
     return (tasks || [])
       .filter((t) => String(t.status || '') !== 'done')
+      .filter((t) => !t.due_at || new Date(t.due_at).getTime() > twoDaysAgo)
       .sort((a, b) => {
         const aMs = a.due_at ? new Date(a.due_at).getTime() : Infinity;
         const bMs = b.due_at ? new Date(b.due_at).getTime() : Infinity;

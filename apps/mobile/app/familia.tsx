@@ -4,6 +4,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  FlatList,
   TextInput,
   Modal,
   Alert,
@@ -14,7 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useFocusEffect } from 'expo-router';
 import * as Contacts from 'expo-contacts';
 import { familyAPI, tasksAPI } from '@/lib/api';
@@ -262,6 +263,15 @@ export default function FamiliaScreen() {
   const [sending, setSending] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [prefill, setPrefill] = useState<Partial<FamilyMember> | null>(null);
+  const [showContactPicker, setShowContactPicker] = useState(false);
+  const [allContacts, setAllContacts] = useState<Contacts.Contact[]>([]);
+  const [contactSearch, setContactSearch] = useState('');
+
+  const filteredContacts = useMemo(() => {
+    if (!contactSearch.trim()) return allContacts;
+    const q = contactSearch.toLowerCase();
+    return allContacts.filter((c) => c.name?.toLowerCase().includes(q));
+  }, [allContacts, contactSearch]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -304,22 +314,9 @@ export default function FamiliaScreen() {
       sort: Contacts.SortTypes.FirstName,
     });
     if (!data.length) return;
-
-    // Show picker alert — simple list of first 20 contacts with phone/email
-    const candidates = data.filter((c) => c.name).slice(0, 20);
-
-    Alert.alert(t.contactsPick, '', [
-      ...candidates.map((c) => ({
-        text: c.name!,
-        onPress: () => {
-          const phone = c.phoneNumbers?.[0]?.number ?? '';
-          const email = c.emails?.[0]?.email ?? '';
-          setPrefill({ name: c.name!, whatsapp: phone, email });
-          setShowAdd(true);
-        },
-      })),
-      { text: t.cancel, style: 'cancel' },
-    ]);
+    setAllContacts(data.filter((c) => c.name));
+    setContactSearch('');
+    setShowContactPicker(true);
   };
 
   const handleSendMessage = async () => {
@@ -813,6 +810,56 @@ function AddMemberModal({
         </ScrollView>
       </KeyboardAvoidingView>
     </Modal>
+
+    {/* ── Contact Picker Modal ── */}
+    <Modal
+      visible={showContactPicker}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setShowContactPicker(false)}
+    >
+      <View style={s.contactPickerOverlay}>
+        <View style={s.contactPickerModal}>
+          <Text style={s.contactPickerTitle}>{t.contactsPick}</Text>
+          <TextInput
+            style={s.contactSearchInput}
+            placeholder={lang === 'en' ? 'Search by name...' : lang === 'pt' ? 'Buscar por nome...' : lang === 'fr' ? 'Rechercher par nom...' : 'Buscar por nombre...'}
+            placeholderTextColor={T.colors.muted}
+            value={contactSearch}
+            onChangeText={setContactSearch}
+            autoFocus
+          />
+          <FlatList
+            data={filteredContacts}
+            keyExtractor={(item, i) => item.id ?? String(i)}
+            style={{ maxHeight: 400 }}
+            ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: T.colors.border }} />}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={s.contactItem}
+                onPress={() => {
+                  const phone = item.phoneNumbers?.[0]?.number ?? '';
+                  const email = item.emails?.[0]?.email ?? '';
+                  setPrefill({ name: item.name!, whatsapp: phone, email });
+                  setShowContactPicker(false);
+                  setShowAdd(true);
+                }}
+              >
+                <Text style={s.contactItemName}>{item.name}</Text>
+                {(item.phoneNumbers?.[0]?.number || item.emails?.[0]?.email) && (
+                  <Text style={s.contactItemSub}>
+                    {item.phoneNumbers?.[0]?.number || item.emails?.[0]?.email}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            )}
+          />
+          <TouchableOpacity style={s.contactPickerCancelBtn} onPress={() => setShowContactPicker(false)}>
+            <Text style={s.contactPickerCancelText}>{t.cancel}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1101,4 +1148,64 @@ const s = StyleSheet.create({
   roleChipActive: { borderColor: T.colors.purple, backgroundColor: '#F0EDFF' },
   roleChipText: { fontSize: 13, color: T.colors.muted, fontFamily: T.fonts.semiBold },
   roleChipTextActive: { color: T.colors.purple },
+  // Contact picker
+  contactPickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  contactPickerModal: {
+    backgroundColor: T.colors.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 32,
+    maxHeight: '80%',
+  },
+  contactPickerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    fontFamily: T.fonts.bold,
+    color: T.colors.navy,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  contactSearchInput: {
+    backgroundColor: '#F3F3F7',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    fontFamily: T.fonts.regular,
+    color: T.colors.navy,
+    marginBottom: 8,
+  },
+  contactItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+  },
+  contactItemName: {
+    fontSize: 15,
+    fontFamily: T.fonts.semiBold,
+    color: T.colors.navy,
+  },
+  contactItemSub: {
+    fontSize: 12,
+    color: T.colors.muted,
+    fontFamily: T.fonts.regular,
+    marginTop: 2,
+  },
+  contactPickerCancelBtn: {
+    marginTop: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: T.colors.border,
+  },
+  contactPickerCancelText: {
+    fontSize: 15,
+    color: T.colors.muted,
+    fontFamily: T.fonts.semiBold,
+  },
 });
