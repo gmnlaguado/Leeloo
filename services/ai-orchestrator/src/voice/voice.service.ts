@@ -1798,7 +1798,12 @@ export class VoiceService {
         if (!role) return { ok: false, fallback_text: lang === 'es' ? '¿Cuál es su relación contigo?' : 'What is their relationship to you?' };
         const res = await axios.post(
           `${apiBaseUrl.replace(/\/+$/, '')}/v1/family/members`,
-          { name, role, age: slots.age ? Number(slots.age) : undefined },
+          {
+            name,
+            role,
+            age: slots.age ? Number(slots.age) : undefined,
+            whatsapp: slots.whatsapp ? String(slots.whatsapp).trim() : undefined,
+          },
           { headers },
         );
         return { ok: true, provider: 'api', endpoint: '/v1/family/members', data: res.data };
