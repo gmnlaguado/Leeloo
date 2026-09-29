@@ -123,13 +123,13 @@ export class VoiceService {
       }),
       Promise.race([
         this.openAiQueue.fetchUserContext(input.userId),
-        new Promise<{ todayTasks: string[]; upcomingEvents: string[]; pendingApprovals: number }>(
+        new Promise<{ todayTasks: string[]; upcomingEvents: string[]; pendingApprovals: number; profilePrefs: Record<string, string> }>(
           (resolve) => setTimeout(() => {
             this.logger.warn(`[PIPE] userCtx timeout after 9s — skipping`);
-            resolve({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 });
+            resolve({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0, profilePrefs: {} as Record<string, string> });
           }, 9_000),
         ),
-      ]).catch(() => ({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0 })),
+      ]).catch(() => ({ todayTasks: [], upcomingEvents: [], pendingApprovals: 0, profilePrefs: {} as Record<string, string> })),
     ]);
     this.logger.log(`[PIPE] memory+userCtx done +${ms()}ms — mem=${String(memories).length}chars`);
 
