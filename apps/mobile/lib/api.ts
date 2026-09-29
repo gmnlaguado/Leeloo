@@ -534,6 +534,10 @@ export const contactsAPI = {
 
 export const familyAPI = {
   list: async () => api.get('/family/members'),
+  add: async (data: { name: string; role: string; age?: number; whatsapp?: string; email?: string }) =>
+    api.post('/family/members', data),
+  message: async (memberId: string, text: string) =>
+    api.post('/family/message', { member_id: memberId, text }),
 };
 
 export const weatherAPI = {

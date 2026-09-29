@@ -19,6 +19,7 @@ export class FamilyService implements OnModuleInit {
         role text NOT NULL,
         age int NULL,
         whatsapp text NULL,
+        email text NULL,
         school_email_domain text NULL,
         notes text NULL,
         created_at timestamptz DEFAULT NOW()
@@ -32,12 +33,12 @@ export class FamilyService implements OnModuleInit {
     return p.id;
   }
 
-  async addMember(clerkUserId: string, data: { name: string; role: string; age?: number; whatsapp?: string }) {
+  async addMember(clerkUserId: string, data: { name: string; role: string; age?: number; whatsapp?: string; email?: string }) {
     const profileId = await this.getProfileId(clerkUserId);
     const res = await this.db.query(
-      `INSERT INTO family_members (id, user_id, name, role, age, whatsapp)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [randomUUID(), profileId, data.name, data.role, data.age ?? null, data.whatsapp ?? null],
+      `INSERT INTO family_members (id, user_id, name, role, age, whatsapp, email)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [randomUUID(), profileId, data.name, data.role, data.age ?? null, data.whatsapp ?? null, data.email ?? null],
     );
     return res.rows[0];
   }

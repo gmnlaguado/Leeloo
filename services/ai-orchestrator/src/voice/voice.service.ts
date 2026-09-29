@@ -1803,6 +1803,7 @@ export class VoiceService {
             role,
             age: slots.age ? Number(slots.age) : undefined,
             whatsapp: slots.whatsapp ? String(slots.whatsapp).trim() : undefined,
+            email: slots.email ? String(slots.email).trim() : undefined,
           },
           { headers },
         );

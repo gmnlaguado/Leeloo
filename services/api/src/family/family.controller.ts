@@ -16,7 +16,7 @@ export class FamilyController {
   @ApiOperation({ summary: 'Add a family member' })
   async add(
     @Req() req: AuthedRequest,
-    @Body() body: { name: string; role: string; age?: number; whatsapp?: string },
+    @Body() body: { name: string; role: string; age?: number; whatsapp?: string; email?: string },
   ) {
     const userId = req.user?.id;
     if (!userId) return { ok: false, error: 'Unauthenticated' };

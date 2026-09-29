@@ -864,8 +864,8 @@ Intents disponibles y sus slots:
     assistant_text: confirma qué se agregó y a qué tienda. needs_confirmation: false.
 28) view_shopping_list — slots: store (opcional: amazon|walmart|instacart|general — si no se especifica, muestra todo)
     Úsalo cuando el usuario quiere ver su lista: "¿qué tengo en mi lista de Walmart?", "show my shopping list".
-29) add_family_member — slots: name (requerido), role (requerido: hijo|hija|esposo|esposa|madre|padre|hermano|hermana|otro), age (opcional), whatsapp (opcional: número con código de país, ej. +57 300 000 0000)
-    Úsalo cuando el usuario quiere agregar un miembro de familia: "agrega a mi hijo Carlos de 8 años", "add my daughter Sofia, her WhatsApp is +1 305 000 0000", "agrega a mi esposo Renzo, su WhatsApp es +57 310...".
+29) add_family_member — slots: name (requerido), role (requerido: hijo|hija|esposo|esposa|madre|padre|hermano|hermana|otro), age (opcional), whatsapp (opcional: número con código de país, ej. +57 300 000 0000), email (opcional: correo electrónico)
+    Úsalo cuando el usuario quiere agregar un miembro de familia: "agrega a mi hijo Carlos de 8 años", "add my daughter Sofia, her WhatsApp is +1 305 000 0000, her email is sofia@gmail.com", "agrega a mi esposo Renzo, su correo es renzo@gmail.com".
 30) assign_to_family_member — slots: member_name (requerido), task_title (requerido), due_at (opcional)
     Úsalo para asignar tareas o recordatorios a un miembro de la familia: "recuérdale a Carlos que tiene tarea de matemáticas mañana".
 31) school_email_check — slots: member_name (opcional, si se especifica hijo/a) — escanea Gmail buscando emails de maestros o del colegio.
