@@ -85,34 +85,41 @@ export class MorningBriefingJob implements OnModuleInit, OnModuleDestroy {
       this.db.getPendingTasksLimited(data.userId, 3),
     ]);
 
-    const greetingLines: string[] = ['¡Buenos días! ☀️ Aquí tu resumen del día:'];
+    // Build a warm, human morning greeting — not a task list dump
+    const hour = new Date().getHours();
+    const greetingOpeners = [
+      '¡Buenos días! ☀️ Aquí estoy.',
+      '¡Buenos días! Ya estoy lista para el día.',
+      '¡Hola! ¿Cómo amaneciste? 🌅',
+    ];
+    const opener = greetingOpeners[hour % greetingOpeners.length];
+
+    const greetingLines: string[] = [opener];
 
     if (events.length > 0) {
-      greetingLines.push('📅 Hoy:');
-      for (const ev of events) {
-        const time = ev.start_at
-          ? new Date(ev.start_at).toLocaleTimeString('es-ES', {
-              hour: '2-digit',
-              minute: '2-digit',
-            })
-          : '';
-        greetingLines.push(`  • ${time ? `${time} — ` : ''}${ev.title}`);
+      const firstEvent = events[0];
+      const time = firstEvent.start_at
+        ? new Date(firstEvent.start_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+        : '';
+      if (events.length === 1) {
+        greetingLines.push(`📅 Hoy tienes ${time ? `a las ${time}: ` : ''}${firstEvent.title}.`);
+      } else {
+        greetingLines.push(`📅 Hoy tienes ${events.length} cosas en el calendario. La primera: ${time ? `${time} — ` : ''}${firstEvent.title}.`);
       }
     } else {
-      greetingLines.push('📅 No tienes eventos hoy.');
+      greetingLines.push('📅 Tienes el día libre hoy — úsalo bien.');
     }
 
     if (pendingTasks.length > 0) {
-      greetingLines.push(
-        `✅ Pendientes: ${pendingTasks.map((t) => t.title).join(', ')}`,
-      );
+      const firstTask = pendingTasks[0].title;
+      greetingLines.push(`✅ Una cosa clave de hoy: ${firstTask}.`);
     }
 
-    greetingLines.push('Estoy aquí cuando me necesites. ¡Que tengas un día increíble! 💪');
+    greetingLines.push('Toca aquí para tu Morning Meeting conmigo. 💬');
 
     await this.notifications.enqueue({
       userId: data.userId,
-      title: '¡Buenos días! Leeloo aquí 👋',
+      title: '¡Buenos días! ☀️ Leeloo aquí',
       body: greetingLines.join('\n'),
       data: { type: 'morning_briefing', triggeredAt: data.triggeredAt },
       sound: 'default',

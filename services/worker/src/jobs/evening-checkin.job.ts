@@ -72,14 +72,23 @@ export class EveningCheckinJob implements OnModuleInit, OnModuleDestroy {
     const completedTasks = await this.db.getCompletedTasksToday(data.userId, startOfDay, endOfDay);
     const pendingTasks = await this.db.getPendingTasksLimited(data.userId, 3);
 
+    // MBS-aware evening check-in — celebrate + reflect + rest
+    const mbsCheckins = [
+      '¿Comiste bien hoy? Tu cuerpo necesita combustible para mañana. 🥗',
+      '¿Hiciste algo de movimiento hoy? Aunque sea pequeño, cuenta. 💪',
+      'Antes de dormir: 3 cosas por las que estás agradecida hoy. 🙏',
+    ];
+    const mbsLine = mbsCheckins[new Date().getDate() % mbsCheckins.length];
+
     const messages = [
       '¡Buenas noches! 🌙',
       completedTasks.length > 0
-        ? `Hoy completaste ${completedTasks.length} tarea${completedTasks.length !== 1 ? 's' : ''}. ¡Bien hecho! 🎯`
-        : 'Espero que hayas tenido un buen día. ✨',
+        ? `Hoy completaste ${completedTasks.length} tarea${completedTasks.length !== 1 ? 's' : ''}. Cada cosa que hiciste hoy te acercó un paso más. 🎯`
+        : 'Espero que hayas tenido un buen día. Los días de descanso también construyen. ✨',
       pendingTasks.length > 0
-        ? `Para mañana tienes: ${pendingTasks.slice(0, 2).map((t) => t.title).join(', ')}.`
-        : 'No tienes pendientes para mañana. Descansa bien. 😊',
+        ? `Para mañana tienes: ${pendingTasks.slice(0, 2).map((t: any) => t.title).join(', ')}.`
+        : 'No tienes pendientes urgentes para mañana. Descansa sin culpa. 😊',
+      mbsLine,
       'Estoy aquí si necesitas algo antes de dormir.',
     ];
 
