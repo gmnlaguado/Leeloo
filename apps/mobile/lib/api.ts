@@ -514,6 +514,15 @@ export const profilesAPI = {
   }) => {
     return api.patch('/profiles/me', updates satisfies RequestBody);
   },
+  updateStructured: async (fields: {
+    faith_preference?: string;
+    house_routine_status?: string;
+    daily_anchors?: string;
+    morning_meeting_time?: string;
+    children?: string;
+  }) => {
+    return api.patch('/profiles/me', fields satisfies RequestBody);
+  },
 };
 
 export const memoriesAPI = {
