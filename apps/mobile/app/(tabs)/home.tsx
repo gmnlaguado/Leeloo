@@ -698,6 +698,33 @@ export default function HomeScreen() {
             onPress={() => router.push('/(tabs)/dashboard?tab=approvals')}
           />
 
+          {/* ── MORNING MEETING CARD (visible before noon) ──────── */}
+          {new Date().getHours() < 12 && (
+            <TouchableOpacity
+              onPress={() => sendText(language === 'en' ? 'good morning' : 'buenos días')}
+              activeOpacity={0.85}
+              style={styles.morningMeetingCard}
+            >
+              <LinearGradient
+                colors={['#F07040', '#C4507A', '#8375FA']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.morningMeetingGradient}
+              >
+                <Text style={styles.morningMeetingEmoji}>☀️</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.morningMeetingTitle}>
+                    {language === 'en' ? 'Start your Morning Meeting' : language === 'pt' ? 'Iniciar seu Morning Meeting' : language === 'fr' ? 'Démarrer votre Morning Meeting' : 'Iniciar tu Morning Meeting'}
+                  </Text>
+                  <Text style={styles.morningMeetingSubtitle}>
+                    {language === 'en' ? 'Leeloo listens first — no interrogation' : language === 'pt' ? 'Leeloo escuta primeiro — sem interrogatório' : language === 'fr' ? 'Leeloo écoute d\'abord' : 'Leeloo escucha primero — sin interrogatorio'}
+                  </Text>
+                </View>
+                <Text style={styles.morningMeetingArrow}>›</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+
           {/* ── PERSONALITY WIDGET ────────────────────── */}
           <PersonalityWidget personality={personality} verseText={verseText} userName={name} language={language} />
 
@@ -853,6 +880,41 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 6,
     elevation: 3,
+  },
+  morningMeetingCard: {
+    borderRadius: T.radius.lg,
+    overflow: 'hidden',
+    marginBottom: 12,
+    shadowColor: '#F07040',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  morningMeetingGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  morningMeetingEmoji: { fontSize: 28 },
+  morningMeetingTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    fontFamily: T.fonts.bold,
+  },
+  morningMeetingSubtitle: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    fontFamily: T.fonts.regular,
+    marginTop: 2,
+  },
+  morningMeetingArrow: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 24,
+    fontWeight: '300',
   },
   greetCard: {
     borderRadius: T.radius.lg,

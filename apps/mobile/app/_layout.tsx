@@ -312,6 +312,25 @@ function ClerkBridge({ children }: { children: React.ReactNode }) {
       const speakText = typeof data?.speak_text === 'string' ? data.speak_text : null;
       const n = getNotif();
 
+      // Morning Meeting tap — trigger the morning_meeting voice intent directly
+      if (action === Notifications.DEFAULT_ACTION_IDENTIFIER && data?.type === 'morning_briefing') {
+        pauseWakeWord();
+        const greeting = n.speech_lang?.startsWith('en') ? 'good morning' : 'buenos días';
+        Speech.speak(n.speech_lang?.startsWith('en') ? 'Starting your Morning Meeting...' : 'Iniciando tu Morning Meeting...', {
+          language: n.speech_lang,
+          rate: 0.95,
+          onDone: () => {
+            resumeWakeWord();
+            setTimeout(() => {
+              void useVoiceStore.getState().sendText?.(greeting);
+            }, 400);
+          },
+          onStopped: () => resumeWakeWord(),
+          onError: () => resumeWakeWord(),
+        });
+        return;
+      }
+
       // Default tap: user taps the notification body — speak and open mic
       if (action === Notifications.DEFAULT_ACTION_IDENTIFIER && speakText) {
         pauseWakeWord();
