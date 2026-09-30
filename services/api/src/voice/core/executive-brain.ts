@@ -101,6 +101,29 @@ export class ExecutiveBrain {
     const hasAny = (haystack: string, phrases: string[]) =>
       phrases.some((p) => haystack.includes(normalize(p)));
 
+    // ── read_inbox — MUST run before email check to prevent "correos"/"emails" triggering send_email ──
+    const isInboxHeuristic =
+      /\b(correos?\s*(sin\s*leer|de\s*hoy|nuevos?|que\s*tengo)|mis\s*correos?\b)/i.test(s) ||
+      /\b(qu[eé]?\s+correos?\s+tengo|tengo\s+correos?\s+nuevos?)\b/i.test(s) ||
+      /\b(que\s+)?correos?\s+(sin\s+leer|nuevos?|tengo)\b/i.test(s) ||
+      /\b(check\s+(my\s+)?emails?|read\s+(my\s+)?emails?|inbox)\b/i.test(s) ||
+      /\b(emails?\s*(unread|today|new|i\s+have|do\s+i\s+have))\b/i.test(s) ||
+      /\b(e.?mails?\s+(sem\s+leitura|de\s+hoje|novos?)|verificar\s+e.?mails?)\b/i.test(s) ||
+      /\b(mails?\s+(non\s+lus?|d.aujourd|nouveaux)|voir\s+(mes\s+)?mails?)\b/i.test(s);
+    if (isInboxHeuristic) {
+      return {
+        intent: 'read_inbox',
+        language: null,
+        confidence: 0.85,
+        required_slots: [],
+        filled_slots: {},
+        missing_slots: [],
+        next_question: '',
+        priority: 'medium',
+        intent_source: 'heuristic',
+      };
+    }
+
     // Check email FIRST — "saying hello" / "says meeting" would otherwise trigger greeting/meeting
     const emailRegexEarly = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
     const hasEmailAddress = emailRegexEarly.test(raw);

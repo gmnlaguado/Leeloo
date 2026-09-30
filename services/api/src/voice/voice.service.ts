@@ -4250,6 +4250,13 @@ export class VoiceService {
         if (primary && typeof primary === 'object') {
           (primary as any).intent_source = 'llm';
         }
+        // If LLM returned "query" (low-confidence fallback), give deterministic a chance to override
+        if (primary && (primary as any).intent === 'query') {
+          const deterministicOverride = this.inferDeterministicIntent(text, language);
+          if (deterministicOverride && deterministicOverride.intent !== 'query') {
+            return deterministicOverride as any;
+          }
+        }
         return primary;
       } catch (err) {
         console.error('[LeelooApi] voice.llm.intent.error', {
@@ -4293,6 +4300,12 @@ export class VoiceService {
             if (secondary && typeof secondary === 'object') {
               (secondary as any).intent_source = 'llm';
             }
+            if (secondary && (secondary as any).intent === 'query') {
+              const deterministicOverride = this.inferDeterministicIntent(text, language);
+              if (deterministicOverride && deterministicOverride.intent !== 'query') {
+                return deterministicOverride as any;
+              }
+            }
             return secondary;
           } catch (err2) {
             console.error('[LeelooApi] voice.llm.intent.fallback.error', {
@@ -4321,6 +4334,9 @@ export class VoiceService {
       console.error('[LeelooApi] voice.llm.intent.error', {
         ...this.axiosErrorSummary(err),
       });
+      const deterministicOnError = this.inferDeterministicIntent(text, language);
+      if (deterministicOnError) return deterministicOnError as any;
+
       if (channel === 'VOICE') {
         return {
           intent: 'query',
