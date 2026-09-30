@@ -148,10 +148,11 @@ export class VoiceService {
       let s = String(input || '');
 
       s = s
-        .replace(/\b(arroba|aroba|at)\b/gi, '@')
+        .replace(/\b(arroba|aroba)\b/gi, '@')
         .replace(/\b(punto|dot)\b/gi, '.')
         .replace(/\b(guion\s*bajo|guionbajo|underscore)\b/gi, '_')
         .replace(/\b(guion|dash|hyphen)\b/gi, '-')
+        .replace(/([A-Za-z0-9][A-Za-z0-9._-]*)\s+at\s+([A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z]{2,})/g, '$1@$2')
         .replace(/\s+@\s+/g, '@')
         .replace(/\s+\.\s+/g, '.')
         .replace(/\s+_\s+/g, '_')
@@ -1373,10 +1374,11 @@ export class VoiceService {
       let s = String(input || '');
 
       s = s
-        .replace(/\b(arroba|aroba|at)\b/gi, '@')
+        .replace(/\b(arroba|aroba)\b/gi, '@')
         .replace(/\b(punto|dot)\b/gi, '.')
         .replace(/\b(guion\s*bajo|guionbajo|underscore)\b/gi, '_')
         .replace(/\b(guion|dash|hyphen)\b/gi, '-')
+        .replace(/([A-Za-z0-9][A-Za-z0-9._-]*)\s+at\s+([A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z]{2,})/g, '$1@$2')
         .replace(/\s+@\s+/g, '@')
         .replace(/\s+\.\s+/g, '.')
         .replace(/\s+_\s+/g, '_')
