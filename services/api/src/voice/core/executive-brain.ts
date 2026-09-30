@@ -384,11 +384,15 @@ export class ExecutiveBrain {
 
     const isTaskIntent = hasAny(s, [
       'create task',
+      'create a task',
+      'add a task',
       'add task',
       'new task',
       'tarea',
       'crear tarea',
       'agrega una tarea',
+      'cria uma tarefa',
+      'creer une tache',
     ]);
     if (isTaskIntent) {
       const title = (() => {

@@ -187,6 +187,30 @@ export class VoiceService {
         .trim();
 
     const raw = stripPrefixes(rawInput);
+
+    // ── Greeting: short phrase with only a greeting word (+ optional "Leeloo") ──
+    const lowerRaw = normalize(rawInput); // rawInput before stripping "leeloo"
+    const greetWords = ['hola', 'holi', 'buenas', 'hello', 'hey', 'hi', 'ola', 'bonjour', 'bonsoir', 'bom dia', 'boa tarde', 'boa noite', 'salut'];
+    const isShortGreeting =
+      lowerRaw.split(' ').length <= 4 &&
+      greetWords.some(g => {
+        const ng = normalize(g);
+        return lowerRaw === ng || lowerRaw.startsWith(ng + ' ') || lowerRaw.endsWith(' ' + ng);
+      });
+    if (isShortGreeting) {
+      return {
+        intent: 'greeting',
+        language: null,
+        confidence: 0.7,
+        required_slots: [],
+        filled_slots: {},
+        missing_slots: [],
+        next_question: '',
+        priority: 'low',
+        intent_source: 'deterministic',
+      };
+    }
+
     if (!raw) return null;
 
     const lower = normalize(raw);
@@ -468,6 +492,29 @@ export class VoiceService {
     const emailMatch = raw.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
     const hasEmail = Boolean(emailMatch && emailMatch[0]);
 
+    // ── read_inbox check BEFORE email — "correos" / "emails" would otherwise trigger send_email ──
+    const isInboxQuery =
+      /\b(correos?\s*(sin\s*leer|de\s*hoy|nuevos?|que\s*tengo)|mis\s*correos?\b)/i.test(lower) ||
+      /\b(qu[eé]\s+correos?\s+tengo|tengo\s+correos?\s+nuevos?)\b/i.test(lower) ||
+      /\b(emails?\s*(unread|today|new|i\s+have|do\s+i\s+have)|check\s+(my\s+)?emails?|read\s+(my\s+)?emails?|inbox)\b/i.test(lower) ||
+      /\b(e.mails?\s+(sem\s+leitura|de\s+hoje|novos?)|verificar\s+e.mails?)\b/i.test(lower) ||
+      /\b(mails?\s+(non\s+lus?|d.aujourd|nouveaux)|voir\s+(mes\s+)?mails?)\b/i.test(lower) ||
+      /\b(que\s+)?correos?\s+(sin\s+leer|nuevos?|tengo)\b/i.test(lower);
+
+    if (isInboxQuery) {
+      return {
+        intent: 'read_inbox',
+        language: null,
+        confidence: 0.85,
+        required_slots: [],
+        filled_slots: {},
+        missing_slots: [],
+        next_question: '',
+        priority: 'medium',
+        intent_source: 'deterministic',
+      };
+    }
+
     const wantsEmail =
       /\b(send|email|mail)\b/i.test(lower) || /\b(enviar|correo|mail)\b/i.test(lower) || hasEmail;
 
@@ -714,8 +761,10 @@ export class VoiceService {
       /\b(o\s+que\s+(eu\s+)?(como|preparo)|sugest[aã]o\s+de\s+refei[cç][aã]o)\b/i.test(lower) ||
       /\b(qu'est.ce\s+que\s+je\s+(mange|pr[eé]pare))\b/i.test(lower) ||
       /\bquest.ce\s+que\s+je\s+(mange|prepare)\b/i.test(lower) ||
+      /\bqu\s+est\s+ce\s+que\s+je\s+(mange|prepare)\b/i.test(lower) ||
       /\bje\s+(mange|mangerai)\s+quoi\b/i.test(lower) ||
-      /\bque\s+manger\s+(aujourd|ce\s+soir|ce\s+midi|demain)\b/i.test(lower);
+      /\bque\s+manger\s+(aujourd|ce\s+soir|ce\s+midi|demain)\b/i.test(lower) ||
+      /\bqu[ée]\s+(manger|preparer)\s+aujourd\b/i.test(lower);
 
     if (wantsMeal) {
       const mealType = /\b(desayuno|breakfast|petit.d[eé]jeuner|caf[eé]\s+da\s+manh[aã])\b/i.test(lower)
@@ -1345,6 +1394,8 @@ export class VoiceService {
 
     // ── CRISIS PROTOCOL — checked before ANY other logic ────────────────────
     // Safe messaging: validate, don't advise. Provide crisis lines. Never diagnose.
+    // NOTE: `language` (let) is declared later in this function — use userContext directly here.
+    const crisisLang = ((userContext?.language || 'es') as SupportedLanguage);
     const lower_crisis = cleanedText.toLowerCase();
     const isCrisis =
       /\b(suicid[io]|suicidarme|quitarme\s+la\s+vida|acabar\s+(con\s+)?mi\s+vida|no\s+quiero\s+vivir|quiero\s+morir|mejor\s+estar\s+muerto|me\s+voy\s+a\s+matar|hacerme\s+da[nñ]o|cortarme|lastimarme)\b/i.test(lower_crisis) ||
@@ -1359,13 +1410,14 @@ export class VoiceService {
         pt: `Obrigada por me contar isso. O que você está sentindo é real e merece atenção imediata.\n\nPor favor, ligue agora para uma linha de crise:\n• Brasil: 188 (CVV)\n• Portugal: 213 544 545\n\nEstou aqui com você. Você está em um lugar seguro agora?`,
         fr: `Merci de me faire confiance avec cela. Ce que vous ressentez est réel et mérite une attention immédiate.\n\nVeuillez contacter une ligne de crise maintenant:\n• France: 3114\n• Belgique: 0800 32 123\n• Suisse: 143\n\nJe suis là avec vous. Êtes-vous en sécurité en ce moment?`,
       };
-      const crisisText = crisisResponses[language] ?? crisisResponses['en'];
-      const audioUrl = await this.generateTTS(crisisText, language);
+      const crisisText = crisisResponses[crisisLang] ?? crisisResponses['en'];
+      const audioUrl = await this.generateTTS(crisisText, crisisLang);
       return {
+        transcription: cleanedText,
         response_text: crisisText,
         response_audio_url: audioUrl,
         intent: { intent: 'crisis_support', confidence: 1, intent_source: 'safety' },
-        language,
+        action_result: null,
       };
     }
 
