@@ -13,6 +13,8 @@ import { EmailService } from '../email/email.service';
 import { CalendarService } from '../calendar/calendar.service';
 import { HouseholdService } from '../household/household.service';
 import { ContactsService } from '../contacts/contacts.service';
+import { IntegrationsService } from '../integrations/integrations.service';
+import { GoogleGmailService } from '../integrations/google-gmail.service';
 import { buildLeelooUniversalPrompt } from './core/leeloo-core.prompt';
 import { detectEmotionHeuristic, emotionLeadSentence } from './core/emotion';
 import { computeConfidence, computeSlotConfidence } from './core/confidence';
@@ -755,6 +757,28 @@ export class VoiceService {
       };
     }
 
+    // read_inbox — user wants to hear their unread emails
+    const wantsInbox =
+      /\b(correos?\s*(sin\s*leer|de\s*hoy|nuevos?|que\s*tengo)|mis\s*correos?\b)/i.test(lower) ||
+      /\b(qu[eé]\s+correos?\s+tengo|tengo\s+correos?\s+nuevos?)\b/i.test(lower) ||
+      /\b(emails?\s*(unread|today|new|i\s+have|do\s+i\s+have)|check\s+(my\s+)?emails?|read\s+(my\s+)?emails?|inbox)\b/i.test(lower) ||
+      /\b(e.mails?\s+(sem\s+leitura|de\s+hoje|novos?)|verificar\s+e.mails?)\b/i.test(lower) ||
+      /\b(mails?\s+(non\s+lus?|d'aujourd|nouveaux)|voir\s+(mes\s+)?mails?)\b/i.test(lower);
+
+    if (wantsInbox) {
+      return {
+        intent: 'read_inbox',
+        language: null,
+        confidence: 0.85,
+        required_slots: [],
+        filled_slots: {},
+        missing_slots: [],
+        next_question: '',
+        priority: 'high',
+        intent_source: 'deterministic',
+      };
+    }
+
     return null;
   }
 
@@ -812,6 +836,8 @@ export class VoiceService {
     private calendarService: CalendarService,
     private householdService: HouseholdService,
     private contactsService: ContactsService,
+    private integrationsService: IntegrationsService,
+    private googleGmailService: GoogleGmailService,
   ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     this.openai = apiKey ? new OpenAI({ apiKey }) : null;
@@ -1317,6 +1343,32 @@ export class VoiceService {
     const input = normalizer.normalize(text || '');
     const cleanedText = normalizeEmailSpeech(input.cleaned);
 
+    // ── CRISIS PROTOCOL — checked before ANY other logic ────────────────────
+    // Safe messaging: validate, don't advise. Provide crisis lines. Never diagnose.
+    const lower_crisis = cleanedText.toLowerCase();
+    const isCrisis =
+      /\b(suicid[io]|suicidarme|quitarme\s+la\s+vida|acabar\s+(con\s+)?mi\s+vida|no\s+quiero\s+vivir|quiero\s+morir|mejor\s+estar\s+muerto|me\s+voy\s+a\s+matar|hacerme\s+da[nñ]o|cortarme|lastimarme)\b/i.test(lower_crisis) ||
+      /\b(kill\s+myself|end\s+my\s+life|don'?t\s+want\s+to\s+live|want\s+to\s+die|hurt\s+myself|self.?harm|suicidal|no\s+reason\s+to\s+live)\b/i.test(lower_crisis) ||
+      /\b(me\s+matar|vou\s+me\s+matar|n[aã]o\s+quero\s+viver|me\s+machucar|tirar\s+minha\s+vida)\b/i.test(lower_crisis) ||
+      /\b(me\s+tuer|envie\s+de\s+mourir|plus\s+envie\s+de\s+vivre|me\s+faire\s+du\s+mal)\b/i.test(lower_crisis);
+
+    if (isCrisis) {
+      const crisisResponses: Record<string, string> = {
+        es: `Gracias por confiarme esto. Lo que sientes es real y merece atención inmediata.\n\nPor favor llama ahora a una línea de crisis:\n• Colombia: 106 o 800-254-0085\n• Estados Unidos: 988\n• España: 024\n• México: 800-290-0024\n\nEstoy aquí contigo. ¿Estás en un lugar seguro ahora mismo?`,
+        en: `Thank you for trusting me with this. What you're feeling is real and deserves immediate attention.\n\nPlease reach out to a crisis line right now:\n• USA & Canada: 988 (call or text)\n• UK: 116 123 (Samaritans)\n• International: findahelpline.com\n\nI'm here with you. Are you in a safe place right now?`,
+        pt: `Obrigada por me contar isso. O que você está sentindo é real e merece atenção imediata.\n\nPor favor, ligue agora para uma linha de crise:\n• Brasil: 188 (CVV)\n• Portugal: 213 544 545\n\nEstou aqui com você. Você está em um lugar seguro agora?`,
+        fr: `Merci de me faire confiance avec cela. Ce que vous ressentez est réel et mérite une attention immédiate.\n\nVeuillez contacter une ligne de crise maintenant:\n• France: 3114\n• Belgique: 0800 32 123\n• Suisse: 143\n\nJe suis là avec vous. Êtes-vous en sécurité en ce moment?`,
+      };
+      const crisisText = crisisResponses[language] ?? crisisResponses['en'];
+      const audioUrl = await this.generateTTS(crisisText, language);
+      return {
+        response_text: crisisText,
+        response_audio_url: audioUrl,
+        intent: { intent: 'crisis_support', confidence: 1, intent_source: 'safety' },
+        language,
+      };
+    }
+
     const isValidEmail = (value: string) => {
       const s = String(value || '').trim();
       if (!s) return false;
@@ -1567,6 +1619,39 @@ export class VoiceService {
         return language === 'es'
           ? `Listo. Actualicé el evento${title ? `: "${title}"` : ''}.`
           : `Done. I updated the event${title ? `: "${title}"` : ''}.`;
+      }
+
+      if (i === 'read_inbox') {
+        if (!actionResult || actionResult.error === 'google_not_connected') {
+          return language === 'es'
+            ? 'Para leer tus correos necesito acceso a tu Gmail. Conéctalo en la configuración de Leeloo.'
+            : language === 'pt'
+              ? 'Para ler seus e-mails preciso de acesso ao seu Gmail. Conecte-o nas configurações do Leeloo.'
+              : language === 'fr'
+                ? "Pour lire vos e-mails j'ai besoin d'accès à votre Gmail. Connectez-le dans les paramètres."
+                : "To read your emails I need access to your Gmail. Connect it in Leeloo's settings.";
+        }
+        const msgs: any[] = actionResult.messages ?? [];
+        if (!msgs.length) {
+          return language === 'es'
+            ? 'No tienes correos sin leer de hoy. Tu bandeja está al día.'
+            : language === 'pt'
+              ? 'Você não tem e-mails não lidos de hoje. Sua caixa está em dia.'
+              : language === 'fr'
+                ? "Vous n'avez pas d'e-mails non lus d'aujourd'hui. Votre boîte est à jour."
+                : "You have no unread emails from today. Your inbox is all caught up.";
+        }
+        const count = msgs.length;
+        const summaryLines = msgs.slice(0, 5).map((m: any, idx: number) => {
+          const from = String(m.from || m.fromEmail || 'Unknown').replace(/<[^>]+>/g, '').trim();
+          const subject = String(m.subject || '(no subject)').trim();
+          return `${idx + 1}. ${from} — "${subject}"`;
+        });
+        const list = summaryLines.join('\n');
+        if (language === 'es') return `Tienes ${count} correo${count !== 1 ? 's' : ''} sin leer hoy:\n${list}\n\n¿Quieres que abra alguno o quieres responder alguno?`;
+        if (language === 'pt') return `Você tem ${count} e-mail${count !== 1 ? 's' : ''} não lido${count !== 1 ? 's' : ''} hoje:\n${list}\n\nQuer que eu abra algum ou quer responder?`;
+        if (language === 'fr') return `Vous avez ${count} e-mail${count !== 1 ? 's' : ''} non lu${count !== 1 ? 's' : ''} aujourd'hui:\n${list}\n\nVoulez-vous que j'en ouvre un ou voulez-vous répondre?`;
+        return `You have ${count} unread email${count !== 1 ? 's' : ''} today:\n${list}\n\nWould you like me to open one or reply to any of them?`;
       }
 
       return language === 'es' ? 'Listo.' : 'Done.';
@@ -3520,6 +3605,28 @@ export class VoiceService {
       };
     }
 
+    // read_inbox: no slots needed, no confirmation — execute immediately and reply
+    if (String(intent?.intent || '') === 'read_inbox') {
+      const actionResult = await this.executeIntent(clerkUserId, intent, language);
+      const responseText = buildExecutedResponse('read_inbox', actionResult, language);
+      const audioUrl = await this.generateTTS(responseText, language);
+      await persistTurn(responseText, { intent: 'read_inbox', executed: true });
+      await this.profilesService.setConversationState(clerkUserId, {
+        preferred_language: language,
+        assistant_name: 'Leeloo',
+        intent_state: 'DONE',
+        last_intent: 'read_inbox',
+      } as any);
+      emitMetrics(intent, { intent_source: 'deterministic', fallback_used: false });
+      return {
+        transcription: cleanedText,
+        intent: { ...intent, decision: 'ACTION', original_text: cleanedText },
+        action_result: actionResult,
+        response_text: responseText,
+        response_audio_url: audioUrl,
+      };
+    }
+
     // No missing slots -> explicit confirmation gate.
     const confirmQ = (() => {
       const i = String(intent?.intent || '');
@@ -3838,6 +3945,30 @@ export class VoiceService {
         eventId: (actionResult as any)?.id,
         start_at: startAt,
       });
+    }
+
+    if (intent.intent === 'read_inbox') {
+      let token: string | null = null;
+      try {
+        const r = await this.integrationsService.getValidAccessToken(clerkUserId, 'google');
+        token = r?.token ?? null;
+      } catch { /* not connected */ }
+
+      if (!token) {
+        actionResult = { ok: false, error: 'google_not_connected' };
+      } else {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        const todayQ = `after:${yyyy}/${mm}/${dd}`;
+        const res = await this.googleGmailService.listInbox(token, {
+          maxResults: 5,
+          q: `${todayQ} is:unread`,
+          unreadOnly: true,
+        });
+        actionResult = { ok: res.ok, messages: res.messages ?? [], total: res.total ?? 0, error: res.error };
+      }
     }
 
     if (intent.intent === 'delete_event') {
@@ -4609,6 +4740,16 @@ export class VoiceService {
         };
         const confMap = confirmations[targetLang] ?? confirmations['en'];
         return confMap[language] ?? confMap['en'];
+      }
+      case 'read_inbox': {
+        // Fast-path fallback when Gmail is not connected (real handler is in processVoiceText)
+        const r: Record<string, string> = {
+          es: 'Para leer tus correos necesito acceso a tu Gmail. Conéctalo en la configuración de Leeloo.',
+          en: "To read your emails I need access to your Gmail. Connect it in Leeloo's settings.",
+          pt: 'Para ler seus e-mails preciso de acesso ao seu Gmail. Conecte-o nas configurações do Leeloo.',
+          fr: 'Pour lire vos e-mails j\'ai besoin d\'accès à votre Gmail. Connectez-le dans les paramètres de Leeloo.',
+        };
+        return r[language] ?? r['en'];
       }
       case 'small_talk':
       case 'query': {
