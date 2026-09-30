@@ -124,6 +124,58 @@ export class ExecutiveBrain {
       };
     }
 
+    // ── Meal suggestion ─────────────────────────────────────────────────────
+    const isMealHeuristic =
+      /\bqu[eé]\s+(como|preparo|cocino)\b/i.test(s) ||
+      /\bwhat\s+(should\s+i\s+eat|do\s+i\s+(eat|have)|can\s+i\s+eat)\b/i.test(s) ||
+      /\b(o\s+que\s+(eu\s+)?(como|preparo)|sugestao\s+de\s+refeicao)\b/i.test(s) ||
+      /\bqu\s+est\s+ce\s+que\s+je\s+(mange|prepare)\b/i.test(s) ||
+      /\bje\s+mange\s+quoi\b/i.test(s) ||
+      /\bque\s+manger\b/i.test(s) ||
+      /\bsugger(i|e)(re|scimi)\s+(un\s+)?(pasto|pranzo|cena)\b/i.test(s);
+    if (isMealHeuristic) {
+      return {
+        intent: 'suggest_meal',
+        language: null,
+        confidence: 0.8,
+        required_slots: [],
+        filled_slots: {},
+        missing_slots: [],
+        next_question: '',
+        priority: 'medium',
+        intent_source: 'heuristic',
+      };
+    }
+
+    // ── Language switch ──────────────────────────────────────────────────────
+    const isLangHeuristic = (() => {
+      const switchLang =
+        /\b(habla|hablame|speak|parle|fala|falar)\s+(en\s+)?(english|ingles|spanish|espanol|frances|french|portugues|portuguese|japonais|japones|japanese)\b/i.test(s) ||
+        /\b(switch|change|put|cambia|pon|mets)\s+(to\s+|en\s+|a\s+)?(english|ingles|spanish|espanol|frances|french|portugues|portuguese)\b/i.test(s) ||
+        /\bto\s+(english|spanish|french|portuguese|japanese)\b/i.test(s) ||
+        /\b(en\s+)?(ingles|espanol|frances|portugues)\s*$/.test(s);
+      if (!switchLang) return null;
+      if (/\b(english|ingles)\b/.test(s)) return 'en';
+      if (/\b(spanish|espanol)\b/.test(s)) return 'es';
+      if (/\b(french|frances)\b/.test(s)) return 'fr';
+      if (/\b(portuguese|portugues)\b/.test(s)) return 'pt';
+      if (/\b(japanese|japones)\b/.test(s)) return 'ja';
+      return null;
+    })();
+    if (isLangHeuristic) {
+      return {
+        intent: 'set_language',
+        language: isLangHeuristic as any,
+        confidence: 0.85,
+        required_slots: [],
+        filled_slots: { language: isLangHeuristic },
+        missing_slots: [],
+        next_question: '',
+        priority: 'medium',
+        intent_source: 'heuristic',
+      };
+    }
+
     // Check email FIRST — "saying hello" / "says meeting" would otherwise trigger greeting/meeting
     const emailRegexEarly = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
     const hasEmailAddress = emailRegexEarly.test(raw);
