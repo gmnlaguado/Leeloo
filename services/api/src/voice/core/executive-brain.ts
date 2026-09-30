@@ -124,15 +124,12 @@ export class ExecutiveBrain {
       };
     }
 
-    // ── Meal suggestion ─────────────────────────────────────────────────────
+    // ── Meal suggestion — use hasAny/includes (s is already NFD-normalized, no accents) ──
     const isMealHeuristic =
-      /\bqu[eé]\s+(como|preparo|cocino)\b/i.test(s) ||
-      /\bwhat\s+(should\s+i\s+eat|do\s+i\s+(eat|have)|can\s+i\s+eat)\b/i.test(s) ||
-      /\b(o\s+que\s+(eu\s+)?(como|preparo)|sugestao\s+de\s+refeicao)\b/i.test(s) ||
-      /\bqu\s+est\s+ce\s+que\s+je\s+(mange|prepare)\b/i.test(s) ||
-      /\bje\s+mange\s+quoi\b/i.test(s) ||
-      /\bque\s+manger\b/i.test(s) ||
-      /\bsugger(i|e)(re|scimi)\s+(un\s+)?(pasto|pranzo|cena)\b/i.test(s);
+      hasAny(s, ['que como', 'que preparo', 'que cocino', 'que comer']) ||
+      hasAny(s, ['what should i eat', 'what do i eat', 'what can i eat', 'what to eat']) ||
+      hasAny(s, ['o que eu como', 'o que como', 'o que preparo', 'sugestao de refeicao']) ||
+      hasAny(s, ['qu est-ce que je mange', 'qu est-ce que je prepare', 'je mange quoi', 'que manger', 'quoi manger']);
     if (isMealHeuristic) {
       return {
         intent: 'suggest_meal',
