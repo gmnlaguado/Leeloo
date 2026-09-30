@@ -4075,6 +4075,13 @@ export class VoiceService {
     const heuristic = executiveBrain.inferVoiceIntentLayer0(text, language);
     if (heuristic) return heuristic as any;
 
+    // Layer 0.5: deterministic rules as pre-LLM gate (covers what executive-brain misses)
+    const deterministicPreLlm = this.inferDeterministicIntent(text, language);
+    if (deterministicPreLlm && deterministicPreLlm.intent !== 'query') {
+      console.log('[LeelooApi] voice.deterministic.prellm', { text, intent: deterministicPreLlm.intent });
+      return deterministicPreLlm as any;
+    }
+
     const intentModelLabel =
       this.configService.get<string>('LLM_INTENT_MODEL') ||
       this.configService.get<string>('LLM_MODEL') ||
