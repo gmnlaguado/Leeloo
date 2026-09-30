@@ -4253,6 +4253,7 @@ export class VoiceService {
         // If LLM returned "query" (low-confidence fallback), give deterministic a chance to override
         if (primary && (primary as any).intent === 'query') {
           const deterministicOverride = this.inferDeterministicIntent(text, language);
+          console.log('[LeelooApi] voice.llm.query.override', { text, deterministicIntent: deterministicOverride?.intent ?? 'null' });
           if (deterministicOverride && deterministicOverride.intent !== 'query') {
             return deterministicOverride as any;
           }
